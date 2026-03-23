@@ -1,3 +1,12 @@
+export interface RecordingMetadata {
+  placeName: string;
+  environmentType: string;
+  weather: string;
+  equipment: string;
+  description: string;
+  tags: string[];
+}
+
 export interface StoredRecording {
   id: string;
   createdAt: string;
@@ -10,6 +19,14 @@ export interface StoredRecording {
   };
   mimeType: string;
   audioBlob: Blob;
+  placeName?: string;
+  environmentType?: string;
+  weather?: string;
+  equipment?: string;
+  description?: string;
+  title?: string;
+  tags?: string[];
+  notes?: string;
   imageUrl?: string;
   prompt?: string;
 }
@@ -94,11 +111,7 @@ export async function deleteStoredRecording(id: string): Promise<void> {
   });
 }
 
-export async function updateStoredRecordingVisual(
-  id: string,
-  imageUrl: string,
-  prompt: string,
-): Promise<void> {
+async function patchStoredRecording(id: string, patch: Partial<StoredRecording>): Promise<void> {
   await withStore<void>('readwrite', (store, resolve, reject) => {
     const readRequest = store.get(id);
 
@@ -111,14 +124,37 @@ export async function updateStoredRecordingVisual(
 
       const writeRequest = store.put({
         ...current,
-        imageUrl,
-        prompt,
+        ...patch,
       });
 
       writeRequest.onsuccess = () => resolve();
-      writeRequest.onerror = () => reject(writeRequest.error ?? new Error('Unable to update recording visual.'));
+      writeRequest.onerror = () => reject(writeRequest.error ?? new Error('Unable to update recording.'));
     };
 
     readRequest.onerror = () => reject(readRequest.error ?? new Error('Unable to load recording visual data.'));
+  });
+}
+
+export async function updateStoredRecordingVisual(
+  id: string,
+  imageUrl: string,
+  prompt: string,
+): Promise<void> {
+  await patchStoredRecording(id, { imageUrl, prompt });
+}
+
+export async function updateStoredRecordingMetadata(
+  id: string,
+  metadata: RecordingMetadata,
+): Promise<void> {
+  await patchStoredRecording(id, {
+    placeName: metadata.placeName,
+    environmentType: metadata.environmentType,
+    weather: metadata.weather,
+    equipment: metadata.equipment,
+    description: metadata.description,
+    title: metadata.placeName,
+    tags: metadata.tags,
+    notes: metadata.description,
   });
 }
