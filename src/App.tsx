@@ -26,7 +26,7 @@ import {
   updateStoredRecordingVisual,
 } from './lib/recordingsDb';
 
-type View = 'capture' | 'library';
+type View = 'entry' | 'record' | 'library';
 type CaptureMode = 'idle' | 'manual' | 'walk';
 
 interface Coordinates {
@@ -268,8 +268,8 @@ function ViewButton({
       onClick={onClick}
       className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium uppercase tracking-[0.24em] transition ${
         active
-          ? 'border-[color:var(--signal-strong)] bg-[color:var(--signal-soft)] text-[color:var(--paper)]'
-          : 'border-white/10 bg-white/5 text-[color:var(--muted)] hover:border-white/20 hover:text-[color:var(--paper)]'
+          ? 'border-[color:var(--signal-strong)] bg-[color:var(--signal-strong)] text-white'
+          : 'border-transparent bg-transparent text-[color:var(--muted)] hover:border-[color:var(--line)] hover:bg-white/60 hover:text-[color:var(--paper)]'
       }`}
     >
       <Icon className="h-4 w-4" />
@@ -566,7 +566,7 @@ function RecordingCard({
 }
 
 export default function App() {
-  const [view, setView] = useState<View>('capture');
+  const [view, setView] = useState<View>('entry');
   const [captureMode, setCaptureMode] = useState<CaptureMode>('idle');
   const [captureDraft, setCaptureDraft] = useState<CaptureDraft>(emptyCaptureDraft());
   const [recordings, setRecordings] = useState<UiRecording[]>([]);
@@ -1192,35 +1192,46 @@ export default function App() {
   const gpsLabel = currentGps
     ? `${currentGps.lat.toFixed(5)}, ${currentGps.lon.toFixed(5)}`
     : 'Sin señal activa';
+  const draftPlaceLabel = captureDraft.placeName.trim() || 'Lugar sin nombre';
+  const draftTagList = normalizeTags(captureDraft.tagsText);
+  const draftCoordinatesLabel =
+    captureDraft.latitude.trim() && captureDraft.longitude.trim()
+      ? `${captureDraft.latitude.trim()}, ${captureDraft.longitude.trim()}`
+      : gpsLabel;
   const captureDateLabel = format(new Date(), 'MMM d, yyyy');
   const captureTimeLabel = format(new Date(), 'HH:mm:ss');
   const captureYearLabel = format(new Date(), 'yyyy');
 
   return (
-    <div className="field-shell min-h-screen px-4 py-5 md:px-8 md:py-8">
+    <div className="field-shell min-h-screen px-4 py-6 md:px-8 md:py-8">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
         <motion.header
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="panel flex flex-col gap-5 p-5 md:p-6"
+          className="panel flex flex-col gap-6 p-5 md:p-7"
         >
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-2">
+          <div className="flex flex-wrap items-start justify-between gap-5">
+            <div className="space-y-3">
               <p className="eyebrow text-[color:var(--signal-strong)]">Field Recorder Atlas</p>
               <h1 className="font-['Fraunces'] text-4xl text-[color:var(--paper)] md:text-5xl">
                 Cuaderno de campo sonoro
               </h1>
               <p className="max-w-2xl text-sm leading-7 text-[color:var(--muted)]">
-                Registra el lugar, las coordenadas, el clima, el equipo usado y la toma en una sola ficha, sin ruido visual.
+                Una ficha clara para situar el lugar y una página separada para grabar sin distracciones.
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-3">
-                <p className="eyebrow text-[color:var(--muted)]">GPS actual</p>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="soft-card">
+                <p className="eyebrow text-[color:var(--muted)]">GPS</p>
                 <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{gpsLabel}</p>
               </div>
-              <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-3">
-                <p className="eyebrow text-[color:var(--muted)]">Archivo local</p>
+              <div className="soft-card">
+                <p className="eyebrow text-[color:var(--muted)]">Fecha</p>
+                <p className="mt-2 text-sm text-[color:var(--paper)]">{captureDateLabel}</p>
+              </div>
+              <div className="soft-card">
+                <p className="eyebrow text-[color:var(--muted)]">Archivo</p>
                 <p className="mt-2 text-sm text-[color:var(--paper)]">
                   {storageMode === 'ready' ? 'Activo' : storageMode === 'loading' ? 'Cargando' : 'Sólo memoria'}
                 </p>
@@ -1228,196 +1239,301 @@ export default function App() {
             </div>
           </div>
 
-          <p className="text-sm leading-6 text-[color:var(--muted)]">{statusNote}</p>
+          <div className="rounded-[24px] border border-[color:var(--line)] bg-[color:var(--panel-soft)] px-4 py-4 text-sm leading-6 text-[color:var(--muted)]">
+            {statusNote}
+          </div>
           {appError ? (
-            <div className="rounded-[20px] border border-[color:rgba(255,140,92,0.3)] bg-[rgba(255,140,92,0.12)] px-4 py-3 text-sm text-[color:var(--paper)]">
+            <div className="rounded-[20px] border border-[color:rgba(181,106,67,0.3)] bg-[rgba(181,106,67,0.12)] px-4 py-3 text-sm text-[color:var(--paper)]">
               {appError}
             </div>
           ) : null}
         </motion.header>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <ViewButton active={view === 'capture'} label="Registro" icon={Mic} onClick={() => setView('capture')} />
+        <nav className="menu-shell sticky top-4 z-20 flex flex-wrap items-center gap-3">
+          <ViewButton active={view === 'entry'} label="Ficha" icon={MapPin} onClick={() => setView('entry')} />
+          <ViewButton active={view === 'record'} label="Grabar" icon={Mic} onClick={() => setView('record')} />
           <ViewButton active={view === 'library'} label="Archivo" icon={History} onClick={() => setView('library')} />
-        </div>
+        </nav>
 
         <AnimatePresence mode="wait">
-          {view === 'capture' ? (
+          {view === 'entry' ? (
             <motion.section
-              key="capture"
+              key="entry"
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
-              className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]"
+              className="grid gap-6 xl:grid-cols-[1.18fr,0.82fr]"
             >
-              <div className="panel p-5 md:p-6">
-                <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+              <div className="panel p-5 md:p-7">
+                <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
                   <div>
                     <p className="eyebrow text-[color:var(--signal-strong)]">Ficha del lugar</p>
-                    <h2 className="mt-2 font-['Fraunces'] text-3xl text-[color:var(--paper)]">Datos útiles para archivo de campo</h2>
+                    <h2 className="mt-2 font-['Fraunces'] text-3xl text-[color:var(--paper)]">
+                      Contexto antes de grabar
+                    </h2>
                   </div>
                   <button
                     onClick={applyCurrentGpsToDraft}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[10px] uppercase tracking-[0.24em] text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:text-[color:var(--signal-strong)]"
+                    className="inline-flex items-center gap-2 rounded-full border border-[color:var(--line-strong)] bg-white/70 px-4 py-2 text-[10px] uppercase tracking-[0.24em] text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:text-[color:var(--signal-strong)]"
                   >
                     <MapPin className="h-4 w-4" />
                     Usar GPS actual
                   </button>
                 </div>
 
-                <div className="grid gap-4">
-                  <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                    <span>Nombre del lugar</span>
-                    <input
-                      value={captureDraft.placeName}
-                      onChange={(event) => setCaptureDraft((previous) => ({ ...previous, placeName: event.target.value }))}
-                      className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                      placeholder="Laguna de Uña"
-                    />
-                  </label>
+                <div className="grid gap-6">
+                  <section className="grid gap-4">
+                    <h3 className="section-title">Lugar</h3>
+                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                      <span>Nombre del lugar</span>
+                      <input
+                        value={captureDraft.placeName}
+                        onChange={(event) => setCaptureDraft((previous) => ({ ...previous, placeName: event.target.value }))}
+                        className="field-input"
+                        placeholder="Laguna de Uña"
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                      <span>Descripción del lugar</span>
+                      <textarea
+                        value={captureDraft.description}
+                        onChange={(event) => setCaptureDraft((previous) => ({ ...previous, description: event.target.value }))}
+                        rows={6}
+                        className="field-input min-h-36"
+                        placeholder="Contexto del sitio, distancia a la fuente sonora, relieve, interferencias, accesos..."
+                      />
+                    </label>
+                  </section>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                      <span>Tipo de entorno</span>
-                      <input
-                        value={captureDraft.environmentType}
-                        onChange={(event) =>
-                          setCaptureDraft((previous) => ({ ...previous, environmentType: event.target.value }))
-                        }
-                        className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                        placeholder="Bosque, urbano, costa, río..."
-                      />
-                    </label>
-                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                      <span>Tiempo atmosférico</span>
-                      <input
-                        value={captureDraft.weather}
-                        onChange={(event) => setCaptureDraft((previous) => ({ ...previous, weather: event.target.value }))}
-                        className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                        placeholder="Nublado, 14C, viento flojo"
-                      />
-                    </label>
-                  </div>
+                  <section className="grid gap-4">
+                    <h3 className="section-title">Condiciones</h3>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Tipo de entorno</span>
+                        <input
+                          value={captureDraft.environmentType}
+                          onChange={(event) =>
+                            setCaptureDraft((previous) => ({ ...previous, environmentType: event.target.value }))
+                          }
+                          className="field-input"
+                          placeholder="Bosque, urbano, costa, río..."
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Tiempo atmosférico</span>
+                        <input
+                          value={captureDraft.weather}
+                          onChange={(event) => setCaptureDraft((previous) => ({ ...previous, weather: event.target.value }))}
+                          className="field-input"
+                          placeholder="Nublado, 14C, viento flojo"
+                        />
+                      </label>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Latitud</span>
+                        <input
+                          value={captureDraft.latitude}
+                          onChange={(event) => setCaptureDraft((previous) => ({ ...previous, latitude: event.target.value }))}
+                          className="field-input font-['IBM_Plex_Mono']"
+                          placeholder="40.123456"
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Longitud</span>
+                        <input
+                          value={captureDraft.longitude}
+                          onChange={(event) => setCaptureDraft((previous) => ({ ...previous, longitude: event.target.value }))}
+                          className="field-input font-['IBM_Plex_Mono']"
+                          placeholder="-3.123456"
+                        />
+                      </label>
+                    </div>
+                  </section>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                      <span>Latitud</span>
-                      <input
-                        value={captureDraft.latitude}
-                        onChange={(event) => setCaptureDraft((previous) => ({ ...previous, latitude: event.target.value }))}
-                        className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 font-['IBM_Plex_Mono'] text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                        placeholder="40.123456"
-                      />
-                    </label>
-                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                      <span>Longitud</span>
-                      <input
-                        value={captureDraft.longitude}
-                        onChange={(event) => setCaptureDraft((previous) => ({ ...previous, longitude: event.target.value }))}
-                        className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 font-['IBM_Plex_Mono'] text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                        placeholder="-3.123456"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                      <span>Equipo usado</span>
-                      <input
-                        value={captureDraft.equipment}
-                        onChange={(event) => setCaptureDraft((previous) => ({ ...previous, equipment: event.target.value }))}
-                        className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                        placeholder="Zoom H6, cápsula XY"
-                      />
-                    </label>
-                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                      <span>Tags</span>
-                      <input
-                        value={captureDraft.tagsText}
-                        onChange={(event) => setCaptureDraft((previous) => ({ ...previous, tagsText: event.target.value }))}
-                        className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                        placeholder="agua, pájaros, campanas"
-                      />
-                    </label>
-                  </div>
-
-                  <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                    <span>Descripción del lugar</span>
-                    <textarea
-                      value={captureDraft.description}
-                      onChange={(event) => setCaptureDraft((previous) => ({ ...previous, description: event.target.value }))}
-                      rows={6}
-                      className="min-h-36 rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                      placeholder="Contexto del sitio, distancia a la fuente sonora, estado del suelo, interferencias, etc."
-                    />
-                  </label>
+                  <section className="grid gap-4">
+                    <h3 className="section-title">Equipo y etiquetas</h3>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Equipo usado</span>
+                        <input
+                          value={captureDraft.equipment}
+                          onChange={(event) => setCaptureDraft((previous) => ({ ...previous, equipment: event.target.value }))}
+                          className="field-input"
+                          placeholder="Zoom H6, cápsula XY"
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Tags</span>
+                        <input
+                          value={captureDraft.tagsText}
+                          onChange={(event) => setCaptureDraft((previous) => ({ ...previous, tagsText: event.target.value }))}
+                          className="field-input"
+                          placeholder="agua, pájaros, campanas"
+                        />
+                      </label>
+                    </div>
+                  </section>
                 </div>
               </div>
 
               <div className="grid gap-6">
                 <div className="panel p-5 md:p-6">
-                  <p className="eyebrow text-[color:var(--signal-strong)]">Grabación</p>
-                  <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+                  <p className="eyebrow text-[color:var(--signal-strong)]">Resumen</p>
+                  <div className="mt-4 space-y-4">
                     <div>
-                      <p className="font-['Fraunces'] text-3xl text-[color:var(--paper)]">
-                        {captureMode === 'manual' ? 'Grabando toma' : captureMode === 'walk' ? 'Modo ruta activo' : 'Listo para grabar'}
-                      </p>
-                      <p className="mt-2 text-sm text-[color:var(--muted)]">
-                        Hora y año se archivan automáticamente con cada toma.
+                      <p className="font-['Fraunces'] text-3xl text-[color:var(--paper)]">{draftPlaceLabel}</p>
+                      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                        {captureDraft.description.trim() || 'Añade una descripción breve para recordar el contexto del sitio.'}
                       </p>
                     </div>
-                    <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-3 text-right">
-                      <p className="eyebrow text-[color:var(--muted)]">Tiempo de toma</p>
-                      <p className="mt-2 font-['IBM_Plex_Mono'] text-3xl text-[color:var(--paper)]">{formatDuration(liveSessionMs)}</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 flex flex-col items-center gap-5">
-                    <button
-                      onClick={captureMode === 'manual' ? stopManualRecording : startManualRecording}
-                      disabled={captureMode === 'walk'}
-                      className={`capture-dial flex h-56 w-56 items-center justify-center rounded-full border text-center transition md:h-64 md:w-64 ${
-                        captureMode === 'manual'
-                          ? 'border-[color:rgba(255,140,92,0.5)] bg-[radial-gradient(circle_at_top,rgba(255,140,92,0.24),rgba(15,18,17,0.96)_70%)] text-[color:var(--paper)]'
-                          : 'border-[color:rgba(191,255,136,0.3)] bg-[radial-gradient(circle_at_top,rgba(191,255,136,0.18),rgba(12,16,14,0.96)_70%)] text-[color:var(--paper)]'
-                      } disabled:cursor-not-allowed disabled:opacity-45`}
-                    >
-                      <div className="space-y-3">
-                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-black/20">
-                          {captureMode === 'manual' ? <Square className="h-6 w-6 fill-current" /> : <Mic className="h-7 w-7" />}
-                        </div>
-                        <div>
-                          <p className="eyebrow text-[color:var(--muted)]">
-                            {captureMode === 'manual' ? 'Detener y archivar' : 'Toma manual'}
-                          </p>
-                          <p className="mt-2 font-['Fraunces'] text-3xl">
-                            {captureMode === 'manual' ? 'Cerrar toma' : 'Registrar'}
-                          </p>
-                        </div>
+                    <div className="grid gap-3">
+                      <div className="soft-card">
+                        <p className="eyebrow text-[color:var(--muted)]">Coordenadas</p>
+                        <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{draftCoordinatesLabel}</p>
                       </div>
-                    </button>
-
-                    <button
-                      onClick={captureMode === 'walk' ? stopWalkMode : startWalkMode}
-                      disabled={captureMode === 'manual'}
-                      className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-sm text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:text-[color:var(--signal-strong)] disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      <Activity className="h-4 w-4" />
-                      {captureMode === 'walk' ? 'Detener modo ruta (30s)' : 'Activar modo ruta (30s)'}
-                    </button>
+                      <div className="soft-card">
+                        <p className="eyebrow text-[color:var(--muted)]">Clima y entorno</p>
+                        <p className="mt-2 text-sm text-[color:var(--paper)]">
+                          {captureDraft.environmentType.trim() || 'Entorno sin indicar'} · {captureDraft.weather.trim() || 'clima sin indicar'}
+                        </p>
+                      </div>
+                      <div className="soft-card">
+                        <p className="eyebrow text-[color:var(--muted)]">Equipo</p>
+                        <p className="mt-2 text-sm text-[color:var(--paper)]">{captureDraft.equipment.trim() || 'No indicado'}</p>
+                      </div>
+                    </div>
+                    {draftTagList.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {draftTagList.map((tag) => (
+                          <span key={tag} className="tag-pill">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-[color:var(--muted)]">Los tags aparecerán aquí cuando los añadas.</p>
+                    )}
                   </div>
+                </div>
 
-                  <div className="mt-6 grid gap-3 md:grid-cols-2">
-                    <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-4">
-                      <p className="eyebrow text-[color:var(--muted)]">Fecha y hora</p>
-                      <p className="mt-2 text-sm text-[color:var(--paper)]">{captureDateLabel}</p>
-                      <p className="mt-1 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{captureTimeLabel}</p>
+                <div className="panel p-5 md:p-6">
+                  <p className="eyebrow text-[color:var(--signal-strong)]">Flujo</p>
+                  <div className="mt-4 space-y-4 text-sm leading-7 text-[color:var(--muted)]">
+                    <p>1. Completa la ficha del lugar o usa el GPS actual para rellenar coordenadas.</p>
+                    <p>2. Pasa a la página de grabación cuando el contexto esté listo.</p>
+                    <p>3. Al archivar una toma, la ficha viaja con el audio al archivo local.</p>
+                  </div>
+                  <button
+                    onClick={() => setView('record')}
+                    className="mt-6 inline-flex items-center justify-center rounded-[18px] bg-[color:var(--signal-strong)] px-5 py-3 text-sm font-medium text-white transition hover:brightness-95"
+                  >
+                    Ir a grabación
+                  </button>
+                </div>
+              </div>
+            </motion.section>
+          ) : null}
+
+          {view === 'record' ? (
+            <motion.section
+              key="record"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              className="grid gap-6 xl:grid-cols-[0.95fr,1.05fr]"
+            >
+              <div className="panel flex flex-col gap-6 p-6 md:p-8">
+                <div className="space-y-2">
+                  <p className="eyebrow text-[color:var(--signal-strong)]">Grabación</p>
+                  <h2 className="font-['Fraunces'] text-4xl text-[color:var(--paper)]">
+                    {captureMode === 'manual' ? 'Grabando toma' : captureMode === 'walk' ? 'Modo ruta activo' : 'Preparado para grabar'}
+                  </h2>
+                  <p className="text-sm leading-7 text-[color:var(--muted)]">
+                    La ficha ya está separada. Aquí sólo ves el lugar activo, el tiempo y el control de captura.
+                  </p>
+                </div>
+
+                <div className="mx-auto flex flex-col items-center gap-5 py-4">
+                  <button
+                    onClick={captureMode === 'manual' ? stopManualRecording : startManualRecording}
+                    disabled={captureMode === 'walk'}
+                    className={`capture-dial flex h-56 w-56 items-center justify-center rounded-full border text-center transition md:h-64 md:w-64 ${
+                      captureMode === 'manual'
+                        ? 'border-[color:rgba(181,106,67,0.35)] bg-[radial-gradient(circle_at_top,rgba(181,106,67,0.18),rgba(255,250,241,0.96)_72%)] text-[color:var(--paper)]'
+                        : 'border-[color:rgba(96,128,87,0.28)] bg-[radial-gradient(circle_at_top,rgba(96,128,87,0.14),rgba(255,250,241,0.96)_72%)] text-[color:var(--paper)]'
+                    } disabled:cursor-not-allowed disabled:opacity-45`}
+                  >
+                    <div className="space-y-3">
+                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[color:var(--line)] bg-white/70">
+                        {captureMode === 'manual' ? <Square className="h-6 w-6 fill-current" /> : <Mic className="h-7 w-7" />}
+                      </div>
+                      <div>
+                        <p className="eyebrow text-[color:var(--muted)]">
+                          {captureMode === 'manual' ? 'Detener y archivar' : 'Toma manual'}
+                        </p>
+                        <p className="mt-2 font-['Fraunces'] text-3xl">
+                          {captureMode === 'manual' ? 'Cerrar toma' : 'Registrar'}
+                        </p>
+                      </div>
                     </div>
-                    <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-4">
-                      <p className="eyebrow text-[color:var(--muted)]">Año</p>
-                      <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{captureYearLabel}</p>
-                      <p className="mt-1 text-sm text-[color:var(--muted)]">{gpsMessage}</p>
+                  </button>
+
+                  <button
+                    onClick={captureMode === 'walk' ? stopWalkMode : startWalkMode}
+                    disabled={captureMode === 'manual'}
+                    className="inline-flex items-center gap-3 rounded-full border border-[color:var(--line-strong)] bg-white/70 px-5 py-3 text-sm text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:text-[color:var(--signal-strong)] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Activity className="h-4 w-4" />
+                    {captureMode === 'walk' ? 'Detener modo ruta (30 s)' : 'Activar modo ruta (30 s)'}
+                  </button>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="soft-card">
+                    <p className="eyebrow text-[color:var(--muted)]">Tiempo</p>
+                    <p className="mt-2 font-['IBM_Plex_Mono'] text-2xl text-[color:var(--paper)]">{formatDuration(liveSessionMs)}</p>
+                  </div>
+                  <div className="soft-card">
+                    <p className="eyebrow text-[color:var(--muted)]">Hora</p>
+                    <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{captureTimeLabel}</p>
+                  </div>
+                  <div className="soft-card">
+                    <p className="eyebrow text-[color:var(--muted)]">Año</p>
+                    <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{captureYearLabel}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-6">
+                <div className="panel p-5 md:p-6">
+                  <p className="eyebrow text-[color:var(--signal-strong)]">Ficha activa</p>
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <p className="font-['Fraunces'] text-3xl text-[color:var(--paper)]">{draftPlaceLabel}</p>
+                      <p className="mt-2 text-sm text-[color:var(--muted)]">{draftCoordinatesLabel}</p>
                     </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="soft-card">
+                        <p className="eyebrow text-[color:var(--muted)]">Entorno</p>
+                        <p className="mt-2 text-sm text-[color:var(--paper)]">{captureDraft.environmentType.trim() || 'Sin indicar'}</p>
+                      </div>
+                      <div className="soft-card">
+                        <p className="eyebrow text-[color:var(--muted)]">Clima</p>
+                        <p className="mt-2 text-sm text-[color:var(--paper)]">{captureDraft.weather.trim() || 'Sin indicar'}</p>
+                      </div>
+                      <div className="soft-card">
+                        <p className="eyebrow text-[color:var(--muted)]">Equipo</p>
+                        <p className="mt-2 text-sm text-[color:var(--paper)]">{captureDraft.equipment.trim() || 'Sin indicar'}</p>
+                      </div>
+                      <div className="soft-card">
+                        <p className="eyebrow text-[color:var(--muted)]">GPS</p>
+                        <p className="mt-2 text-sm text-[color:var(--paper)]">{gpsMessage}</p>
+                      </div>
+                    </div>
+                    <p className="rounded-[20px] border border-[color:var(--line)] bg-[color:var(--panel-soft)] px-4 py-4 text-sm leading-6 text-[color:var(--muted)]">
+                      {captureDraft.description.trim() || 'La descripción del lugar se mostrará aquí mientras grabas.'}
+                    </p>
                   </div>
                 </div>
 
@@ -1433,7 +1549,7 @@ export default function App() {
                     </div>
                   ) : (
                     <p className="mt-4 text-sm leading-6 text-[color:var(--muted)]">
-                      La última toma aparecerá aquí con reproducción inmediata y su ficha archivada.
+                      Cuando cierres una toma aparecerá aquí lista para revisar o exportar.
                     </p>
                   )}
                 </div>
@@ -1457,11 +1573,11 @@ export default function App() {
                   </h2>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-3">
+                  <div className="soft-card">
                     <p className="eyebrow text-[color:var(--muted)]">Tomas</p>
                     <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{recordings.length}</p>
                   </div>
-                  <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-3">
+                  <div className="soft-card">
                     <p className="eyebrow text-[color:var(--muted)]">Duración total</p>
                     <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{formatDuration(totalArchiveDurationMs)}</p>
                   </div>
@@ -1477,10 +1593,10 @@ export default function App() {
                     exit={{ opacity: 0 }}
                     className="panel px-6 py-16 text-center"
                   >
-                    <History className="mx-auto h-12 w-12 text-white/20" />
+                    <History className="mx-auto h-12 w-12 text-[color:var(--muted)]/50" />
                     <p className="mt-4 font-['Fraunces'] text-3xl text-[color:var(--paper)]">Todavía no hay tomas</p>
                     <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-[color:var(--muted)]">
-                      Registra primero un lugar desde la ficha principal y la toma aparecerá aquí con su archivo completo.
+                      Completa primero una ficha y registra la primera toma para poblar el archivo.
                     </p>
                   </motion.div>
                 ) : (

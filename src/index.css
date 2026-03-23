@@ -2,15 +2,18 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: dark;
-  --forest: #09110d;
-  --forest-deep: #0d1712;
-  --panel: rgba(16, 23, 20, 0.78);
-  --paper: #f7f1dc;
-  --muted: #a3aa9d;
-  --signal-strong: #bfff88;
-  --signal-soft: rgba(191, 255, 136, 0.12);
-  --ember: #ff9b67;
+  color-scheme: light;
+  --sand: #f4efe5;
+  --sand-deep: #e7ddce;
+  --panel: rgba(255, 250, 241, 0.9);
+  --panel-soft: #f8f1e5;
+  --paper: #324335;
+  --muted: #6d7668;
+  --signal-strong: #607f57;
+  --signal-soft: #e5eedc;
+  --line: rgba(87, 97, 82, 0.14);
+  --line-strong: rgba(87, 97, 82, 0.24);
+  --ember: #b56a43;
 }
 
 * {
@@ -20,9 +23,9 @@
 html {
   min-height: 100%;
   background:
-    radial-gradient(circle at top left, rgba(191, 255, 136, 0.08), transparent 30%),
-    radial-gradient(circle at bottom right, rgba(255, 155, 103, 0.14), transparent 34%),
-    linear-gradient(180deg, #08100c, #0b120f 42%, #070c0a);
+    radial-gradient(circle at top left, rgba(96, 127, 87, 0.08), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(181, 106, 67, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8f3ea, #f1e8dc 46%, #ede3d7);
 }
 
 body {
@@ -31,35 +34,19 @@ body {
   color: var(--paper);
   font-family: "IBM Plex Sans", sans-serif;
   background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 18%),
-    radial-gradient(circle at 20% 20%, rgba(191, 255, 136, 0.1), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 35%),
-    linear-gradient(135deg, var(--forest), var(--forest-deep));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0)),
+    linear-gradient(135deg, var(--sand), var(--sand-deep));
 }
 
-body::before,
-body::after {
+body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
-}
-
-body::before {
   background:
-    repeating-radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.045) 0, rgba(255, 255, 255, 0.045) 1px, transparent 1px, transparent 42px),
-    repeating-radial-gradient(circle at 80% 0%, rgba(255, 155, 103, 0.04) 0, rgba(255, 155, 103, 0.04) 1px, transparent 1px, transparent 54px);
-  mix-blend-mode: screen;
-  opacity: 0.24;
-}
-
-body::after {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.65), transparent 88%);
-  opacity: 0.18;
+    radial-gradient(circle at 18% 16%, rgba(96, 127, 87, 0.08), transparent 24%),
+    radial-gradient(circle at 80% 6%, rgba(181, 106, 67, 0.08), transparent 18%);
+  opacity: 0.8;
 }
 
 #root {
@@ -68,11 +55,16 @@ body::after {
 
 button,
 a,
-audio {
+audio,
+summary,
+input,
+textarea {
   -webkit-tap-highlight-color: transparent;
 }
 
-button {
+button,
+input,
+textarea {
   font: inherit;
 }
 
@@ -85,43 +77,31 @@ audio {
   isolation: isolate;
 }
 
-.hero-panel,
 .panel,
-.metric-card {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+.soft-card,
+.menu-shell {
+  border: 1px solid var(--line);
   background: var(--panel);
-  backdrop-filter: blur(18px);
   box-shadow:
-    0 30px 80px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.hero-panel::before,
-.panel::before,
-.metric-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(135deg, rgba(191, 255, 136, 0.08), transparent 36%),
-    linear-gradient(315deg, rgba(255, 155, 103, 0.08), transparent 34%);
-  pointer-events: none;
-}
-
-.hero-panel {
-  border-radius: 36px;
+    0 18px 48px rgba(82, 61, 39, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68);
 }
 
 .panel {
   border-radius: 32px;
 }
 
-.metric-card {
-  border-radius: 24px;
-  padding: 1.15rem;
-  background: rgba(8, 12, 11, 0.42);
+.soft-card {
+  border-radius: 22px;
+  padding: 1rem;
+}
+
+.menu-shell {
+  align-self: flex-start;
+  padding: 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 250, 241, 0.84);
+  backdrop-filter: blur(12px);
 }
 
 .capture-dial {
@@ -133,31 +113,78 @@ audio {
   content: "";
   position: absolute;
   border-radius: 999px;
-  inset: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.capture-dial::before {
+  inset: 10px;
+  border: 1px solid rgba(96, 127, 87, 0.12);
 }
 
 .capture-dial::after {
-  inset: -14px;
-  border-style: dashed;
-  border-color: rgba(255, 255, 255, 0.08);
+  inset: -12px;
+  border: 1px dashed rgba(96, 127, 87, 0.18);
 }
 
 .eyebrow {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
-  letter-spacing: 0.26em;
+  letter-spacing: 0.24em;
   text-transform: uppercase;
+}
+
+.section-title {
+  font-family: "Fraunces", serif;
+  font-size: 1.35rem;
+  color: var(--paper);
+}
+
+.field-input {
+  width: 100%;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.68);
+  padding: 0.85rem 1rem;
+  color: var(--paper);
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+.field-input::placeholder {
+  color: color-mix(in srgb, var(--muted) 78%, white 22%);
+}
+
+.field-input:focus {
+  border-color: color-mix(in srgb, var(--signal-strong) 65%, white 35%);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 4px rgba(96, 127, 87, 0.08);
+}
+
+.tag-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.35rem 0.8rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .field-audio {
   display: block;
   width: 100%;
   height: 44px;
-  filter: saturate(0.85) sepia(0.08);
+  filter: saturate(0.82);
+}
+
+details > summary::-webkit-details-marker {
+  display: none;
 }
 
 ::selection {
-  background: rgba(191, 255, 136, 0.24);
+  background: rgba(96, 127, 87, 0.18);
   color: var(--paper);
 }
