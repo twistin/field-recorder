@@ -1,424 +1,1071 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Mic, 
-  Square, 
-  MapPin, 
-  History, 
-  Settings, 
-  Play, 
-  Trash2, 
-  Download, 
-  Image as ImageIcon, 
-  Loader2,
+import React, { useEffect, useRef, useState } from 'react';
+import {
   Activity,
-  Wind,
+  Download,
+  History,
+  Image as ImageIcon,
+  Loader2,
+  MapPin,
+  Mic,
+  Play,
+  Settings,
+  Square,
+  Trash2,
   Volume2,
-  Zap
+  Wind,
+  Zap,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { v4 as uuidv4 } from 'uuid';
+import { AnimatePresence, motion } from 'motion/react';
 import { format } from 'date-fns';
-import { GoogleGenAI } from "@google/genai";
+import { v4 as uuidv4 } from 'uuid';
+import { GoogleGenAI } from '@google/genai';
 
-// --- TYPES ---
-interface Recording {
-  id: string;
-  timestamp: string;
-  gps: { lat: number; lon: number };
-  audioUrl: string;
-  duration: number;
-  imageUrl?: string;
-  prompt?: string;
+import {
+  deleteStoredRecording,
+  listStoredRecordings,
+  saveStoredRecording,
+  StoredRecording,
+  updateStoredRecordingVisual,
+} from './lib/recordingsDb';
+
+type View = 'capture' | 'library' | 'system';
+type CaptureMode = 'idle' | 'manual' | 'walk';
+
+interface Coordinates {
+  lat: number;
+  lon: number;
+  accuracy: number | null;
 }
 
-// --- APP COMPONENT ---
+interface UiRecording extends StoredRecording {
+  audioUrl: string;
+}
+
+const CAPTURE_SLICE_MS = 30_000;
+const FALLBACK_GPS: Coordinates = { lat: 0, lon: 0, accuracy: null };
+
+function formatDuration(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function chooseAudioMimeType(): string | undefined {
+  if (typeof MediaRecorder === 'undefined') {
+    return undefined;
+  }
+
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/ogg;codecs=opus',
+  ];
+
+  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
+}
+
+function extensionFromMimeType(mimeType: string): string {
+  if (mimeType.includes('ogg')) {
+    return 'ogg';
+  }
+
+  if (mimeType.includes('mp4')) {
+    return 'm4a';
+  }
+
+  return 'webm';
+}
+
+function hydrateRecording(recording: StoredRecording): UiRecording {
+  return {
+    ...recording,
+    audioUrl: URL.createObjectURL(recording.audioBlob),
+  };
+}
+
+function buildDownloadName(recording: UiRecording): string {
+  const stamp = recording.createdAt.replace(/[:.]/g, '-');
+  return `field-take-${stamp}-${recording.mode}.${extensionFromMimeType(recording.mimeType)}`;
+}
+
+function ViewButton({
+  active,
+  label,
+  icon: Icon,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium uppercase tracking-[0.24em] transition ${
+        active
+          ? 'border-[color:var(--signal-strong)] bg-[color:var(--signal-soft)] text-[color:var(--paper)]'
+          : 'border-white/10 bg-white/5 text-[color:var(--muted)] hover:border-white/20 hover:text-[color:var(--paper)]'
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </button>
+  );
+}
+
+function RecordingCard({
+  recording,
+  isGeneratingImage,
+  onDelete,
+  onGenerateImage,
+}: {
+  recording: UiRecording;
+  isGeneratingImage: boolean;
+  onDelete: () => void;
+  onGenerateImage: () => void;
+}) {
+  const modeTone =
+    recording.mode === 'walk'
+      ? 'border-[color:rgba(255,140,92,0.28)] bg-[rgba(255,140,92,0.12)] text-[color:var(--ember)]'
+      : 'border-[color:rgba(191,255,136,0.24)] bg-[rgba(191,255,136,0.1)] text-[color:var(--signal-strong)]';
+
+  return (
+    <motion.article
+      layout
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -12 }}
+      className="panel flex flex-col gap-5 p-5"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] ${modeTone}`}>
+              {recording.mode === 'walk' ? 'Walk Slice' : 'Manual Take'}
+            </span>
+            <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[10px] uppercase tracking-[0.24em] text-[color:var(--muted)]">
+              {formatDuration(recording.durationMs)}
+            </span>
+          </div>
+          <div>
+            <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">
+              {format(new Date(recording.createdAt), 'MMM d, yyyy')}
+            </p>
+            <p className="text-sm text-[color:var(--muted)]">
+              {format(new Date(recording.createdAt), 'HH:mm:ss')} · {recording.gps.lat.toFixed(5)}, {recording.gps.lon.toFixed(5)}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <a
+            href={recording.audioUrl}
+            download={buildDownloadName(recording)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:text-[color:var(--signal-strong)]"
+            aria-label="Download recording"
+          >
+            <Download className="h-4 w-4" />
+          </a>
+          <button
+            onClick={onDelete}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[color:var(--muted)] transition hover:border-[color:var(--ember)] hover:text-[color:var(--ember)]"
+            aria-label="Delete recording"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.2fr,0.8fr]">
+        <div className="rounded-[28px] border border-white/10 bg-black/25 p-4">
+          <div className="mb-4 flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-[color:var(--muted)]">
+            <Play className="h-4 w-4 text-[color:var(--signal-strong)]" />
+            Playback
+          </div>
+          <audio controls preload="metadata" src={recording.audioUrl} className="field-audio w-full" />
+        </div>
+
+        <div className="rounded-[28px] border border-white/10 bg-black/25 p-4">
+          <div className="mb-4 flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-[color:var(--muted)]">
+            <MapPin className="h-4 w-4 text-[color:var(--ember)]" />
+            Position
+          </div>
+          <dl className="grid gap-3 text-sm">
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-[color:var(--muted)]">Latitude</dt>
+              <dd className="font-['IBM_Plex_Mono'] text-[color:var(--paper)]">{recording.gps.lat.toFixed(6)}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-[color:var(--muted)]">Longitude</dt>
+              <dd className="font-['IBM_Plex_Mono'] text-[color:var(--paper)]">{recording.gps.lon.toFixed(6)}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-[color:var(--muted)]">Accuracy</dt>
+              <dd className="font-['IBM_Plex_Mono'] text-[color:var(--paper)]">
+                {recording.gps.accuracy ? `${Math.round(recording.gps.accuracy)} m` : 'Unknown'}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+
+      {recording.imageUrl ? (
+        <div className="space-y-3">
+          <img
+            src={recording.imageUrl}
+            alt="AI-generated soundscape"
+            className="h-56 w-full rounded-[30px] border border-white/10 object-cover"
+            referrerPolicy="no-referrer"
+          />
+          <p className="rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-3 text-sm italic text-[color:var(--muted)]">
+            {recording.prompt}
+          </p>
+        </div>
+      ) : (
+        <button
+          onClick={onGenerateImage}
+          disabled={isGeneratingImage}
+          className="inline-flex items-center justify-center gap-3 rounded-[24px] border border-dashed border-white/15 bg-white/[0.03] px-4 py-4 text-sm text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:bg-[color:var(--signal-soft)] disabled:cursor-wait disabled:opacity-60"
+        >
+          {isGeneratingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
+          {isGeneratingImage ? 'Rendering visual' : 'Generate AI soundscape visual'}
+        </button>
+      )}
+    </motion.article>
+  );
+}
+
 export default function App() {
-  const [isRecording, setIsRecording] = useState(false);
-  const [isWalkMode, setIsWalkMode] = useState(false);
-  const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [currentGps, setCurrentGps] = useState<{ lat: number; lon: number } | null>(null);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const [view, setView] = useState<'record' | 'history' | 'python'>('record');
-  const [isGeneratingImage, setIsGeneratingImage] = useState<string | null>(null);
+  const [view, setView] = useState<View>('capture');
+  const [captureMode, setCaptureMode] = useState<CaptureMode>('idle');
+  const [recordings, setRecordings] = useState<UiRecording[]>([]);
+  const [currentGps, setCurrentGps] = useState<Coordinates | null>(null);
+  const [gpsMessage, setGpsMessage] = useState('Acquiring location lock...');
+  const [gpsStatus, setGpsStatus] = useState<'pending' | 'ready' | 'error'>('pending');
+  const [liveSessionMs, setLiveSessionMs] = useState(0);
+  const [statusNote, setStatusNote] = useState('Recorder armed. Capture a precise moment or switch to walk mode.');
+  const [appError, setAppError] = useState<string | null>(null);
+  const [storageMode, setStorageMode] = useState<'loading' | 'ready' | 'memory-only'>('loading');
+  const [isGeneratingImageId, setIsGeneratingImageId] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const walkModeIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const sessionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentGpsRef = useRef<Coordinates | null>(null);
+  const recordingsRef = useRef<UiRecording[]>([]);
 
-  // --- GPS TRACKING ---
   useEffect(() => {
-    if ("geolocation" in navigator) {
-      const watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          setCurrentGps({
-            lat: position.coords.latitude,
-            lon: position.coords.longitude
-          });
-        },
-        (error) => console.error("GPS Error:", error),
-        { enableHighAccuracy: true }
-      );
-      return () => navigator.geolocation.clearWatch(watchId);
+    recordingsRef.current = recordings;
+  }, [recordings]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!('geolocation' in navigator)) {
+      setGpsStatus('error');
+      setGpsMessage('This browser does not expose geolocation.');
+      return undefined;
     }
-  }, []);
 
-  // --- AUDIO LOGIC ---
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        if (!active) {
+          return;
+        }
 
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        
-        const newRecording: Recording = {
-          id: uuidv4(),
-          timestamp: new Date().toISOString(),
-          gps: currentGps || { lat: 0, lon: 0 },
-          audioUrl,
-          duration: recordingTime
+        const nextLocation = {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          accuracy: position.coords.accuracy ?? null,
         };
 
-        setRecordings(prev => [newRecording, ...prev]);
-        setRecordingTime(0);
-      };
+        currentGpsRef.current = nextLocation;
+        setCurrentGps(nextLocation);
+        setGpsStatus('ready');
+        setGpsMessage(`Lock stable within ${Math.round(nextLocation.accuracy ?? 0)} meters.`);
+      },
+      (error) => {
+        if (!active) {
+          return;
+        }
 
-      mediaRecorder.start();
-      setIsRecording(true);
-      
-      timerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
-      }, 1000);
+        setGpsStatus('error');
+        if (error.code === error.PERMISSION_DENIED) {
+          setGpsMessage('Location access was denied. Recordings will use 0,0 until you allow it.');
+        } else {
+          setGpsMessage('Location signal is unstable right now.');
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 15_000,
+        timeout: 20_000,
+      },
+    );
 
-    } catch (err) {
-      console.error("Microphone access denied:", err);
+    return () => {
+      active = false;
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPersistedRecordings() {
+      try {
+        const stored = await listStoredRecordings();
+        const hydrated = stored.map(hydrateRecording);
+
+        if (!active) {
+          hydrated.forEach((recording) => URL.revokeObjectURL(recording.audioUrl));
+          return;
+        }
+
+        setRecordings((previous) => {
+          if (previous.length === 0) {
+            return hydrated;
+          }
+
+          const merged = new Map<string, UiRecording>();
+
+          for (const recording of hydrated) {
+            merged.set(recording.id, recording);
+          }
+
+          for (const recording of previous) {
+            const duplicate = merged.get(recording.id);
+            if (duplicate) {
+              URL.revokeObjectURL(duplicate.audioUrl);
+            }
+            merged.set(recording.id, recording);
+          }
+
+          return Array.from(merged.values()).sort(
+            (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+          );
+        });
+        setStorageMode('ready');
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        console.error('Storage bootstrap failed:', error);
+        setStorageMode('memory-only');
+        setStatusNote('Local archive unavailable. New takes remain in memory for this session.');
+      }
     }
-  };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (timerRef.current) clearInterval(timerRef.current);
+    loadPersistedRecordings();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sessionTimerRef.current) {
+        clearInterval(sessionTimerRef.current);
+      }
+
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.ondataavailable = null;
+        mediaRecorderRef.current.onstop = null;
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // Ignore stop errors during shutdown.
+        }
+      }
+
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+
+      recordingsRef.current.forEach((recording) => URL.revokeObjectURL(recording.audioUrl));
+    };
+  }, []);
+
+  function stopSessionTimer() {
+    if (sessionTimerRef.current) {
+      clearInterval(sessionTimerRef.current);
+      sessionTimerRef.current = null;
     }
-  };
+  }
 
-  // --- WALK MODE (BUFFER RECORDING) ---
-  const toggleWalkMode = () => {
-    if (!isWalkMode) {
-      setIsWalkMode(true);
-      // Simulate continuous buffer recording every 30 seconds
-      walkModeIntervalRef.current = setInterval(() => {
-        console.log("Walk Mode: Auto-saving buffer...");
-        // In a real app, we'd slice the current stream buffer here
-      }, 30000);
-    } else {
-      setIsWalkMode(false);
-      if (walkModeIntervalRef.current) clearInterval(walkModeIntervalRef.current);
+  function startSessionTimer(startedAt: number) {
+    stopSessionTimer();
+    setLiveSessionMs(0);
+
+    sessionTimerRef.current = setInterval(() => {
+      setLiveSessionMs(Date.now() - startedAt);
+    }, 250);
+  }
+
+  function releaseStream() {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
     }
-  };
 
-  // --- GEMINI IMAGE GENERATION ---
-  const generateSoundscape = async (recording: Recording) => {
-    setIsGeneratingImage(recording.id);
+    mediaRecorderRef.current = null;
+  }
+
+  function closeCapture(resetClock = true) {
+    stopSessionTimer();
+    releaseStream();
+    if (resetClock) {
+      setLiveSessionMs(0);
+    }
+  }
+
+  async function prepareRecorder(): Promise<MediaRecorder | null> {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setAppError('This browser cannot access the microphone.');
+      return null;
+    }
+
+    if (typeof MediaRecorder === 'undefined') {
+      setAppError('MediaRecorder is not supported in this browser.');
+      return null;
+    }
+
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `A cinematic, abstract digital art piece representing a soundscape at coordinates ${recording.gps.lat}, ${recording.gps.lon}. The mood is ${recording.duration > 10 ? 'complex and layered' : 'minimal and focused'}. Style: Atmospheric, high-detail, artistic interpretation of field recordings.`;
-      
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+
+      const preferredMimeType = chooseAudioMimeType();
+      const recorder = preferredMimeType
+        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+        : new MediaRecorder(stream);
+
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+
+      return recorder;
+    } catch (error) {
+      console.error('Microphone access failed:', error);
+      setAppError('Microphone access failed. Check browser permissions and secure context.');
+      return null;
+    }
+  }
+
+  async function persistAndHydrate(recording: StoredRecording) {
+    if (storageMode !== 'memory-only') {
+      try {
+        await saveStoredRecording(recording);
+        setStorageMode('ready');
+      } catch (error) {
+        console.error('Saving recording failed:', error);
+        setStorageMode('memory-only');
+        setStatusNote('Storage write failed. New takes stay in memory until refresh.');
+      }
+    }
+
+    setRecordings((previous) => [hydrateRecording(recording), ...previous]);
+  }
+
+  async function finalizeRecording(blob: Blob, durationMs: number, mode: Exclude<CaptureMode, 'idle'>) {
+    if (blob.size === 0) {
+      setAppError('The recorder returned an empty audio clip.');
+      return;
+    }
+
+    const gps = currentGpsRef.current ?? FALLBACK_GPS;
+
+    const storedRecording: StoredRecording = {
+      id: uuidv4(),
+      createdAt: new Date().toISOString(),
+      durationMs,
+      mode,
+      gps: {
+        lat: gps.lat,
+        lon: gps.lon,
+        accuracy: gps.accuracy,
+      },
+      mimeType: blob.type || chooseAudioMimeType() || 'audio/webm',
+      audioBlob: blob,
+    };
+
+    await persistAndHydrate(storedRecording);
+    setAppError(null);
+    setStatusNote(mode === 'walk' ? 'Walk slice archived.' : 'Take archived to your local field library.');
+  }
+
+  async function startManualRecording() {
+    if (captureMode !== 'idle') {
+      return;
+    }
+
+    setAppError(null);
+
+    const recorder = await prepareRecorder();
+    if (!recorder) {
+      return;
+    }
+
+    const chunks: Blob[] = [];
+    const startedAt = Date.now();
+
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        chunks.push(event.data);
+      }
+    };
+
+    recorder.onerror = () => {
+      setAppError('Recording failed while writing the take.');
+      setCaptureMode('idle');
+      closeCapture();
+    };
+
+    recorder.onstop = async () => {
+      const clipMimeType = recorder.mimeType || chunks[0]?.type || chooseAudioMimeType() || 'audio/webm';
+      const blob = new Blob(chunks, { type: clipMimeType });
+      await finalizeRecording(blob, Math.max(1000, Date.now() - startedAt), 'manual');
+      setCaptureMode('idle');
+      closeCapture();
+    };
+
+    try {
+      recorder.start();
+      setCaptureMode('manual');
+      setStatusNote('Manual take rolling. Press stop when the scene is complete.');
+      startSessionTimer(startedAt);
+    } catch (error) {
+      console.error('Recorder start failed:', error);
+      setAppError('The recorder could not start.');
+      closeCapture();
+    }
+  }
+
+  function stopManualRecording() {
+    if (captureMode !== 'manual' || !mediaRecorderRef.current) {
+      return;
+    }
+
+    setStatusNote('Finalizing take...');
+    stopSessionTimer();
+    mediaRecorderRef.current.stop();
+  }
+
+  async function startWalkMode() {
+    if (captureMode !== 'idle') {
+      return;
+    }
+
+    setAppError(null);
+
+    const recorder = await prepareRecorder();
+    if (!recorder) {
+      return;
+    }
+
+    const sessionStartedAt = Date.now();
+    let sliceStartedAt = sessionStartedAt;
+
+    recorder.ondataavailable = async (event) => {
+      if (event.data.size === 0) {
+        return;
+      }
+
+      const now = Date.now();
+      const sliceDuration = Math.max(1000, now - sliceStartedAt);
+      sliceStartedAt = now;
+      await finalizeRecording(event.data, sliceDuration, 'walk');
+    };
+
+    recorder.onerror = () => {
+      setAppError('Walk mode failed while slicing audio.');
+      setCaptureMode('idle');
+      closeCapture();
+    };
+
+    recorder.onstop = () => {
+      setCaptureMode('idle');
+      closeCapture();
+      setStatusNote('Walk mode paused. The last slice has been flushed.');
+    };
+
+    try {
+      recorder.start(CAPTURE_SLICE_MS);
+      setCaptureMode('walk');
+      setStatusNote('Walk mode active. A new 30 second slice is archived continuously.');
+      startSessionTimer(sessionStartedAt);
+    } catch (error) {
+      console.error('Walk mode start failed:', error);
+      setAppError('Walk mode could not start.');
+      closeCapture();
+    }
+  }
+
+  function stopWalkMode() {
+    if (captureMode !== 'walk' || !mediaRecorderRef.current) {
+      return;
+    }
+
+    setStatusNote('Flushing final walk slice...');
+    stopSessionTimer();
+    mediaRecorderRef.current.stop();
+  }
+
+  async function removeRecording(recording: UiRecording) {
+    URL.revokeObjectURL(recording.audioUrl);
+    setRecordings((previous) => previous.filter((entry) => entry.id !== recording.id));
+
+    if (storageMode === 'ready') {
+      try {
+        await deleteStoredRecording(recording.id);
+      } catch (error) {
+        console.error('Deleting recording failed:', error);
+        setAppError('The take disappeared from memory but could not be removed from storage.');
+      }
+    }
+  }
+
+  async function generateSoundscape(recording: UiRecording) {
+    const apiKey = process.env.GEMINI_API_KEY?.trim();
+    if (!apiKey) {
+      setAppError('GEMINI_API_KEY is missing. Add it before generating visuals.');
+      return;
+    }
+
+    setAppError(null);
+    setIsGeneratingImageId(recording.id);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Create an abstract cinematic image for a field recording captured at latitude ${recording.gps.lat.toFixed(5)} and longitude ${recording.gps.lon.toFixed(5)}. The clip lasts ${Math.round(recording.durationMs / 1000)} seconds and should feel ${recording.mode === 'walk' ? 'restless, moving, and wind-cut' : 'precise, attentive, and intimate'}. Use topographic patterns, warm signal lights, and atmospheric depth.`;
+
       const response = await ai.models.generateContent({
         model: 'gemini-3.1-flash-image-preview',
         contents: [{ parts: [{ text: prompt }] }],
       });
 
-      let imageUrl = "";
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          imageUrl = `data:image/png;base64,${part.inlineData.data}`;
+      const parts = response.candidates?.[0]?.content?.parts ?? [];
+      let imageUrl = '';
+
+      for (const part of parts as Array<{ inlineData?: { data?: string; mimeType?: string } }>) {
+        if (part.inlineData?.data) {
+          const mimeType = part.inlineData.mimeType ?? 'image/png';
+          imageUrl = `data:${mimeType};base64,${part.inlineData.data}`;
           break;
         }
       }
 
-      setRecordings(prev => prev.map(r => 
-        r.id === recording.id ? { ...r, imageUrl, prompt } : r
-      ));
-    } catch (err) {
-      console.error("Image generation failed:", err);
-    } finally {
-      setIsGeneratingImage(null);
-    }
-  };
+      if (!imageUrl) {
+        throw new Error('Gemini did not return an inline image.');
+      }
 
-  const deleteRecording = (id: string) => {
-    setRecordings(prev => prev.filter(r => r.id !== id));
-  };
+      setRecordings((previous) =>
+        previous.map((entry) => (entry.id === recording.id ? { ...entry, imageUrl, prompt } : entry)),
+      );
+
+      if (storageMode === 'ready') {
+        await updateStoredRecordingVisual(recording.id, imageUrl, prompt);
+      }
+
+      setStatusNote('AI visual generated and attached to the take.');
+    } catch (error) {
+      console.error('Image generation failed:', error);
+      setAppError(error instanceof Error ? error.message : 'Image generation failed.');
+    } finally {
+      setIsGeneratingImageId(null);
+    }
+  }
+
+  const latestRecording = recordings[0] ?? null;
+  const totalArchiveDurationMs = recordings.reduce((sum, recording) => sum + recording.durationMs, 0);
+  const gpsLabel = currentGps
+    ? `${currentGps.lat.toFixed(5)}, ${currentGps.lon.toFixed(5)}`
+    : 'No active lock';
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-[#E0E0E0] font-sans selection:bg-emerald-500/30">
-      
-      {/* Header */}
-      <header className="fixed top-0 w-full z-50 bg-[#0A0A0A]/80 backdrop-blur-md border-b border-white/5 px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-            <Volume2 className="text-black w-5 h-5" />
-          </div>
-          <h1 className="text-lg font-semibold tracking-tight">FIELD RECORDER <span className="text-emerald-500">PRO</span></h1>
-        </div>
-        <div className="flex gap-4">
-          <button onClick={() => setView('record')} className={`p-2 rounded-full transition-colors ${view === 'record' ? 'bg-emerald-500/10 text-emerald-500' : 'text-zinc-500 hover:text-white'}`}>
-            <Mic className="w-5 h-5" />
-          </button>
-          <button onClick={() => setView('history')} className={`p-2 rounded-full transition-colors ${view === 'history' ? 'bg-emerald-500/10 text-emerald-500' : 'text-zinc-500 hover:text-white'}`}>
-            <History className="w-5 h-5" />
-          </button>
-          <button onClick={() => setView('python')} className={`p-2 rounded-full transition-colors ${view === 'python' ? 'bg-emerald-500/10 text-emerald-500' : 'text-zinc-500 hover:text-white'}`}>
-            <Settings className="w-5 h-5" />
-          </button>
-        </div>
-      </header>
+    <div className="field-shell min-h-screen px-4 py-5 md:px-8 md:py-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+        <motion.header
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]"
+        >
+          <div className="hero-panel overflow-hidden p-6 md:p-8">
+            <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-3">
+                <p className="eyebrow text-[color:var(--signal-strong)]">Field Unit Atlas</p>
+                <h1 className="max-w-3xl font-['Fraunces'] text-5xl leading-[0.92] text-[color:var(--paper)] md:text-7xl">
+                  Capture the ground truth before the atmosphere disappears.
+                </h1>
+              </div>
+              <div className="rounded-[28px] border border-white/10 bg-black/20 px-4 py-3 text-right">
+                <p className="eyebrow text-[color:var(--muted)]">Live Timer</p>
+                <p className="font-['IBM_Plex_Mono'] text-3xl text-[color:var(--paper)]">{formatDuration(liveSessionMs)}</p>
+              </div>
+            </div>
 
-      <main className="pt-24 pb-32 px-6 max-w-2xl mx-auto">
-        
-        {view === 'record' && (
-          <div className="space-y-12">
-            {/* GPS Status */}
-            <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-zinc-800 rounded-xl flex items-center justify-center">
-                  <MapPin className="text-emerald-500 w-5 h-5" />
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="metric-card">
+                <p className="eyebrow text-[color:var(--muted)]">Archive</p>
+                <p className="mt-3 font-['Fraunces'] text-3xl text-[color:var(--paper)]">{recordings.length}</p>
+                <p className="mt-2 text-sm text-[color:var(--muted)]">persistent takes on this device</p>
+              </div>
+              <div className="metric-card">
+                <p className="eyebrow text-[color:var(--muted)]">Footprint</p>
+                <p className="mt-3 font-['Fraunces'] text-3xl text-[color:var(--paper)]">{formatDuration(totalArchiveDurationMs)}</p>
+                <p className="mt-2 text-sm text-[color:var(--muted)]">total monitored ambience</p>
+              </div>
+              <div className="metric-card">
+                <p className="eyebrow text-[color:var(--muted)]">Storage</p>
+                <p className="mt-3 font-['Fraunces'] text-3xl text-[color:var(--paper)]">
+                  {storageMode === 'ready' ? 'Local' : storageMode === 'loading' ? 'Syncing' : 'Memory'}
+                </p>
+                <p className="mt-2 text-sm text-[color:var(--muted)]">
+                  {storageMode === 'ready'
+                    ? 'IndexedDB archive is active'
+                    : storageMode === 'loading'
+                      ? 'bootstrapping the archive'
+                      : 'data resets on refresh'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="panel flex flex-col justify-between gap-5 p-6">
+            <div className="space-y-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[color:var(--signal-soft)] bg-[color:var(--signal-soft)]">
+                  <Volume2 className="h-5 w-5 text-[color:var(--paper)]" />
                 </div>
                 <div>
-                  <p className="text-xs text-zinc-500 uppercase tracking-widest font-bold">Location Status</p>
-                  <p className="text-sm font-mono">
-                    {currentGps ? `${currentGps.lat.toFixed(6)}, ${currentGps.lon.toFixed(6)}` : "Acquiring GPS..."}
+                  <p className="eyebrow text-[color:var(--muted)]">Recorder Status</p>
+                  <p className="text-xl text-[color:var(--paper)]">
+                    {captureMode === 'manual'
+                      ? 'Manual take rolling'
+                      : captureMode === 'walk'
+                        ? 'Walk mode slicing'
+                        : 'Standing by'}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${currentGps ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-700'}`} />
-                <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">Active</span>
-              </div>
+              <p className="text-sm leading-6 text-[color:var(--muted)]">{statusNote}</p>
+              {appError ? (
+                <div className="rounded-[24px] border border-[color:rgba(255,140,92,0.3)] bg-[rgba(255,140,92,0.12)] px-4 py-3 text-sm text-[color:var(--paper)]">
+                  {appError}
+                </div>
+              ) : null}
             </div>
 
-            {/* Main Recorder */}
-            <div className="flex flex-col items-center justify-center py-12 space-y-8">
-              <div className="relative">
-                <AnimatePresence>
-                  {isRecording && (
-                    <motion.div 
-                      initial={{ scale: 0.8, opacity: 0 }}
-                      animate={{ scale: 1.2, opacity: 1 }}
-                      exit={{ scale: 0.8, opacity: 0 }}
-                      className="absolute inset-0 bg-emerald-500/20 rounded-full blur-3xl"
-                    />
-                  )}
-                </AnimatePresence>
-                
-                <button 
-                  onClick={isRecording ? stopRecording : startRecording}
-                  className={`relative w-48 h-48 rounded-full flex flex-col items-center justify-center transition-all duration-500 ${
-                    isRecording 
-                    ? 'bg-red-500 shadow-[0_0_50px_rgba(239,68,68,0.4)]' 
-                    : 'bg-emerald-500 hover:scale-105 shadow-[0_0_30px_rgba(16,185,129,0.2)]'
-                  }`}
-                >
-                  {isRecording ? (
-                    <Square className="w-12 h-12 text-white fill-white" />
-                  ) : (
-                    <Mic className="w-12 h-12 text-black" />
-                  )}
-                  <span className={`mt-4 text-xs font-bold uppercase tracking-widest ${isRecording ? 'text-white' : 'text-black'}`}>
-                    {isRecording ? "Stop Recording" : "Register Moment"}
-                  </span>
-                </button>
+            <div className="grid gap-3">
+              <div className="rounded-[24px] border border-white/10 bg-black/25 px-4 py-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <MapPin className={`h-4 w-4 ${gpsStatus === 'ready' ? 'text-[color:var(--signal-strong)]' : 'text-[color:var(--ember)]'}`} />
+                  <p className="eyebrow text-[color:var(--muted)]">Location lock</p>
+                </div>
+                <p className="font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{gpsLabel}</p>
+                <p className="mt-2 text-sm text-[color:var(--muted)]">{gpsMessage}</p>
               </div>
-
-              <div className="text-center space-y-2">
-                <p className="text-5xl font-mono font-light tracking-tighter">
-                  {format(recordingTime * 1000, 'mm:ss')}
-                </p>
-                <p className="text-xs text-zinc-500 uppercase tracking-widest font-bold">
-                  {isRecording ? "Recording in progress" : "Ready to capture"}
+              <div className="rounded-[24px] border border-white/10 bg-black/25 px-4 py-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <Wind className="h-4 w-4 text-[color:var(--ember)]" />
+                  <p className="eyebrow text-[color:var(--muted)]">Capture modes</p>
+                </div>
+                <p className="text-sm leading-6 text-[color:var(--muted)]">
+                  Manual mode records a deliberate single take. Walk mode keeps the mic open and archives a fresh 30 second slice until you stop it.
                 </p>
               </div>
-            </div>
-
-            {/* Walk Mode Toggle */}
-            <div className="flex justify-center">
-              <button 
-                onClick={toggleWalkMode}
-                className={`flex items-center gap-3 px-6 py-3 rounded-full border transition-all ${
-                  isWalkMode 
-                  ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500' 
-                  : 'bg-zinc-900/50 border-white/5 text-zinc-400 hover:text-white'
-                }`}
-              >
-                <Activity className={`w-4 h-4 ${isWalkMode ? 'animate-pulse' : ''}`} />
-                <span className="text-xs font-bold uppercase tracking-widest">Walk Mode {isWalkMode ? 'ON' : 'OFF'}</span>
-              </button>
             </div>
           </div>
-        )}
+        </motion.header>
 
-        {view === 'history' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center mb-8">
-              <h2 className="text-2xl font-bold tracking-tight">Library</h2>
-              <span className="text-xs text-zinc-500 font-mono">{recordings.length} items</span>
-            </div>
-            
-            <AnimatePresence mode="popLayout">
-              {recordings.length === 0 ? (
-                <div className="text-center py-20 text-zinc-600">
-                  <History className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                  <p>No recordings yet</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <ViewButton active={view === 'capture'} label="Capture" icon={Mic} onClick={() => setView('capture')} />
+          <ViewButton active={view === 'library'} label="Library" icon={History} onClick={() => setView('library')} />
+          <ViewButton active={view === 'system'} label="System" icon={Settings} onClick={() => setView('system')} />
+        </div>
+
+        <AnimatePresence mode="wait">
+          {view === 'capture' ? (
+            <motion.section
+              key="capture"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              className="grid gap-6 xl:grid-cols-[1.1fr,0.9fr]"
+            >
+              <div className="panel flex flex-col items-center justify-center gap-8 px-6 py-8 md:px-10 md:py-12">
+                <div className="text-center">
+                  <p className="eyebrow text-[color:var(--signal-strong)]">Primary Capture</p>
+                  <p className="mt-3 max-w-xl text-sm leading-7 text-[color:var(--muted)]">
+                    Use the large trigger for one intentional take. Keep walk mode for moving through a route and harvesting timed slices without stopping.
+                  </p>
                 </div>
-              ) : (
-                recordings.map((rec) => (
-                  <motion.div 
-                    key={rec.id}
-                    layout
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className="bg-zinc-900/40 border border-white/5 rounded-2xl overflow-hidden"
+
+                <button
+                  onClick={captureMode === 'manual' ? stopManualRecording : startManualRecording}
+                  disabled={captureMode === 'walk'}
+                  className={`capture-dial flex h-72 w-72 items-center justify-center rounded-full border text-center transition md:h-80 md:w-80 ${
+                    captureMode === 'manual'
+                      ? 'border-[color:rgba(255,140,92,0.5)] bg-[radial-gradient(circle_at_top,rgba(255,140,92,0.32),rgba(15,18,17,0.96)_70%)] text-[color:var(--paper)] shadow-[0_0_90px_rgba(255,140,92,0.16)]'
+                      : 'border-[color:rgba(191,255,136,0.35)] bg-[radial-gradient(circle_at_top,rgba(191,255,136,0.22),rgba(12,16,14,0.96)_70%)] text-[color:var(--paper)] shadow-[0_0_90px_rgba(191,255,136,0.12)]'
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  <div className="space-y-4">
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-black/20">
+                      {captureMode === 'manual' ? <Square className="h-7 w-7 fill-current" /> : <Mic className="h-8 w-8" />}
+                    </div>
+                    <div>
+                      <p className="eyebrow text-[color:var(--muted)]">
+                        {captureMode === 'manual' ? 'Stop and archive' : 'Record a manual take'}
+                      </p>
+                      <p className="mt-3 font-['Fraunces'] text-4xl">
+                        {captureMode === 'manual' ? 'Seal the scene' : 'Register the moment'}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                <div className="grid w-full gap-4 md:grid-cols-2">
+                  <button
+                    onClick={captureMode === 'walk' ? stopWalkMode : startWalkMode}
+                    disabled={captureMode === 'manual'}
+                    className={`rounded-[28px] border px-5 py-5 text-left transition ${
+                      captureMode === 'walk'
+                        ? 'border-[color:rgba(255,140,92,0.3)] bg-[rgba(255,140,92,0.12)]'
+                        : 'border-white/10 bg-white/[0.03] hover:border-[color:var(--signal-strong)] hover:bg-[color:var(--signal-soft)]'
+                    } disabled:cursor-not-allowed disabled:opacity-50`}
                   >
-                    <div className="p-5 space-y-4">
-                      <div className="flex justify-between items-start">
+                    <div className="mb-3 flex items-center gap-3">
+                      <Activity className={`h-5 w-5 ${captureMode === 'walk' ? 'text-[color:var(--ember)]' : 'text-[color:var(--signal-strong)]'}`} />
+                      <p className="eyebrow text-[color:var(--muted)]">Walk Mode</p>
+                    </div>
+                    <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">
+                      {captureMode === 'walk' ? 'Stop timed slices' : 'Start timed slices'}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                      {captureMode === 'walk'
+                        ? 'The mic is open and the recorder is flushing the last segment.'
+                        : 'Continuous route capture. Every 30 seconds becomes a new archived take.'}
+                    </p>
+                  </button>
+
+                  <div className="rounded-[28px] border border-white/10 bg-white/[0.03] px-5 py-5">
+                    <div className="mb-3 flex items-center gap-3">
+                      <Zap className="h-5 w-5 text-[color:var(--ember)]" />
+                      <p className="eyebrow text-[color:var(--muted)]">Scene Notes</p>
+                    </div>
+                    <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">Capture clean inputs</p>
+                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                      Headphones off, keep the device still during intentional takes, and use walk mode only when movement matters more than isolation.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-6">
+                <div className="panel p-6">
+                  <p className="eyebrow text-[color:var(--signal-strong)]">Latest Take</p>
+                  {latestRecording ? (
+                    <div className="mt-5 space-y-4">
+                      <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-xs text-zinc-500 font-mono mb-1">{format(new Date(rec.timestamp), 'MMM d, yyyy · HH:mm:ss')}</p>
-                          <div className="flex items-center gap-2 text-emerald-500">
-                            <MapPin className="w-3 h-3" />
-                            <span className="text-[10px] font-mono">{rec.gps.lat.toFixed(4)}, {rec.gps.lon.toFixed(4)}</span>
-                          </div>
+                          <p className="font-['Fraunces'] text-3xl text-[color:var(--paper)]">
+                            {format(new Date(latestRecording.createdAt), 'MMM d · HH:mm')}
+                          </p>
+                          <p className="text-sm text-[color:var(--muted)]">
+                            {latestRecording.mode === 'walk' ? 'Walk slice' : 'Manual take'} · {formatDuration(latestRecording.durationMs)}
+                          </p>
                         </div>
-                        <button 
-                          onClick={() => deleteRecording(rec.id)}
-                          className="p-2 text-zinc-600 hover:text-red-400 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[10px] uppercase tracking-[0.24em] text-[color:var(--muted)]">
+                          {latestRecording.gps.lat.toFixed(4)}, {latestRecording.gps.lon.toFixed(4)}
+                        </span>
                       </div>
-
-                      <div className="flex items-center gap-4 bg-black/20 rounded-xl p-3">
-                        <button className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center text-black">
-                          <Play className="w-4 h-4 fill-black" />
-                        </button>
-                        <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-500 w-1/3" />
-                        </div>
-                        <span className="text-[10px] font-mono text-zinc-500">{format(rec.duration * 1000, 'mm:ss')}</span>
-                      </div>
-
-                      {rec.imageUrl ? (
-                        <div className="relative group">
-                          <img 
-                            src={rec.imageUrl} 
-                            alt="Soundscape" 
-                            className="w-full aspect-video object-cover rounded-xl border border-white/5"
-                            referrerPolicy="no-referrer"
-                          />
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-6 text-center">
-                            <p className="text-[10px] italic text-zinc-300">"{rec.prompt}"</p>
-                          </div>
-                        </div>
+                      <audio controls preload="metadata" src={latestRecording.audioUrl} className="field-audio w-full" />
+                      {latestRecording.imageUrl ? (
+                        <img
+                          src={latestRecording.imageUrl}
+                          alt="Latest generated soundscape"
+                          className="h-52 w-full rounded-[28px] border border-white/10 object-cover"
+                        />
                       ) : (
-                        <button 
-                          onClick={() => generateSoundscape(rec)}
-                          disabled={isGeneratingImage === rec.id}
-                          className="w-full py-3 rounded-xl border border-dashed border-zinc-800 text-zinc-500 hover:text-emerald-500 hover:border-emerald-500/30 transition-all flex items-center justify-center gap-2"
+                        <button
+                          onClick={() => generateSoundscape(latestRecording)}
+                          disabled={isGeneratingImageId === latestRecording.id}
+                          className="inline-flex w-full items-center justify-center gap-3 rounded-[22px] border border-dashed border-white/15 bg-white/[0.03] px-4 py-4 text-sm text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:bg-[color:var(--signal-soft)] disabled:cursor-wait disabled:opacity-60"
                         >
-                          {isGeneratingImage === rec.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
+                          {isGeneratingImageId === latestRecording.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
-                            <ImageIcon className="w-4 h-4" />
+                            <ImageIcon className="h-4 w-4" />
                           )}
-                          <span className="text-[10px] uppercase tracking-widest font-bold">
-                            {isGeneratingImage === rec.id ? "Generating Visual..." : "Generate Soundscape Visual"}
-                          </span>
+                          {isGeneratingImageId === latestRecording.id ? 'Rendering latest visual' : 'Generate visual for latest take'}
                         </button>
                       )}
                     </div>
-                  </motion.div>
-                ))
-              )}
-            </AnimatePresence>
-          </div>
-        )}
+                  ) : (
+                    <div className="mt-5 rounded-[28px] border border-dashed border-white/10 bg-black/15 px-5 py-10 text-center text-sm text-[color:var(--muted)]">
+                      No captures yet. The first take will appear here with immediate playback and AI visual generation.
+                    </div>
+                  )}
+                </div>
 
-        {view === 'python' && (
-          <div className="space-y-6">
-            <div className="flex items-center gap-3 mb-8">
-              <Zap className="text-emerald-500 w-6 h-6" />
-              <h2 className="text-2xl font-bold tracking-tight">Android Source (Kivy)</h2>
-            </div>
-            
-            <div className="bg-zinc-900 border border-white/5 rounded-2xl p-6 overflow-hidden">
-              <div className="flex justify-between items-center mb-4">
-                <span className="text-xs font-mono text-zinc-500">main.py</span>
-                <button className="text-[10px] uppercase tracking-widest font-bold text-emerald-500">Copy Code</button>
+                <div className="panel p-6">
+                  <p className="eyebrow text-[color:var(--signal-strong)]">Archive Protocol</p>
+                  <div className="mt-5 grid gap-4 md:grid-cols-3 xl:grid-cols-1">
+                    <div className="rounded-[24px] border border-white/10 bg-black/20 px-4 py-4">
+                      <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">Persistent</p>
+                      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                        Takes are written to IndexedDB, so the archive survives reloads on the same device.
+                      </p>
+                    </div>
+                    <div className="rounded-[24px] border border-white/10 bg-black/20 px-4 py-4">
+                      <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">Playable</p>
+                      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                        Every recording ships with browser playback and direct file download instead of dead controls.
+                      </p>
+                    </div>
+                    <div className="rounded-[24px] border border-white/10 bg-black/20 px-4 py-4">
+                      <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">Segmented</p>
+                      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                        Walk mode now emits real timed slices rather than a placeholder interval log.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <pre className="text-[10px] font-mono text-zinc-400 overflow-x-auto leading-relaxed">
-{`import os
-import json
-import uuid
-from datetime import datetime
-from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from plyer import gps, audio
+            </motion.section>
+          ) : null}
 
-class FieldRecorderApp(App):
-    def build(self):
-        # ... UI Setup ...
-        return layout
+          {view === 'library' ? (
+            <motion.section
+              key="library"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              className="space-y-5"
+            >
+              <div className="panel flex flex-wrap items-end justify-between gap-4 p-6">
+                <div>
+                  <p className="eyebrow text-[color:var(--signal-strong)]">Field Library</p>
+                  <h2 className="mt-3 font-['Fraunces'] text-4xl text-[color:var(--paper)]">Persistent local takes with playback, GPS, and visuals</h2>
+                </div>
+                <div className="rounded-[24px] border border-white/10 bg-black/20 px-4 py-3">
+                  <p className="eyebrow text-[color:var(--muted)]">Total capture</p>
+                  <p className="mt-2 font-['IBM_Plex_Mono'] text-xl text-[color:var(--paper)]">{formatDuration(totalArchiveDurationMs)}</p>
+                </div>
+              </div>
 
-    def start_recording(self):
-        self.current_id = str(uuid.uuid4())
-        filename = os.path.join("recordings", f"{self.current_id}.wav")
-        audio.start_recording(filename)
+              <AnimatePresence mode="popLayout">
+                {recordings.length === 0 ? (
+                  <motion.div
+                    key="library-empty"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="panel px-6 py-16 text-center"
+                  >
+                    <History className="mx-auto h-12 w-12 text-white/20" />
+                    <p className="mt-4 font-['Fraunces'] text-3xl text-[color:var(--paper)]">No recordings yet</p>
+                    <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-[color:var(--muted)]">
+                      Start with one deliberate manual take. It will be persisted locally, playable immediately, and ready for AI image generation.
+                    </p>
+                  </motion.div>
+                ) : (
+                    <div className="grid gap-5">
+                      {recordings.map((recording) => (
+                        <React.Fragment key={recording.id}>
+                          <RecordingCard
+                            recording={recording}
+                            isGeneratingImage={isGeneratingImageId === recording.id}
+                            onDelete={() => removeRecording(recording)}
+                            onGenerateImage={() => generateSoundscape(recording)}
+                          />
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  )}
+              </AnimatePresence>
+            </motion.section>
+          ) : null}
 
-    def save_metadata(self):
-        data = {
-            "id": self.current_id,
-            "gps": self.gps_coords,
-            "timestamp": datetime.now().isoformat()
-        }
-        # Save to JSON...`}
-              </pre>
-            </div>
+          {view === 'system' ? (
+            <motion.section
+              key="system"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              className="grid gap-6 xl:grid-cols-[0.95fr,1.05fr]"
+            >
+              <div className="panel p-6">
+                <p className="eyebrow text-[color:var(--signal-strong)]">System Surface</p>
+                <div className="mt-5 space-y-4">
+                  <div className="rounded-[24px] border border-white/10 bg-black/20 px-4 py-4">
+                    <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">Web capture engine</p>
+                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                      Manual recording, real walk segmentation, live timer, microphone lifecycle cleanup, local archive persistence, and direct playback are active in the browser client.
+                    </p>
+                  </div>
+                  <div className="rounded-[24px] border border-white/10 bg-black/20 px-4 py-4">
+                    <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">AI rendering</p>
+                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                      Each stored take can produce an atmospheric visual tied to its length and coordinates, then persist that visual back into the archive.
+                    </p>
+                  </div>
+                  <div className="rounded-[24px] border border-white/10 bg-black/20 px-4 py-4">
+                    <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">Android track</p>
+                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                      The Kivy source still exists as a parallel implementation path. It now needs the same hardening pass: permissions UX, real storage rules, and parity with the web archive.
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-            <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-6 space-y-4">
-              <h3 className="text-sm font-bold text-emerald-500 uppercase tracking-widest">Buildozer Instructions</h3>
-              <ol className="text-xs space-y-3 text-zinc-400 list-decimal list-inside">
-                <li>Install Buildozer: <code className="bg-black/40 px-1 rounded">pip install buildozer</code></li>
-                <li>Initialize: <code className="bg-black/40 px-1 rounded">buildozer init</code></li>
-                <li>Edit <code className="bg-black/40 px-1 rounded">buildozer.spec</code> (permissions included in source)</li>
-                <li>Build APK: <code className="bg-black/40 px-1 rounded">buildozer android debug deploy run</code></li>
-              </ol>
-            </div>
-          </div>
-        )}
-      </main>
-
-      {/* Footer Navigation (Mobile Only) */}
-      <nav className="fixed bottom-0 w-full bg-[#0A0A0A]/80 backdrop-blur-md border-t border-white/5 px-8 py-4 flex justify-around items-center md:hidden">
-        <button onClick={() => setView('record')} className={view === 'record' ? 'text-emerald-500' : 'text-zinc-500'}>
-          <Mic className="w-6 h-6" />
-        </button>
-        <button onClick={() => setView('history')} className={view === 'history' ? 'text-emerald-500' : 'text-zinc-500'}>
-          <History className="w-6 h-6" />
-        </button>
-        <button onClick={() => setView('python')} className={view === 'python' ? 'text-emerald-500' : 'text-zinc-500'}>
-          <Settings className="w-6 h-6" />
-        </button>
-      </nav>
+              <div className="panel p-6">
+                <p className="eyebrow text-[color:var(--signal-strong)]">Next Passes</p>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+                    <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">Metadata depth</p>
+                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                      Add title, tags, notes, weather snapshot, and gain readings to make the archive searchable instead of just collectible.
+                    </p>
+                  </div>
+                  <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+                    <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">Waveform UX</p>
+                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                      Generate waveform previews per take and build scrub-friendly custom transport controls for a more exact review workflow.
+                    </p>
+                  </div>
+                  <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+                    <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">Export pack</p>
+                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                      Bundle audio plus metadata JSON into a single export format so the archive can move between devices or into a DAW workflow.
+                    </p>
+                  </div>
+                  <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+                    <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">Cloud sync</p>
+                    <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                      Once the browser foundation is stable, move persistence to a backend and take Gemini calls out of the client runtime.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.section>
+          ) : null}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 {
   "name": "Field Recorder Pro",
   "description": "A professional field recording app for Android (Kivy) and Web (React). Capture high-fidelity audio, GPS coordinates, and generate AI soundscapes.",
-  "requestFramePermissions": ["camera", "microphone", "geolocation"]
+  "requestFramePermissions": ["microphone", "geolocation"]
 }
