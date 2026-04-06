@@ -1,5 +1,5 @@
 {
-  "name": "Field Recorder Pro",
-  "description": "A field recording app for web and Android with GPS points, place photos, field metadata, and local archive export.",
+  "name": "Soundscape Recorder",
+  "description": "Professional field recording app for documenting soundscape sessions with GPS points, photos, weather, and structured export.",
   "requestFramePermissions": ["camera", "microphone", "geolocation"]
 }
