@@ -86,8 +86,34 @@ interface UiFieldSession extends Omit<FieldSession, 'points'> {
   points: UiSessionPoint[];
 }
 
+interface ProjectArchiveGroup {
+  key: string;
+  name: string;
+  sessions: UiFieldSession[];
+  sessionCount: number;
+  pointCount: number;
+  photoCount: number;
+  audioTakeCount: number;
+  activeSessionCount: number;
+  latestStartedAt: string;
+}
+
 function formatDateTime(value: Date | string, pattern: string) {
   return format(typeof value === 'string' ? new Date(value) : value, pattern, { locale: es });
+}
+
+function resolveProjectName(projectName: string): string {
+  return projectName.trim() || 'Sin proyecto';
+}
+
+function buildProjectKey(projectName: string): string {
+  return resolveProjectName(projectName)
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'sin-proyecto';
 }
 
 function normalizeTags(value: string): string[] {
@@ -366,6 +392,51 @@ function buildSessionMapPoints(points: UiSessionPoint[]) {
     }));
 }
 
+function groupSessionsByProject(sessions: UiFieldSession[]): ProjectArchiveGroup[] {
+  const groups = new Map<string, ProjectArchiveGroup>();
+
+  sessions.forEach((session) => {
+    const name = resolveProjectName(session.projectName);
+    const key = buildProjectKey(session.projectName);
+    const photoCount = session.points.reduce((count, point) => count + point.photos.length, 0);
+    const existing = groups.get(key);
+
+    if (existing) {
+      existing.sessions.push(session);
+      existing.sessionCount += 1;
+      existing.pointCount += session.points.length;
+      existing.photoCount += photoCount;
+      existing.audioTakeCount += session.audioTakes.length;
+      existing.activeSessionCount += session.status === 'active' ? 1 : 0;
+      if (new Date(session.startedAt).getTime() > new Date(existing.latestStartedAt).getTime()) {
+        existing.latestStartedAt = session.startedAt;
+      }
+      return;
+    }
+
+    groups.set(key, {
+      key,
+      name,
+      sessions: [session],
+      sessionCount: 1,
+      pointCount: session.points.length,
+      photoCount,
+      audioTakeCount: session.audioTakes.length,
+      activeSessionCount: session.status === 'active' ? 1 : 0,
+      latestStartedAt: session.startedAt,
+    });
+  });
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      sessions: [...group.sessions].sort(
+        (left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime(),
+      ),
+    }))
+    .sort((left, right) => new Date(right.latestStartedAt).getTime() - new Date(left.latestStartedAt).getTime());
+}
+
 function formatGpsReadyMessage(location: GpsCoordinates): string {
   return location.accuracy
     ? `GPS estable dentro de ${Math.round(location.accuracy)} m.`
@@ -419,6 +490,7 @@ export default function App() {
   const [pointDraft, setPointDraft] = useState<PointDraft>(buildPointDraft());
   const [draftPhotos, setDraftPhotos] = useState<DraftPhoto[]>([]);
   const [sessions, setSessions] = useState<UiFieldSession[]>([]);
+  const [selectedArchiveProjectKey, setSelectedArchiveProjectKey] = useState<'all' | string>('all');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
   const [currentGps, setCurrentGps] = useState<GpsCoordinates | null>(null);
@@ -461,8 +533,20 @@ export default function App() {
   const selectedPoint =
     activeSession?.points.find((point) => point.id === selectedPointId) ?? activeSession?.points[0] ?? null;
   const activeSessionMapPoints = activeSession ? buildSessionMapPoints(activeSession.points) : [];
+  const archiveProjectGroups = groupSessionsByProject(sessions);
   const draftPointCoordinates = resolvePointCoordinates(pointDraft, currentGps);
   const draftPointLabel = pointDraft.placeName.trim() || detectedPlace?.placeName || 'Punto preparado';
+  const knownProjectNames = Array.from(
+    new Set(
+      sessions
+        .map((session) => session.projectName.trim())
+        .filter(Boolean),
+    ),
+  ).sort((left: string, right: string) => left.localeCompare(right, 'es'));
+  const visibleArchiveProjectGroups =
+    selectedArchiveProjectKey === 'all'
+      ? archiveProjectGroups
+      : archiveProjectGroups.filter((group) => group.key === selectedArchiveProjectKey);
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -471,6 +555,16 @@ export default function App() {
   useEffect(() => {
     draftPhotosRef.current = draftPhotos;
   }, [draftPhotos]);
+
+  useEffect(() => {
+    if (selectedArchiveProjectKey === 'all') {
+      return;
+    }
+
+    if (!archiveProjectGroups.some((group) => group.key === selectedArchiveProjectKey)) {
+      setSelectedArchiveProjectKey('all');
+    }
+  }, [archiveProjectGroups, selectedArchiveProjectKey]);
 
   useEffect(() => {
     if (!zoomImportInputRef.current) {
@@ -1743,6 +1837,7 @@ export default function App() {
     (session) => session.cloudSyncStatus === 'pending' || session.cloudSyncStatus === 'local-only',
   ).length;
   const syncedCloudSessionCount = sessions.filter((session) => session.cloudSyncStatus === 'synced').length;
+  const projectCount = archiveProjectGroups.length;
   const pendingCatalogSessionCount = sessions.filter(
     (session) =>
       session.catalogSyncStatus === 'pending' ||
@@ -1813,6 +1908,390 @@ export default function App() {
     };
   }, [autoSyncCatalogSessionCount, isOnline, storageMode, syncedCloudSessionCount]);
 
+  function renderArchiveSessionCard(session: UiFieldSession) {
+    return (
+      <div key={session.id} className="panel flex flex-col gap-5 p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`telemetry-chip ${
+                  session.status === 'active'
+                    ? 'border-[color:var(--line-strong)] text-[color:var(--ink)]'
+                    : 'border-[color:var(--signal-strong)] text-[color:var(--signal-strong)]'
+                }`}
+              >
+                {session.status === 'active' ? 'Activa' : 'Cerrada'}
+              </span>
+              <span className="telemetry-chip">
+                {session.cloudSyncStatus === 'synced'
+                  ? 'Nube OK'
+                  : session.cloudSyncStatus === 'syncing'
+                    ? 'Subiendo'
+                    : session.cloudSyncStatus === 'error'
+                      ? 'Error nube'
+                      : session.cloudSyncStatus === 'pending'
+                        ? 'Pendiente nube'
+                        : 'Solo local'}
+              </span>
+              <span className="telemetry-chip">
+                {session.catalogSyncStatus === 'synced'
+                  ? 'Catálogo OK'
+                  : session.catalogSyncStatus === 'syncing'
+                    ? 'Catalogando'
+                    : session.catalogSyncStatus === 'error'
+                      ? 'Error catálogo'
+                      : session.catalogSyncStatus === 'pending'
+                        ? 'Pendiente catálogo'
+                        : 'Sin catálogo'}
+              </span>
+            </div>
+            <p className="display-heading text-3xl text-[color:var(--ink)]">{session.name}</p>
+            <p className="text-sm text-[color:var(--muted)]">
+              {formatDateTime(session.startedAt, "d MMM yyyy · HH:mm")} · {resolveProjectName(session.projectName)} ·{' '}
+              {session.region || 'sin zona'}
+            </p>
+            <p className="text-sm text-[color:var(--muted)]">
+              {session.cloudSyncedAt
+                ? `Último respaldo: ${formatDateTime(session.cloudSyncedAt, "d MMM yyyy · HH:mm")}`
+                : 'Sin respaldo en nube todavía'}
+            </p>
+            {session.cloudError ? (
+              <p className="text-sm text-[color:var(--signal-strong)]">
+                Error nube: {session.cloudError}
+              </p>
+            ) : null}
+            <p className="text-sm text-[color:var(--muted)]">
+              {session.catalogSyncedAt
+                ? `Último catálogo: ${formatDateTime(session.catalogSyncedAt, "d MMM yyyy · HH:mm")}`
+                : 'Sin catálogo remoto todavía'}
+            </p>
+            {session.catalogError ? (
+              <p className="text-sm text-[color:var(--signal-strong)]">
+                Error catálogo: {session.catalogError}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void syncSessionToCloudBackup(session.id)}
+              disabled={!isOnline || isSyncingCloudSessionId === session.id}
+              className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
+            >
+              <Upload className="h-4 w-4" />
+              {isSyncingCloudSessionId === session.id ? 'Respaldando' : 'Respaldar nube'}
+            </button>
+            <button
+              onClick={() => void syncSessionToCatalogStore(session.id)}
+              disabled={!isOnline || isSyncingCatalogSessionId === session.id}
+              className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
+            >
+              <Upload className="h-4 w-4" />
+              {isSyncingCatalogSessionId === session.id ? 'Catalogando' : 'Sincronizar catálogo'}
+            </button>
+            <button
+              onClick={() => openZoomImportPicker(session.id)}
+              disabled={isImportingSessionId === session.id}
+              className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
+            >
+              <Upload className="h-4 w-4" />
+              {isImportingSessionId === session.id ? 'Importando Zoom H6' : 'Importar Zoom H6'}
+            </button>
+            <button
+              onClick={() => void exportSession(session)}
+              disabled={isExportingSessionId === session.id}
+              className="ui-button ui-button-primary disabled:cursor-wait disabled:opacity-60"
+            >
+              <Download className="h-4 w-4" />
+              {isExportingSessionId === session.id ? 'Exportando' : 'Exportar sesión'}
+            </button>
+            <button
+              onClick={() => void removeSession(session.id)}
+              className="icon-button"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-5">
+          <div className="soft-card">
+            <p className="eyebrow text-[color:var(--muted)]">Puntos</p>
+            <p className="mt-2 text-sm text-[color:var(--ink)]">{session.points.length}</p>
+          </div>
+          <div className="soft-card">
+            <p className="eyebrow text-[color:var(--muted)]">Fotos</p>
+            <p className="mt-2 text-sm text-[color:var(--ink)]">
+              {session.points.reduce((count, point) => count + point.photos.length, 0)}
+            </p>
+          </div>
+          <div className="soft-card">
+            <p className="eyebrow text-[color:var(--muted)]">Tomas H6</p>
+            <p className="mt-2 text-sm text-[color:var(--ink)]">{session.audioTakes.length}</p>
+          </div>
+          <div className="soft-card">
+            <p className="eyebrow text-[color:var(--muted)]">Asociadas</p>
+            <p className="mt-2 text-sm text-[color:var(--ink)]">
+              {session.audioTakes.filter((take) => take.associatedPointId).length}
+            </p>
+          </div>
+          <div className="soft-card">
+            <p className="eyebrow text-[color:var(--muted)]">Equipo</p>
+            <p className="mt-2 text-sm text-[color:var(--ink)]">{session.equipmentPreset}</p>
+          </div>
+        </div>
+
+        {session.audioTakes.length > 0 ? (
+          <div className="grid gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="eyebrow text-[color:var(--signal-strong)]">Índice de tomas Zoom H6</p>
+              <p className="text-sm text-[color:var(--muted)]">
+                {session.audioTakes.filter((take) => take.associatedPointId).length} asociadas ·{' '}
+                {session.audioTakes.filter((take) => !take.associatedPointId).length} pendientes
+              </p>
+            </div>
+
+            <div className="grid gap-3">
+              {session.audioTakes.map((take) => {
+                const linkedPoint = session.points.find((point) => point.id === take.associatedPointId) ?? null;
+                const matchLabel =
+                  take.matchedBy === 'reference'
+                    ? 'Referencia'
+                    : take.matchedBy === 'time'
+                      ? 'Tiempo'
+                      : take.matchedBy === 'manual'
+                        ? 'Manual'
+                        : 'Pendiente';
+
+                return (
+                  <details key={take.id} className="soft-card">
+                    <summary className="manual-details__summary">
+                      <div className="space-y-2">
+                        <p className="text-sm text-[color:var(--ink)]">{take.fileName}</p>
+                        <p className="text-sm text-[color:var(--muted)]">
+                          {formatDateTime(take.inferredRecordedAt, "d MMM yyyy · HH:mm:ss")} · {formatFileSize(take.sizeBytes)}
+                        </p>
+                        <p className="text-sm text-[color:var(--muted)]">{formatTakeTechnicalSummary(take)}</p>
+                        <p className="text-sm text-[color:var(--ink)]">
+                          {linkedPoint
+                            ? `${linkedPoint.placeName} · ${
+                                take.matchedBy === 'reference'
+                                  ? 'asociada por referencia'
+                                  : take.matchedBy === 'manual'
+                                    ? 'asignación manual'
+                                    : `a ${take.matchedPointDeltaMinutes ?? '?'} min del punto`
+                              }`
+                            : 'Sin asociación todavía'}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col items-end gap-2">
+                        <span className="telemetry-chip">{matchLabel}</span>
+                        <span className="manual-details__hint">Editar</span>
+                      </div>
+                    </summary>
+
+                    <div className="manual-details__body mt-5 grid gap-4">
+                      <div className="grid gap-4 md:grid-cols-[1fr,auto]">
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Punto asociado</span>
+                          <select
+                            value={take.associatedPointId ?? ''}
+                            onChange={(event) =>
+                              void assignAudioTakeToPoint(session.id, take.id, event.target.value || null)
+                            }
+                            className="field-input"
+                          >
+                            <option value="">Sin asignar</option>
+                            {session.points.map((point) => (
+                              <option key={point.id} value={point.id}>
+                                {point.placeName} · {formatDateTime(point.createdAt, 'HH:mm:ss')}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <div className="flex items-end">
+                          <button
+                            onClick={() => void autoAssignAudioTake(session.id, take.id)}
+                            className="ui-button ui-button-secondary"
+                          >
+                            Autoasignar
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Referencia detectada</span>
+                          <input
+                            defaultValue={take.detectedReference}
+                            onBlur={(event) =>
+                              void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                ...currentTake,
+                                detectedReference: event.target.value.trim(),
+                              }))
+                            }
+                            className="field-input"
+                            placeholder="ZOOM0001"
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Setup de entrada</span>
+                          <input
+                            defaultValue={take.inputSetup}
+                            onBlur={(event) =>
+                              void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                ...currentTake,
+                                inputSetup: event.target.value.trim(),
+                              }))
+                            }
+                            className="field-input"
+                            placeholder="XY / MS / cápsulas externas"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-4">
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Duración (s)</span>
+                          <input
+                            defaultValue={take.durationSeconds ?? ''}
+                            onBlur={(event) =>
+                              void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                ...currentTake,
+                                durationSeconds: parseOptionalNumber(event.target.value),
+                              }))
+                            }
+                            className="field-input telemetry-text"
+                            placeholder="123.4"
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Sample rate</span>
+                          <input
+                            defaultValue={take.sampleRateHz ?? ''}
+                            onBlur={(event) =>
+                              void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                ...currentTake,
+                                sampleRateHz: parseOptionalNumber(event.target.value),
+                              }))
+                            }
+                            className="field-input telemetry-text"
+                            placeholder="48000"
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Bit depth</span>
+                          <input
+                            defaultValue={take.bitDepth ?? ''}
+                            onBlur={(event) =>
+                              void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                ...currentTake,
+                                bitDepth: parseOptionalNumber(event.target.value),
+                              }))
+                            }
+                            className="field-input telemetry-text"
+                            placeholder="24"
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Canales</span>
+                          <input
+                            defaultValue={take.channels ?? ''}
+                            onBlur={(event) =>
+                              void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                ...currentTake,
+                                channels: parseOptionalNumber(event.target.value),
+                              }))
+                            }
+                            className="field-input telemetry-text"
+                            placeholder="2"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Low cut</span>
+                          <select
+                            value={take.lowCutEnabled == null ? 'unknown' : String(take.lowCutEnabled)}
+                            onChange={(event) =>
+                              void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                ...currentTake,
+                                lowCutEnabled: parseOptionalBoolean(event.target.value),
+                              }))
+                            }
+                            className="field-input"
+                          >
+                            <option value="unknown">Sin dato</option>
+                            <option value="true">Activado</option>
+                            <option value="false">Desactivado</option>
+                          </select>
+                        </label>
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Limiter</span>
+                          <select
+                            value={take.limiterEnabled == null ? 'unknown' : String(take.limiterEnabled)}
+                            onChange={(event) =>
+                              void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                ...currentTake,
+                                limiterEnabled: parseOptionalBoolean(event.target.value),
+                              }))
+                            }
+                            className="field-input"
+                          >
+                            <option value="unknown">Sin dato</option>
+                            <option value="true">Activado</option>
+                            <option value="false">Desactivado</option>
+                          </select>
+                        </label>
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Phantom</span>
+                          <select
+                            value={take.phantomPowerEnabled == null ? 'unknown' : String(take.phantomPowerEnabled)}
+                            onChange={(event) =>
+                              void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                ...currentTake,
+                                phantomPowerEnabled: parseOptionalBoolean(event.target.value),
+                              }))
+                            }
+                            className="field-input"
+                          >
+                            <option value="unknown">Sin dato</option>
+                            <option value="true">Activado</option>
+                            <option value="false">Desactivado</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Notas de toma</span>
+                        <textarea
+                          defaultValue={take.takeNotes}
+                          onBlur={(event) =>
+                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                              ...currentTake,
+                              takeNotes: event.target.value.trim(),
+                            }))
+                          }
+                          rows={3}
+                          className="field-input min-h-24"
+                          placeholder="Ruido, clipping, variaciones de setup, incidencias..."
+                        />
+                      </label>
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="field-shell min-h-screen px-4 py-6 pb-32 md:px-8 md:py-8 md:pb-36">
       <div className="mx-auto flex max-w-[1560px] flex-col gap-6">
@@ -1824,6 +2303,11 @@ export default function App() {
           className="hidden"
           onChange={handleZoomImportInput}
         />
+        <datalist id="project-name-options">
+          {knownProjectNames.map((projectName) => (
+            <option key={projectName} value={projectName} />
+          ))}
+        </datalist>
 
         <motion.header
           initial={{ opacity: 0, y: 20 }}
@@ -1934,6 +2418,7 @@ export default function App() {
                             onChange={(event) => updateActiveSessionField('projectName', event.target.value)}
                             className="field-input"
                             placeholder="Archivo de paisajes de Gredos"
+                            list="project-name-options"
                           />
                         </label>
                         <label className="grid gap-2 text-sm text-[color:var(--muted)]">
@@ -2081,6 +2566,7 @@ export default function App() {
                             onChange={(event) => setSessionDraft((previous) => ({ ...previous, projectName: event.target.value }))}
                             className="field-input"
                             placeholder="Paisajes sonoros Sierra Norte"
+                            list="project-name-options"
                           />
                         </label>
                         <label className="grid gap-2 text-sm text-[color:var(--muted)]">
@@ -2532,9 +3018,9 @@ export default function App() {
             >
               <div className="panel flex flex-wrap items-end justify-between gap-4 p-6">
                 <div>
-                  <p className="eyebrow text-[color:var(--signal-strong)]">Exportación profesional</p>
+                  <p className="eyebrow text-[color:var(--signal-strong)]">Archivo por proyectos</p>
                   <h2 className="display-heading mt-2 text-3xl text-[color:var(--ink)]">
-                    Sesiones listas para llevar al estudio
+                    Ordena tus jornadas sin saturar la página
                   </h2>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
@@ -2564,7 +3050,11 @@ export default function App() {
                     {isSyncingCatalogSessionId ? 'Sincronizando catálogo' : 'Catálogo pendientes'}
                   </button>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-6">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+                  <div className="soft-card">
+                    <p className="eyebrow text-[color:var(--muted)]">Proyectos</p>
+                    <p className="mt-2 text-sm text-[color:var(--ink)]">{projectCount}</p>
+                  </div>
                   <div className="soft-card">
                     <p className="eyebrow text-[color:var(--muted)]">Sesiones</p>
                     <p className="mt-2 text-sm text-[color:var(--ink)]">{sessions.length}</p>
@@ -2602,6 +3092,42 @@ export default function App() {
                 </div>
               </div>
 
+              {archiveProjectGroups.length > 1 ? (
+                <div className="panel flex flex-col gap-4 p-5">
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <p className="eyebrow text-[color:var(--signal-strong)]">Filtro de proyecto</p>
+                      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                        Cada proyecto agrupa sus propias salidas de campo, puntos, fotos y tomas asociadas.
+                      </p>
+                    </div>
+                    <p className="text-sm text-[color:var(--muted)]">{projectCount} proyectos archivados</p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setSelectedArchiveProjectKey('all')}
+                      className={`ui-button ${
+                        selectedArchiveProjectKey === 'all' ? 'ui-button-primary' : 'ui-button-secondary'
+                      }`}
+                    >
+                      Todos ({sessions.length})
+                    </button>
+                    {archiveProjectGroups.map((group) => (
+                      <button
+                        key={group.key}
+                        onClick={() => setSelectedArchiveProjectKey(group.key)}
+                        className={`ui-button ${
+                          selectedArchiveProjectKey === group.key ? 'ui-button-primary' : 'ui-button-secondary'
+                        }`}
+                      >
+                        {group.name} ({group.sessionCount})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               {sessions.length === 0 ? (
                 <div className="panel px-6 py-16 text-center">
                   <History className="mx-auto h-12 w-12 text-[color:var(--muted)]/50" />
@@ -2612,408 +3138,45 @@ export default function App() {
                 </div>
               ) : (
                 <div className="grid gap-5">
-                  {sessions.map((session) => (
-                    <div key={session.id} className="panel flex flex-col gap-5 p-6">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
+                  {visibleArchiveProjectGroups.map((group) => (
+                    <section key={group.key} className="grid gap-4">
+                      <div className="panel flex flex-wrap items-start justify-between gap-4 p-5">
                         <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`telemetry-chip ${
-                                session.status === 'active'
-                                  ? 'border-[color:var(--line-strong)] text-[color:var(--ink)]'
-                                  : 'border-[color:var(--signal-strong)] text-[color:var(--signal-strong)]'
-                              }`}
-                            >
-                              {session.status === 'active' ? 'Activa' : 'Cerrada'}
-                            </span>
-                            <span className="telemetry-chip">
-                              {session.cloudSyncStatus === 'synced'
-                                ? 'Nube OK'
-                                : session.cloudSyncStatus === 'syncing'
-                                  ? 'Subiendo'
-                                  : session.cloudSyncStatus === 'error'
-                                    ? 'Error nube'
-                                    : session.cloudSyncStatus === 'pending'
-                                      ? 'Pendiente nube'
-                                    : 'Solo local'}
-                            </span>
-                            <span className="telemetry-chip">
-                              {session.catalogSyncStatus === 'synced'
-                                ? 'Catálogo OK'
-                                : session.catalogSyncStatus === 'syncing'
-                                  ? 'Catalogando'
-                                  : session.catalogSyncStatus === 'error'
-                                    ? 'Error catálogo'
-                                    : session.catalogSyncStatus === 'pending'
-                                      ? 'Pendiente catálogo'
-                                      : 'Sin catálogo'}
-                            </span>
-                          </div>
-                          <p className="display-heading text-3xl text-[color:var(--ink)]">{session.name}</p>
+                          <p className="eyebrow text-[color:var(--signal-strong)]">Proyecto</p>
+                          <h3 className="display-heading text-3xl text-[color:var(--ink)]">{group.name}</h3>
                           <p className="text-sm text-[color:var(--muted)]">
-                            {formatDateTime(session.startedAt, "d MMM yyyy · HH:mm")} · {session.projectName || 'sin proyecto'} ·{' '}
-                            {session.region || 'sin zona'}
+                            Última salida: {formatDateTime(group.latestStartedAt, "d MMM yyyy · HH:mm")}
                           </p>
-                          <p className="text-sm text-[color:var(--muted)]">
-                            {session.cloudSyncedAt
-                              ? `Último respaldo: ${formatDateTime(session.cloudSyncedAt, "d MMM yyyy · HH:mm")}`
-                              : 'Sin respaldo en nube todavía'}
-                          </p>
-                          {session.cloudError ? (
-                            <p className="text-sm text-[color:var(--signal-strong)]">
-                              Error nube: {session.cloudError}
-                            </p>
-                          ) : null}
-                          <p className="text-sm text-[color:var(--muted)]">
-                            {session.catalogSyncedAt
-                              ? `Último catálogo: ${formatDateTime(session.catalogSyncedAt, "d MMM yyyy · HH:mm")}`
-                              : 'Sin catálogo remoto todavía'}
-                          </p>
-                          {session.catalogError ? (
-                            <p className="text-sm text-[color:var(--signal-strong)]">
-                              Error catálogo: {session.catalogError}
-                            </p>
-                          ) : null}
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => void syncSessionToCloudBackup(session.id)}
-                            disabled={!isOnline || isSyncingCloudSessionId === session.id}
-                            className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
-                          >
-                            <Upload className="h-4 w-4" />
-                            {isSyncingCloudSessionId === session.id ? 'Respaldando' : 'Respaldar nube'}
-                          </button>
-                          <button
-                            onClick={() => void syncSessionToCatalogStore(session.id)}
-                            disabled={!isOnline || isSyncingCatalogSessionId === session.id}
-                            className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
-                          >
-                            <Upload className="h-4 w-4" />
-                            {isSyncingCatalogSessionId === session.id ? 'Catalogando' : 'Sincronizar catálogo'}
-                          </button>
-                          <button
-                            onClick={() => openZoomImportPicker(session.id)}
-                            disabled={isImportingSessionId === session.id}
-                            className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
-                          >
-                            <Upload className="h-4 w-4" />
-                            {isImportingSessionId === session.id ? 'Importando Zoom H6' : 'Importar Zoom H6'}
-                          </button>
-                          <button
-                            onClick={() => void exportSession(session)}
-                            disabled={isExportingSessionId === session.id}
-                            className="ui-button ui-button-primary disabled:cursor-wait disabled:opacity-60"
-                          >
-                            <Download className="h-4 w-4" />
-                            {isExportingSessionId === session.id ? 'Exportando' : 'Exportar sesión'}
-                          </button>
-                          <button
-                            onClick={() => void removeSession(session.id)}
-                            className="icon-button"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                          <div className="soft-card">
+                            <p className="eyebrow text-[color:var(--muted)]">Sesiones</p>
+                            <p className="mt-2 text-sm text-[color:var(--ink)]">{group.sessionCount}</p>
+                          </div>
+                          <div className="soft-card">
+                            <p className="eyebrow text-[color:var(--muted)]">Puntos</p>
+                            <p className="mt-2 text-sm text-[color:var(--ink)]">{group.pointCount}</p>
+                          </div>
+                          <div className="soft-card">
+                            <p className="eyebrow text-[color:var(--muted)]">Fotos</p>
+                            <p className="mt-2 text-sm text-[color:var(--ink)]">{group.photoCount}</p>
+                          </div>
+                          <div className="soft-card">
+                            <p className="eyebrow text-[color:var(--muted)]">Tomas H6</p>
+                            <p className="mt-2 text-sm text-[color:var(--ink)]">{group.audioTakeCount}</p>
+                          </div>
+                          <div className="soft-card">
+                            <p className="eyebrow text-[color:var(--muted)]">Sesiones activas</p>
+                            <p className="mt-2 text-sm text-[color:var(--ink)]">{group.activeSessionCount}</p>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="grid gap-4 md:grid-cols-5">
-                        <div className="soft-card">
-                          <p className="eyebrow text-[color:var(--muted)]">Puntos</p>
-                          <p className="mt-2 text-sm text-[color:var(--ink)]">{session.points.length}</p>
-                        </div>
-                        <div className="soft-card">
-                          <p className="eyebrow text-[color:var(--muted)]">Fotos</p>
-                          <p className="mt-2 text-sm text-[color:var(--ink)]">
-                            {session.points.reduce((count, point) => count + point.photos.length, 0)}
-                          </p>
-                        </div>
-                        <div className="soft-card">
-                          <p className="eyebrow text-[color:var(--muted)]">Tomas H6</p>
-                          <p className="mt-2 text-sm text-[color:var(--ink)]">{session.audioTakes.length}</p>
-                        </div>
-                        <div className="soft-card">
-                          <p className="eyebrow text-[color:var(--muted)]">Asociadas</p>
-                          <p className="mt-2 text-sm text-[color:var(--ink)]">
-                            {session.audioTakes.filter((take) => take.associatedPointId).length}
-                          </p>
-                        </div>
-                        <div className="soft-card">
-                          <p className="eyebrow text-[color:var(--muted)]">Equipo</p>
-                          <p className="mt-2 text-sm text-[color:var(--ink)]">{session.equipmentPreset}</p>
-                        </div>
+                      <div className="grid gap-5">
+                        {group.sessions.map((session) => renderArchiveSessionCard(session))}
                       </div>
-
-                      {session.audioTakes.length > 0 ? (
-                        <div className="grid gap-3">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <p className="eyebrow text-[color:var(--signal-strong)]">Índice de tomas Zoom H6</p>
-                            <p className="text-sm text-[color:var(--muted)]">
-                              {session.audioTakes.filter((take) => take.associatedPointId).length} asociadas ·{' '}
-                              {session.audioTakes.filter((take) => !take.associatedPointId).length} pendientes
-                            </p>
-                          </div>
-
-                          <div className="grid gap-3">
-                            {session.audioTakes.map((take) => {
-                              const linkedPoint = session.points.find((point) => point.id === take.associatedPointId) ?? null;
-                              const matchLabel =
-                                take.matchedBy === 'reference'
-                                  ? 'Referencia'
-                                  : take.matchedBy === 'time'
-                                    ? 'Tiempo'
-                                    : take.matchedBy === 'manual'
-                                      ? 'Manual'
-                                    : 'Pendiente';
-
-                              return (
-                                <details key={take.id} className="soft-card">
-                                  <summary className="manual-details__summary">
-                                    <div className="space-y-2">
-                                      <p className="text-sm text-[color:var(--ink)]">{take.fileName}</p>
-                                      <p className="text-sm text-[color:var(--muted)]">
-                                        {formatDateTime(take.inferredRecordedAt, "d MMM yyyy · HH:mm:ss")} · {formatFileSize(take.sizeBytes)}
-                                      </p>
-                                      <p className="text-sm text-[color:var(--muted)]">{formatTakeTechnicalSummary(take)}</p>
-                                      <p className="text-sm text-[color:var(--ink)]">
-                                        {linkedPoint
-                                          ? `${linkedPoint.placeName} · ${
-                                              take.matchedBy === 'reference'
-                                                ? 'asociada por referencia'
-                                                : take.matchedBy === 'manual'
-                                                  ? 'asignación manual'
-                                                  : `a ${take.matchedPointDeltaMinutes ?? '?'} min del punto`
-                                            }`
-                                          : 'Sin asociación todavía'}
-                                      </p>
-                                    </div>
-
-                                    <div className="flex flex-col items-end gap-2">
-                                      <span className="telemetry-chip">{matchLabel}</span>
-                                      <span className="manual-details__hint">Editar</span>
-                                    </div>
-                                  </summary>
-
-                                  <div className="manual-details__body mt-5 grid gap-4">
-                                    <div className="grid gap-4 md:grid-cols-[1fr,auto]">
-                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                        <span>Punto asociado</span>
-                                        <select
-                                          value={take.associatedPointId ?? ''}
-                                          onChange={(event) =>
-                                            void assignAudioTakeToPoint(session.id, take.id, event.target.value || null)
-                                          }
-                                          className="field-input"
-                                        >
-                                          <option value="">Sin asignar</option>
-                                          {session.points.map((point) => (
-                                            <option key={point.id} value={point.id}>
-                                              {point.placeName} · {formatDateTime(point.createdAt, 'HH:mm:ss')}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </label>
-
-                                      <div className="flex items-end">
-                                        <button
-                                          onClick={() => void autoAssignAudioTake(session.id, take.id)}
-                                          className="ui-button ui-button-secondary"
-                                        >
-                                          Autoasignar
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    <div className="grid gap-4 md:grid-cols-2">
-                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                        <span>Referencia detectada</span>
-                                        <input
-                                          defaultValue={take.detectedReference}
-                                          onBlur={(event) =>
-                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
-                                              ...currentTake,
-                                              detectedReference: event.target.value.trim(),
-                                            }))
-                                          }
-                                          className="field-input"
-                                          placeholder="ZOOM0001"
-                                        />
-                                      </label>
-                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                        <span>Setup de entrada</span>
-                                        <input
-                                          defaultValue={take.inputSetup}
-                                          onBlur={(event) =>
-                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
-                                              ...currentTake,
-                                              inputSetup: event.target.value.trim(),
-                                            }))
-                                          }
-                                          className="field-input"
-                                          placeholder="XY 90º / In 1-2"
-                                        />
-                                      </label>
-                                    </div>
-
-                                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                        <span>Duración (s)</span>
-                                        <input
-                                          defaultValue={take.durationSeconds ?? ''}
-                                          onBlur={(event) =>
-                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
-                                              ...currentTake,
-                                              durationSeconds: parseOptionalNumber(event.target.value),
-                                            }))
-                                          }
-                                          className="field-input"
-                                          placeholder="125.4"
-                                        />
-                                      </label>
-                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                        <span>Sample rate</span>
-                                        <input
-                                          defaultValue={take.sampleRateHz ?? ''}
-                                          onBlur={(event) =>
-                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
-                                              ...currentTake,
-                                              sampleRateHz: parseOptionalNumber(event.target.value),
-                                            }))
-                                          }
-                                          className="field-input"
-                                          placeholder="48000"
-                                        />
-                                      </label>
-                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                        <span>Bit depth</span>
-                                        <input
-                                          defaultValue={take.bitDepth ?? ''}
-                                          onBlur={(event) =>
-                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
-                                              ...currentTake,
-                                              bitDepth: parseOptionalNumber(event.target.value),
-                                            }))
-                                          }
-                                          className="field-input"
-                                          placeholder="24"
-                                        />
-                                      </label>
-                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                        <span>Canales</span>
-                                        <input
-                                          defaultValue={take.channels ?? ''}
-                                          onBlur={(event) =>
-                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
-                                              ...currentTake,
-                                              channels: parseOptionalNumber(event.target.value),
-                                            }))
-                                          }
-                                          className="field-input"
-                                          placeholder="2"
-                                        />
-                                      </label>
-                                    </div>
-
-                                    <div className="grid gap-4 md:grid-cols-3">
-                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                        <span>Low cut</span>
-                                        <select
-                                          value={
-                                            take.lowCutEnabled == null ? '' : take.lowCutEnabled ? 'true' : 'false'
-                                          }
-                                          onChange={(event) =>
-                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
-                                              ...currentTake,
-                                              lowCutEnabled: parseOptionalBoolean(event.target.value),
-                                            }))
-                                          }
-                                          className="field-input"
-                                        >
-                                          <option value="">Desconocido</option>
-                                          <option value="true">Sí</option>
-                                          <option value="false">No</option>
-                                        </select>
-                                      </label>
-
-                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                        <span>Limiter</span>
-                                        <select
-                                          value={
-                                            take.limiterEnabled == null ? '' : take.limiterEnabled ? 'true' : 'false'
-                                          }
-                                          onChange={(event) =>
-                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
-                                              ...currentTake,
-                                              limiterEnabled: parseOptionalBoolean(event.target.value),
-                                            }))
-                                          }
-                                          className="field-input"
-                                        >
-                                          <option value="">Desconocido</option>
-                                          <option value="true">Sí</option>
-                                          <option value="false">No</option>
-                                        </select>
-                                      </label>
-
-                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                        <span>Phantom</span>
-                                        <select
-                                          value={
-                                            take.phantomPowerEnabled == null
-                                              ? ''
-                                              : take.phantomPowerEnabled
-                                                ? 'true'
-                                                : 'false'
-                                          }
-                                          onChange={(event) =>
-                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
-                                              ...currentTake,
-                                              phantomPowerEnabled: parseOptionalBoolean(event.target.value),
-                                            }))
-                                          }
-                                          className="field-input"
-                                        >
-                                          <option value="">Desconocido</option>
-                                          <option value="true">Sí</option>
-                                          <option value="false">No</option>
-                                        </select>
-                                      </label>
-                                    </div>
-
-                                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                      <span>Notas de la toma</span>
-                                      <textarea
-                                        defaultValue={take.takeNotes}
-                                        onBlur={(event) =>
-                                          void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
-                                            ...currentTake,
-                                            takeNotes: event.target.value.trim(),
-                                          }))
-                                        }
-                                        rows={3}
-                                        className="field-input min-h-24"
-                                        placeholder="Incidencias, clipping, viento, problema de cable, toma útil..."
-                                      />
-                                    </label>
-                                  </div>
-                                </details>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-sm leading-7 text-[color:var(--muted)]">
-                          Importa la carpeta de audio de la Zoom H6 para construir un índice profesional y asociar automáticamente las tomas a los puntos.
-                        </p>
-                      )}
-
-                      <p className="text-sm leading-7 text-[color:var(--muted)]">
-                        El paquete ZIP contiene `session.json`, `session-report.md`, `points.csv`, `points.geojson`,
-                        `takes.csv`, `takes.json` y una carpeta por punto con su `point.json`, fotos y todas las
-                        referencias necesarias para casar después cada toma con tu Zoom H6.
-                      </p>
-                    </div>
+                    </section>
                   ))}
                 </div>
               )}
