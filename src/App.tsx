@@ -1365,13 +1365,14 @@ export default function App() {
       setStatusNote(`Sesión "${nextUiSession.name}" respaldada en la nube.`);
     } catch (error) {
       console.error('Cloud backup failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'No se pudo respaldar en la nube.';
       const nextUiSession: UiFieldSession = {
         ...session,
         cloudSyncStatus: 'error',
-        cloudError: 'No se pudo respaldar en la nube.',
+        cloudError: errorMessage,
       };
       await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
-      setAppError('No se pudo sincronizar la sesión con Vercel Blob.');
+      setAppError(errorMessage);
     } finally {
       isSyncingCloudSessionIdRef.current = null;
       setIsSyncingCloudSessionId(null);
@@ -1417,13 +1418,14 @@ export default function App() {
       setStatusNote(`Sesión "${nextUiSession.name}" sincronizada con el catálogo remoto.`);
     } catch (error) {
       console.error('Catalog sync failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'No se pudo sincronizar el catálogo remoto.';
       const nextUiSession: UiFieldSession = {
         ...session,
         catalogSyncStatus: 'error',
-        catalogError: 'No se pudo sincronizar el catálogo remoto.',
+        catalogError: errorMessage,
       };
       await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
-      setAppError('No se pudo sincronizar la sesión con la base remota.');
+      setAppError(errorMessage);
     } finally {
       isSyncingCatalogSessionIdRef.current = null;
       setIsSyncingCatalogSessionId(null);
@@ -2657,11 +2659,21 @@ export default function App() {
                               ? `Último respaldo: ${formatDateTime(session.cloudSyncedAt, "d MMM yyyy · HH:mm")}`
                               : 'Sin respaldo en nube todavía'}
                           </p>
+                          {session.cloudError ? (
+                            <p className="text-sm text-[color:var(--signal-strong)]">
+                              Error nube: {session.cloudError}
+                            </p>
+                          ) : null}
                           <p className="text-sm text-[color:var(--muted)]">
                             {session.catalogSyncedAt
                               ? `Último catálogo: ${formatDateTime(session.catalogSyncedAt, "d MMM yyyy · HH:mm")}`
                               : 'Sin catálogo remoto todavía'}
                           </p>
+                          {session.catalogError ? (
+                            <p className="text-sm text-[color:var(--signal-strong)]">
+                              Error catálogo: {session.catalogError}
+                            </p>
+                          ) : null}
                         </div>
 
                         <div className="flex items-center gap-2">

@@ -4,7 +4,7 @@ import type {
   CatalogSessionPayload,
   CatalogSessionSummary,
   CatalogSyncResult,
-} from './catalogPayload';
+} from '../../src/lib/catalogPayload';
 
 type Sql = NeonQueryFunction<false, false>;
 

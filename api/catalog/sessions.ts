@@ -1,4 +1,4 @@
-import { listCatalogSessions } from '../../src/lib/catalogStore';
+import { listCatalogSessions } from '../_lib/catalogStore.js';
 
 export async function GET() {
   try {

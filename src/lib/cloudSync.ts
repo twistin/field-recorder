@@ -46,6 +46,20 @@ interface CloudSessionPayload extends Omit<FieldSession, 'points'> {
 
 const CLIENT_UPLOAD_MULTIPART_THRESHOLD_BYTES = 4_500_000;
 
+async function parseApiError(response: Response, fallbackMessage: string): Promise<Error> {
+  try {
+    const payload = (await response.json()) as { error?: string };
+    return new Error(payload.error || `${fallbackMessage} (HTTP ${response.status})`);
+  } catch {
+    try {
+      const text = await response.text();
+      return new Error(text || `${fallbackMessage} (HTTP ${response.status})`);
+    } catch {
+      return new Error(`${fallbackMessage} (HTTP ${response.status})`);
+    }
+  }
+}
+
 function slugifyForPath(value: string): string {
   return (
     value
@@ -239,7 +253,7 @@ export async function syncSessionToCloud(session: FieldSession): Promise<FieldSe
   });
 
   if (!manifestResponse.ok) {
-    throw new Error(`Session manifest sync failed with status ${manifestResponse.status}`);
+    throw await parseApiError(manifestResponse, 'Session manifest sync failed');
   }
 
   const manifest = (await manifestResponse.json()) as UploadResult;

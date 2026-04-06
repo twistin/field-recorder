@@ -1,5 +1,5 @@
 import type { CatalogSessionPayload } from '../../src/lib/catalogPayload';
-import { getCatalogSession, upsertCatalogSession } from '../../src/lib/catalogStore';
+import { getCatalogSession, upsertCatalogSession } from '../_lib/catalogStore.js';
 
 function getIdFromRequest(request: Request): string | null {
   return new URL(request.url).searchParams.get('id');

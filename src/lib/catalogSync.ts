@@ -9,9 +9,14 @@ import type { FieldSession } from '../types/fieldSessions';
 async function parseApiError(response: Response, fallbackMessage: string): Promise<Error> {
   try {
     const payload = (await response.json()) as { error?: string };
-    return new Error(payload.error || fallbackMessage);
+    return new Error(payload.error || `${fallbackMessage} (HTTP ${response.status})`);
   } catch {
-    return new Error(fallbackMessage);
+    try {
+      const text = await response.text();
+      return new Error(text || `${fallbackMessage} (HTTP ${response.status})`);
+    } catch {
+      return new Error(`${fallbackMessage} (HTTP ${response.status})`);
+    }
   }
 }
 
