@@ -1,76 +1,83 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Activity,
+  Camera,
+  CloudSun,
   Download,
   History,
-  Image as ImageIcon,
-  Loader2,
   MapPin,
-  Mic,
-  Play,
-  Square,
+  RefreshCw,
   Trash2,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { v4 as uuidv4 } from 'uuid';
-import { GoogleGenAI } from '@google/genai';
 
+import { SessionMap } from './components/SessionMap';
+import { SessionPointCard } from './components/SessionPointCard';
 import {
-  deleteStoredRecording,
-  listStoredRecordings,
-  RecordingMetadata,
-  saveStoredRecording,
-  StoredRecording,
-  updateStoredRecordingMetadata,
-  updateStoredRecordingVisual,
-} from './lib/recordingsDb';
+  deleteFieldSession,
+  listFieldSessions,
+  saveFieldSession,
+} from './lib/fieldSessionsDb';
+import { exportFieldSessionPackage } from './lib/exportFieldSession';
+import { reverseGeocodePlace } from './lib/locationLookup';
+import { fetchAutomaticWeather } from './lib/weather';
+import type {
+  AutomaticWeatherSummary,
+  DetectedPlaceSummary,
+  FieldSession,
+  GpsCoordinates,
+  SessionPhoto,
+  SessionPoint,
+} from './types/fieldSessions';
 
-type View = 'entry' | 'record' | 'library';
-type CaptureMode = 'idle' | 'manual' | 'walk';
+type View = 'session' | 'point' | 'export';
 
-interface Coordinates {
-  lat: number;
-  lon: number;
-  accuracy: number | null;
+interface SessionDraft {
+  name: string;
+  projectName: string;
+  region: string;
+  notes: string;
+  equipmentPreset: string;
 }
 
-interface CaptureDraft {
+interface PointDraft {
   placeName: string;
-  environmentType: string;
-  weather: string;
-  equipment: string;
-  description: string;
+  habitat: string;
+  characteristics: string;
+  observedWeather: string;
   tagsText: string;
+  notes: string;
+  zoomTakeReference: string;
+  microphoneSetup: string;
   latitude: string;
   longitude: string;
+  coordinateSource: 'auto' | 'manual';
 }
 
-interface UiRecording extends Omit<
-  StoredRecording,
-  'placeName' | 'environmentType' | 'weather' | 'equipment' | 'description' | 'title' | 'tags' | 'notes'
->, RecordingMetadata {
-  audioUrl: string;
+interface DraftPhoto {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  blob: Blob;
+  previewUrl: string;
 }
 
-const CAPTURE_SLICE_MS = 30_000;
-const FALLBACK_GPS: Coordinates = { lat: 0, lon: 0, accuracy: null };
-
-function buildSuggestedPlaceName(createdAt: string, mode: Exclude<CaptureMode, 'idle'>): string {
-  return `${mode === 'walk' ? 'Ruta' : 'Punto'} · ${format(new Date(createdAt), 'MMM d · HH:mm')}`;
+interface UiSessionPhoto extends SessionPhoto {
+  previewUrl: string;
 }
 
-function emptyCaptureDraft(): CaptureDraft {
-  return {
-    placeName: '',
-    environmentType: '',
-    weather: '',
-    equipment: '',
-    description: '',
-    tagsText: '',
-    latitude: '',
-    longitude: '',
-  };
+interface UiSessionPoint extends Omit<SessionPoint, 'photos'> {
+  photos: UiSessionPhoto[];
+}
+
+interface UiFieldSession extends Omit<FieldSession, 'points'> {
+  points: UiSessionPoint[];
+}
+
+function formatDateTime(value: Date | string, pattern: string) {
+  return format(typeof value === 'string' ? new Date(value) : value, pattern, { locale: es });
 }
 
 function normalizeTags(value: string): string[] {
@@ -84,50 +91,6 @@ function normalizeTags(value: string): string[] {
   );
 }
 
-function areTagsEqual(left: string[], right: string[]): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every((tag, index) => tag === right[index]);
-}
-
-function slugifyForFile(value: string): string {
-  const slug = value
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .trim()
-    .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  return slug || 'field-take';
-}
-
-function imageExtensionFromMimeType(mimeType: string): string {
-  if (mimeType.includes('jpeg')) {
-    return 'jpg';
-  }
-
-  if (mimeType.includes('webp')) {
-    return 'webp';
-  }
-
-  return 'png';
-}
-
-function dataUrlToParts(dataUrl: string): { mimeType: string; base64: string } | null {
-  const match = /^data:(.*?);base64,(.*)$/.exec(dataUrl);
-  if (!match) {
-    return null;
-  }
-
-  return {
-    mimeType: match[1],
-    base64: match[2],
-  };
-}
-
 function parseCoordinate(value: string): number | null {
   const normalized = value.trim().replace(',', '.');
   if (!normalized) {
@@ -138,118 +101,122 @@ function parseCoordinate(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function formatDuration(durationMs: number): string {
-  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  }
-
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-function chooseAudioMimeType(): string | undefined {
-  if (typeof MediaRecorder === 'undefined') {
-    return undefined;
-  }
-
-  const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/mp4',
-    'audio/ogg;codecs=opus',
-  ];
-
-  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
-}
-
-function extensionFromMimeType(mimeType: string): string {
-  if (mimeType.includes('ogg')) {
-    return 'ogg';
-  }
-
-  if (mimeType.includes('mp4')) {
-    return 'm4a';
-  }
-
-  return 'webm';
-}
-
-function hydrateRecording(recording: StoredRecording): UiRecording {
-  const createdAt = recording.createdAt;
-  const mode = recording.mode;
-
+function buildSessionDraft(): SessionDraft {
+  const now = new Date();
   return {
-    ...recording,
-    placeName:
-      recording.placeName?.trim() ||
-      recording.title?.trim() ||
-      buildSuggestedPlaceName(createdAt, mode),
-    environmentType: recording.environmentType?.trim() || '',
-    weather: recording.weather?.trim() || '',
-    equipment: recording.equipment?.trim() || '',
-    description: recording.description?.trim() || recording.notes?.trim() || '',
-    tags: Array.isArray(recording.tags)
-      ? Array.from(
-          new Set(
-            recording.tags
-              .map((tag) => tag.trim())
-              .filter(Boolean),
-          ),
-        )
-      : [],
-    audioUrl: URL.createObjectURL(recording.audioBlob),
+    name: `Salida ${format(now, 'yyyy-MM-dd', { locale: es })}`,
+    projectName: '',
+    region: '',
+    notes: '',
+    equipmentPreset: 'Zoom H6 · XY',
   };
 }
 
-function buildDownloadName(recording: UiRecording): string {
-  const stamp = recording.createdAt.replace(/[:.]/g, '-');
-  const base = slugifyForFile(recording.placeName);
-  return `${base}-${stamp}.${extensionFromMimeType(recording.mimeType)}`;
-}
-
-function downloadBlob(blob: Blob, fileName: string) {
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = objectUrl;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-}
-
-function buildExportManifest(recording: UiRecording) {
+function buildPointDraft(
+  equipmentPreset = 'Zoom H6 · XY',
+  currentGps: GpsCoordinates | null = null,
+): PointDraft {
   return {
-    id: recording.id,
-    placeName: recording.placeName,
-    environmentType: recording.environmentType,
-    weather: recording.weather,
-    equipment: recording.equipment,
-    description: recording.description,
-    tags: recording.tags,
-    createdAt: recording.createdAt,
-    createdAtLocal: format(new Date(recording.createdAt), 'yyyy-MM-dd HH:mm:ss'),
-    year: format(new Date(recording.createdAt), 'yyyy'),
-    time: format(new Date(recording.createdAt), 'HH:mm:ss'),
-    durationMs: recording.durationMs,
-    duration: formatDuration(recording.durationMs),
-    mode: recording.mode,
-    gps: recording.gps,
-    audio: {
-      mimeType: recording.mimeType,
-      fileName: buildDownloadName(recording),
-    },
-    visual: recording.imageUrl
-      ? {
-          embedded: recording.imageUrl.startsWith('data:'),
-          prompt: recording.prompt ?? '',
-        }
-      : null,
+    placeName: '',
+    habitat: '',
+    characteristics: '',
+    observedWeather: '',
+    tagsText: '',
+    notes: '',
+    zoomTakeReference: '',
+    microphoneSetup: equipmentPreset,
+    latitude: currentGps ? currentGps.lat.toFixed(6) : '',
+    longitude: currentGps ? currentGps.lon.toFixed(6) : '',
+    coordinateSource: 'auto',
   };
+}
+
+function hydrateSession(session: FieldSession): UiFieldSession {
+  return {
+    ...session,
+    points: session.points.map((point) => ({
+      ...point,
+      photos: point.photos.map((photo) => ({
+        ...photo,
+        previewUrl: URL.createObjectURL(photo.blob),
+      })),
+    })),
+  };
+}
+
+function dehydrateSession(session: UiFieldSession): FieldSession {
+  return {
+    ...session,
+    points: session.points.map((point) => ({
+      ...point,
+      photos: point.photos.map(({ previewUrl: _previewUrl, ...photo }) => photo),
+    })),
+  };
+}
+
+function revokeSessionUrls(session: UiFieldSession) {
+  session.points.forEach((point) => {
+    point.photos.forEach((photo) => {
+      URL.revokeObjectURL(photo.previewUrl);
+    });
+  });
+}
+
+function resolvePointCoordinates(
+  draft: PointDraft,
+  currentGps: GpsCoordinates | null,
+): GpsCoordinates | null {
+  const latitude = parseCoordinate(draft.latitude);
+  const longitude = parseCoordinate(draft.longitude);
+
+  if (latitude !== null && longitude !== null) {
+    return {
+      lat: latitude,
+      lon: longitude,
+      accuracy: currentGps?.accuracy ?? null,
+    };
+  }
+
+  if (draft.latitude.trim() || draft.longitude.trim()) {
+    return null;
+  }
+
+  return currentGps;
+}
+
+function buildSessionMapPoints(points: UiSessionPoint[]) {
+  return [...points]
+    .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())
+    .map((point, index) => ({
+      id: point.id,
+      placeName: point.placeName,
+      lat: point.gps.lat,
+      lon: point.gps.lon,
+      orderLabel: String(index + 1),
+    }));
+}
+
+function formatGpsReadyMessage(location: GpsCoordinates): string {
+  return location.accuracy
+    ? `GPS estable dentro de ${Math.round(location.accuracy)} m.`
+    : 'GPS activo.';
+}
+
+function describeGeolocationError(error: GeolocationPositionError, hasPreviousFix: boolean): string {
+  switch (error.code) {
+    case error.PERMISSION_DENIED:
+      return 'Permiso de ubicación bloqueado. Actívalo en el navegador o en el sistema.';
+    case error.POSITION_UNAVAILABLE:
+      return hasPreviousFix
+        ? 'Conservo la última posición válida. El dispositivo no entrega una nueva fijación ahora.'
+        : 'El dispositivo no está entregando una posición. Revisa GPS, cobertura o modo avión.';
+    case error.TIMEOUT:
+      return hasPreviousFix
+        ? 'Conservo la última posición válida. La nueva fijación está tardando demasiado.'
+        : 'La fijación GPS está tardando demasiado. Reintenta al aire libre.';
+    default:
+      return 'No se pudo obtener la posición actual.';
+  }
 }
 
 function ViewButton({
@@ -266,338 +233,165 @@ function ViewButton({
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium uppercase tracking-[0.24em] transition ${
-        active
-          ? 'border-[color:var(--signal-strong)] bg-[color:var(--signal-strong)] text-white'
-          : 'border-transparent bg-transparent text-[color:var(--muted)] hover:border-[color:var(--line)] hover:bg-white/60 hover:text-[color:var(--paper)]'
-      }`}
+      className={`dock-button ${active ? 'is-active' : ''}`}
     >
-      <Icon className="h-4 w-4" />
-      {label}
+      <span className="dock-button__icon">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="dock-button__label">{label}</span>
     </button>
   );
 }
 
-function RecordingCard({
-  recording,
-  isGeneratingImage,
-  isExportingPackage,
-  onDelete,
-  onGenerateImage,
-  onSaveMetadata,
-  onExportPackage,
-}: {
-  recording: UiRecording;
-  isGeneratingImage: boolean;
-  isExportingPackage: boolean;
-  onDelete: () => void;
-  onGenerateImage: () => void;
-  onSaveMetadata: (metadata: RecordingMetadata) => Promise<void> | void;
-  onExportPackage: () => Promise<void> | void;
-}) {
-  const [placeNameDraft, setPlaceNameDraft] = useState(recording.placeName);
-  const [environmentTypeDraft, setEnvironmentTypeDraft] = useState(recording.environmentType);
-  const [weatherDraft, setWeatherDraft] = useState(recording.weather);
-  const [equipmentDraft, setEquipmentDraft] = useState(recording.equipment);
-  const [descriptionDraft, setDescriptionDraft] = useState(recording.description);
-  const [tagsDraft, setTagsDraft] = useState(recording.tags.join(', '));
-  const [isSavingMetadata, setIsSavingMetadata] = useState(false);
-
-  useEffect(() => {
-    setPlaceNameDraft(recording.placeName);
-    setEnvironmentTypeDraft(recording.environmentType);
-    setWeatherDraft(recording.weather);
-    setEquipmentDraft(recording.equipment);
-    setDescriptionDraft(recording.description);
-    setTagsDraft(recording.tags.join(', '));
-  }, [
-    recording.id,
-    recording.placeName,
-    recording.environmentType,
-    recording.weather,
-    recording.equipment,
-    recording.description,
-    recording.tags,
-  ]);
-
-  const modeTone =
-    recording.mode === 'walk'
-      ? 'border-[color:rgba(255,140,92,0.28)] bg-[rgba(255,140,92,0.12)] text-[color:var(--ember)]'
-      : 'border-[color:rgba(191,255,136,0.24)] bg-[rgba(191,255,136,0.1)] text-[color:var(--signal-strong)]';
-  const normalizedPlaceName =
-    placeNameDraft.trim() || buildSuggestedPlaceName(recording.createdAt, recording.mode);
-  const normalizedEnvironmentType = environmentTypeDraft.trim();
-  const normalizedWeather = weatherDraft.trim();
-  const normalizedEquipment = equipmentDraft.trim();
-  const normalizedDescription = descriptionDraft.trim();
-  const normalizedTags = normalizeTags(tagsDraft);
-  const metadataChanged =
-    normalizedPlaceName !== recording.placeName ||
-    normalizedEnvironmentType !== recording.environmentType ||
-    normalizedWeather !== recording.weather ||
-    normalizedEquipment !== recording.equipment ||
-    normalizedDescription !== recording.description ||
-    !areTagsEqual(normalizedTags, recording.tags);
-
-  async function handleSaveMetadata() {
-    if (!metadataChanged || isSavingMetadata) {
-      return;
-    }
-
-    setIsSavingMetadata(true);
-    try {
-      await onSaveMetadata({
-        placeName: normalizedPlaceName,
-        environmentType: normalizedEnvironmentType,
-        weather: normalizedWeather,
-        equipment: normalizedEquipment,
-        description: normalizedDescription,
-        tags: normalizedTags,
-      });
-    } finally {
-      setIsSavingMetadata(false);
-    }
-  }
-
-  return (
-    <motion.article
-      layout
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -12 }}
-      className="panel flex flex-col gap-5 p-5"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] ${modeTone}`}>
-              {recording.mode === 'walk' ? 'Tramo de ruta' : 'Toma manual'}
-            </span>
-            <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[10px] uppercase tracking-[0.24em] text-[color:var(--muted)]">
-              {formatDuration(recording.durationMs)}
-            </span>
-          </div>
-          <div>
-            <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">
-              {recording.placeName}
-            </p>
-            <p className="text-sm text-[color:var(--muted)]">
-              {format(new Date(recording.createdAt), 'MMM d, yyyy · HH:mm:ss')} · {recording.gps.lat.toFixed(5)}, {recording.gps.lon.toFixed(5)}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onExportPackage}
-            disabled={isExportingPackage}
-            className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:text-[color:var(--signal-strong)] disabled:cursor-wait disabled:opacity-60"
-          >
-            {isExportingPackage ? 'Exportando' : 'Exportar'}
-          </button>
-          <button
-            onClick={onDelete}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[color:var(--muted)] transition hover:border-[color:var(--ember)] hover:text-[color:var(--ember)]"
-            aria-label="Eliminar toma"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-4">
-          <p className="text-[10px] uppercase tracking-[0.28em] text-[color:var(--muted)]">Tipo de entorno</p>
-          <p className="mt-2 text-sm text-[color:var(--paper)]">{recording.environmentType || 'Sin indicar'}</p>
-        </div>
-        <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-4">
-          <p className="text-[10px] uppercase tracking-[0.28em] text-[color:var(--muted)]">Tiempo atmosférico</p>
-          <p className="mt-2 text-sm text-[color:var(--paper)]">{recording.weather || 'Sin indicar'}</p>
-        </div>
-        <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-4">
-          <p className="text-[10px] uppercase tracking-[0.28em] text-[color:var(--muted)]">Equipo</p>
-          <p className="mt-2 text-sm text-[color:var(--paper)]">{recording.equipment || 'Sin indicar'}</p>
-        </div>
-        <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-4">
-          <p className="text-[10px] uppercase tracking-[0.28em] text-[color:var(--muted)]">Año</p>
-          <p className="mt-2 text-sm text-[color:var(--paper)]">{format(new Date(recording.createdAt), 'yyyy')}</p>
-        </div>
-      </div>
-
-      <div className="rounded-[24px] border border-white/10 bg-black/20 px-4 py-4">
-        <div className="mb-3 flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-[color:var(--muted)]">
-          <Play className="h-4 w-4 text-[color:var(--signal-strong)]" />
-          Escucha
-        </div>
-        <audio controls preload="metadata" src={recording.audioUrl} className="field-audio w-full" />
-      </div>
-
-      {recording.description ? (
-        <p className="rounded-[22px] border border-white/10 bg-white/[0.03] px-4 py-4 text-sm leading-6 text-[color:var(--muted)]">
-          {recording.description}
-        </p>
-      ) : null}
-
-      {recording.tags.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {recording.tags.map((tag) => (
-            <span
-              key={tag}
-              className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-[color:var(--muted)]"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-      ) : null}
-
-      <details className="rounded-[24px] border border-white/10 bg-white/[0.02]">
-        <summary className="cursor-pointer list-none px-4 py-4 text-sm font-medium text-[color:var(--paper)]">
-          Ficha completa y edición
-        </summary>
-        <div className="grid gap-4 border-t border-white/10 px-4 py-4 xl:grid-cols-[1.1fr,0.9fr]">
-          <div className="grid gap-3">
-            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-              <span>Nombre del lugar</span>
-              <input
-                value={placeNameDraft}
-                onChange={(event) => setPlaceNameDraft(event.target.value)}
-                className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                placeholder="Barranco de Valdehierro"
-              />
-            </label>
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                <span>Tipo de entorno</span>
-                <input
-                  value={environmentTypeDraft}
-                  onChange={(event) => setEnvironmentTypeDraft(event.target.value)}
-                  className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                  placeholder="Bosque, costa, urbano..."
-                />
-              </label>
-              <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                <span>Tiempo atmosférico</span>
-                <input
-                  value={weatherDraft}
-                  onChange={(event) => setWeatherDraft(event.target.value)}
-                  className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                  placeholder="Nublado, viento suave, 12C"
-                />
-              </label>
-            </div>
-            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-              <span>Equipo usado</span>
-              <input
-                value={equipmentDraft}
-                onChange={(event) => setEquipmentDraft(event.target.value)}
-                className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                placeholder="Zoom H6, par XY"
-              />
-            </label>
-            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-              <span>Tags</span>
-              <input
-                value={tagsDraft}
-                onChange={(event) => setTagsDraft(event.target.value)}
-                className="rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                placeholder="agua, aves, viento"
-              />
-            </label>
-            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-              <span>Descripción del lugar</span>
-              <textarea
-                value={descriptionDraft}
-                onChange={(event) => setDescriptionDraft(event.target.value)}
-                rows={5}
-                className="min-h-32 rounded-[18px] border border-white/10 bg-white/[0.03] px-4 py-3 text-[color:var(--paper)] outline-none transition focus:border-[color:var(--signal-strong)]"
-                placeholder="Describe el espacio, el contexto y el interés sonoro."
-              />
-            </label>
-            <button
-              onClick={handleSaveMetadata}
-              disabled={!metadataChanged || isSavingMetadata}
-              className="inline-flex items-center justify-center rounded-[18px] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:text-[color:var(--signal-strong)] disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {isSavingMetadata ? 'Guardando ficha' : metadataChanged ? 'Guardar cambios' : 'Ficha guardada'}
-            </button>
-          </div>
-
-          <div className="grid gap-4">
-            <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-4">
-              <div className="mb-3 flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-[color:var(--muted)]">
-                <MapPin className="h-4 w-4 text-[color:var(--ember)]" />
-                Coordenadas
-              </div>
-              <p className="font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">
-                {recording.gps.lat.toFixed(6)}, {recording.gps.lon.toFixed(6)}
-              </p>
-              <p className="mt-2 text-sm text-[color:var(--muted)]">
-                Precisión: {recording.gps.accuracy ? `${Math.round(recording.gps.accuracy)} m` : 'desconocida'}
-              </p>
-            </div>
-
-            {recording.imageUrl ? (
-              <div className="space-y-3">
-                <img
-                  src={recording.imageUrl}
-                  alt="AI-generated soundscape"
-                  className="h-52 w-full rounded-[24px] border border-white/10 object-cover"
-                  referrerPolicy="no-referrer"
-                />
-                <p className="rounded-[20px] border border-white/10 bg-white/[0.03] px-4 py-3 text-sm italic text-[color:var(--muted)]">
-                  {recording.prompt}
-                </p>
-              </div>
-            ) : (
-              <button
-                onClick={onGenerateImage}
-                disabled={isGeneratingImage}
-                className="inline-flex items-center justify-center gap-3 rounded-[20px] border border-dashed border-white/15 bg-white/[0.03] px-4 py-4 text-sm text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:bg-[color:var(--signal-soft)] disabled:cursor-wait disabled:opacity-60"
-              >
-                {isGeneratingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
-                {isGeneratingImage ? 'Generando visual' : 'Generar visual AI'}
-              </button>
-            )}
-          </div>
-        </div>
-      </details>
-    </motion.article>
-  );
-}
-
 export default function App() {
-  const [view, setView] = useState<View>('entry');
-  const [captureMode, setCaptureMode] = useState<CaptureMode>('idle');
-  const [captureDraft, setCaptureDraft] = useState<CaptureDraft>(emptyCaptureDraft());
-  const [recordings, setRecordings] = useState<UiRecording[]>([]);
-  const [currentGps, setCurrentGps] = useState<Coordinates | null>(null);
-  const [gpsMessage, setGpsMessage] = useState('Buscando señal GPS...');
+  const [view, setView] = useState<View>('session');
+  const [sessionDraft, setSessionDraft] = useState<SessionDraft>(buildSessionDraft());
+  const [pointDraft, setPointDraft] = useState<PointDraft>(buildPointDraft());
+  const [draftPhotos, setDraftPhotos] = useState<DraftPhoto[]>([]);
+  const [sessions, setSessions] = useState<UiFieldSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [currentGps, setCurrentGps] = useState<GpsCoordinates | null>(null);
   const [gpsStatus, setGpsStatus] = useState<'pending' | 'ready' | 'error'>('pending');
-  const [liveSessionMs, setLiveSessionMs] = useState(0);
-  const [statusNote, setStatusNote] = useState('Ficha preparada. Registra el lugar y lanza la toma cuando estés listo.');
-  const [appError, setAppError] = useState<string | null>(null);
+  const [gpsMessage, setGpsMessage] = useState('Buscando señal GPS...');
+  const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [locationMessage, setLocationMessage] = useState('Esperando coordenadas para detectar el lugar.');
+  const [detectedPlace, setDetectedPlace] = useState<DetectedPlaceSummary | null>(null);
+  const [weatherStatus, setWeatherStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [weatherMessage, setWeatherMessage] = useState('Esperando coordenadas para consultar el clima.');
+  const [weatherSnapshot, setWeatherSnapshot] = useState<AutomaticWeatherSummary | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [storageMode, setStorageMode] = useState<'loading' | 'ready' | 'memory-only'>('loading');
-  const [isGeneratingImageId, setIsGeneratingImageId] = useState<string | null>(null);
-  const [isExportingId, setIsExportingId] = useState<string | null>(null);
+  const [statusNote, setStatusNote] = useState('Inicia una sesión y ve registrando puntos con GPS, clima, notas y fotos.');
+  const [appError, setAppError] = useState<string | null>(null);
+  const [isExportingSessionId, setIsExportingSessionId] = useState<string | null>(null);
+  const [isQuickCapturing, setIsQuickCapturing] = useState(false);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const sessionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const currentGpsRef = useRef<Coordinates | null>(null);
-  const recordingsRef = useRef<UiRecording[]>([]);
+  const currentGpsRef = useRef<GpsCoordinates | null>(null);
+  const sessionsRef = useRef<UiFieldSession[]>([]);
+  const draftPhotosRef = useRef<DraftPhoto[]>([]);
+  const locationAbortRef = useRef<AbortController | null>(null);
+  const lastLocationKeyRef = useRef<string | null>(null);
+  const lastAutomaticPlaceValueRef = useRef<string>('');
+  const weatherAbortRef = useRef<AbortController | null>(null);
+  const lastWeatherKeyRef = useRef<string | null>(null);
+  const lastAutomaticWeatherValueRef = useRef<string>('');
+
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+  const selectedPoint =
+    activeSession?.points.find((point) => point.id === selectedPointId) ?? activeSession?.points[0] ?? null;
+  const activeSessionMapPoints = activeSession ? buildSessionMapPoints(activeSession.points) : [];
+  const draftPointCoordinates = resolvePointCoordinates(pointDraft, currentGps);
+  const draftPointLabel = pointDraft.placeName.trim() || detectedPlace?.placeName || 'Punto preparado';
 
   useEffect(() => {
-    recordingsRef.current = recordings;
-  }, [recordings]);
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
+    draftPhotosRef.current = draftPhotos;
+  }, [draftPhotos]);
+
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
+
+    async function loadSessions() {
+      try {
+        const stored = await listFieldSessions();
+        const hydrated = stored.map(hydrateSession);
+
+        if (!active) {
+          hydrated.forEach(revokeSessionUrls);
+          return;
+        }
+
+        setSessions((previous) => {
+          previous.forEach(revokeSessionUrls);
+          return hydrated;
+        });
+
+        const activeStoredSession = hydrated.find((session) => session.status === 'active');
+        setActiveSessionId(activeStoredSession?.id ?? hydrated[0]?.id ?? null);
+        setStorageMode('ready');
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        console.error('Loading sessions failed:', error);
+        setStorageMode('memory-only');
+        setStatusNote('No se pudo abrir el archivo local. La sesión actual quedará sólo en memoria.');
+      }
+    }
+
+    loadSessions();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let permissionStatus: PermissionStatus | null = null;
 
     if (!('geolocation' in navigator)) {
       setGpsStatus('error');
       setGpsMessage('Este navegador no expone geolocalización.');
       return undefined;
     }
+
+    if (!window.isSecureContext) {
+      setGpsStatus('error');
+      setGpsMessage('La ubicación web requiere abrir la app en HTTPS o en localhost.');
+      return undefined;
+    }
+
+    const syncPermissionState = (state: PermissionState) => {
+      if (!active) {
+        return;
+      }
+
+      if (state === 'denied') {
+        setGpsStatus('error');
+        setGpsMessage('Permiso de ubicación bloqueado. Actívalo en el navegador o en el sistema.');
+        return;
+      }
+
+      if (state === 'prompt' && !currentGpsRef.current) {
+        setGpsStatus('pending');
+        setGpsMessage('Pulsa "Activar GPS" para conceder permiso y obtener la posición.');
+      }
+    };
+
+    if (navigator.permissions?.query) {
+      void navigator.permissions
+        .query({ name: 'geolocation' })
+        .then((status) => {
+          if (!active) {
+            return;
+          }
+
+          permissionStatus = status;
+          syncPermissionState(status.state);
+          status.onchange = () => syncPermissionState(status.state);
+        })
+        .catch(() => {
+          // Some browsers do not support the permissions API cleanly.
+        });
+    }
+
+    void requestCurrentLocation({ silent: true });
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
@@ -611,22 +405,21 @@ export default function App() {
           accuracy: position.coords.accuracy ?? null,
         };
 
-        currentGpsRef.current = nextLocation;
-        setCurrentGps(nextLocation);
-        setGpsStatus('ready');
-        setGpsMessage(`Señal estable dentro de ${Math.round(nextLocation.accuracy ?? 0)} m.`);
+        commitGpsLocation(nextLocation);
       },
       (error) => {
         if (!active) {
           return;
         }
 
-        setGpsStatus('error');
-        if (error.code === error.PERMISSION_DENIED) {
-          setGpsMessage('Sin permiso de ubicación. Puedes escribir coordenadas manualmente.');
-        } else {
-          setGpsMessage('La señal GPS es inestable ahora mismo.');
+        if (currentGpsRef.current && error.code !== error.PERMISSION_DENIED) {
+          setGpsStatus('ready');
+          setGpsMessage(describeGeolocationError(error, true));
+          return;
         }
+
+        setGpsStatus('error');
+        setGpsMessage(describeGeolocationError(error, false));
       },
       {
         enableHighAccuracy: true,
@@ -637,986 +430,1494 @@ export default function App() {
 
     return () => {
       active = false;
+      if (permissionStatus) {
+        permissionStatus.onchange = null;
+      }
       navigator.geolocation.clearWatch(watchId);
     };
   }, []);
+
+  useEffect(() => {
+    setSelectedPointId((current) => {
+      if (!activeSession) {
+        return null;
+      }
+
+      if (current && activeSession.points.some((point) => point.id === current)) {
+        return current;
+      }
+
+      return activeSession.points[0]?.id ?? null;
+    });
+  }, [activeSession]);
 
   useEffect(() => {
     if (!currentGps) {
       return;
     }
 
-    setCaptureDraft((previous) => {
-      if (previous.latitude.trim() || previous.longitude.trim()) {
+    setPointDraft((previous) => {
+      if (previous.coordinateSource !== 'auto') {
+        return previous;
+      }
+
+      const latitude = currentGps.lat.toFixed(6);
+      const longitude = currentGps.lon.toFixed(6);
+
+      if (previous.latitude === latitude && previous.longitude === longitude) {
         return previous;
       }
 
       return {
         ...previous,
-        latitude: currentGps.lat.toFixed(6),
-        longitude: currentGps.lon.toFixed(6),
+        latitude,
+        longitude,
       };
     });
   }, [currentGps]);
 
   useEffect(() => {
-    let active = true;
-
-    async function loadPersistedRecordings() {
-      try {
-        const stored = await listStoredRecordings();
-        const hydrated = stored.map(hydrateRecording);
-
-        if (!active) {
-          hydrated.forEach((recording) => URL.revokeObjectURL(recording.audioUrl));
-          return;
-        }
-
-        setRecordings((previous) => {
-          if (previous.length === 0) {
-            return hydrated;
-          }
-
-          const merged = new Map<string, UiRecording>();
-
-          for (const recording of hydrated) {
-            merged.set(recording.id, recording);
-          }
-
-          for (const recording of previous) {
-            const duplicate = merged.get(recording.id);
-            if (duplicate) {
-              URL.revokeObjectURL(duplicate.audioUrl);
-            }
-            merged.set(recording.id, recording);
-          }
-
-          return Array.from(merged.values()).sort(
-            (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-          );
-        });
-        setStorageMode('ready');
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-
-        console.error('Storage bootstrap failed:', error);
-        setStorageMode('memory-only');
-        setStatusNote('El archivo local no está disponible. Las nuevas tomas quedarán sólo en memoria.');
-      }
-    }
-
-    loadPersistedRecordings();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (sessionTimerRef.current) {
-        clearInterval(sessionTimerRef.current);
-      }
-
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.ondataavailable = null;
-        mediaRecorderRef.current.onstop = null;
-        try {
-          mediaRecorderRef.current.stop();
-        } catch {
-          // Ignore stop errors during shutdown.
-        }
-      }
-
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      }
-
-      recordingsRef.current.forEach((recording) => URL.revokeObjectURL(recording.audioUrl));
-    };
-  }, []);
-
-  function stopSessionTimer() {
-    if (sessionTimerRef.current) {
-      clearInterval(sessionTimerRef.current);
-      sessionTimerRef.current = null;
-    }
-  }
-
-  function startSessionTimer(startedAt: number) {
-    stopSessionTimer();
-    setLiveSessionMs(0);
-
-    sessionTimerRef.current = setInterval(() => {
-      setLiveSessionMs(Date.now() - startedAt);
-    }, 250);
-  }
-
-  function releaseStream() {
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-    }
-
-    mediaRecorderRef.current = null;
-  }
-
-  function closeCapture(resetClock = true) {
-    stopSessionTimer();
-    releaseStream();
-    if (resetClock) {
-      setLiveSessionMs(0);
-    }
-  }
-
-  function applyCurrentGpsToDraft() {
-    if (!currentGpsRef.current) {
-      setAppError('No hay una señal GPS activa para rellenar las coordenadas.');
+    const coordinates = resolvePointCoordinates(pointDraft, currentGps);
+    if (!coordinates) {
+      locationAbortRef.current?.abort();
+      setLocationStatus('idle');
+      setLocationMessage('Esperando coordenadas válidas para detectar el lugar.');
+      setDetectedPlace(null);
+      lastLocationKeyRef.current = null;
       return;
     }
 
-    setCaptureDraft((previous) => ({
+    const timerId = window.setTimeout(() => {
+      void refreshDetectedPlaceForCoordinates(coordinates);
+    }, 700);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [pointDraft.coordinateSource, pointDraft.latitude, pointDraft.longitude, currentGps?.lat, currentGps?.lon]);
+
+  useEffect(() => {
+    const coordinates = resolvePointCoordinates(pointDraft, currentGps);
+    if (!coordinates) {
+      weatherAbortRef.current?.abort();
+      setWeatherStatus('idle');
+      setWeatherMessage('Esperando coordenadas válidas para consultar el clima.');
+      setWeatherSnapshot(null);
+      lastWeatherKeyRef.current = null;
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      void refreshWeatherForCoordinates(coordinates);
+    }, 550);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [pointDraft.coordinateSource, pointDraft.latitude, pointDraft.longitude, currentGps?.lat, currentGps?.lon]);
+
+  useEffect(() => {
+    return () => {
+      sessionsRef.current.forEach(revokeSessionUrls);
+      draftPhotosRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+      locationAbortRef.current?.abort();
+      weatherAbortRef.current?.abort();
+    };
+  }, []);
+
+  function replaceSessionInState(nextSession: UiFieldSession) {
+    setSessions((current) => {
+      const existingIndex = current.findIndex((session) => session.id === nextSession.id);
+      if (existingIndex === -1) {
+        return [nextSession, ...current];
+      }
+
+      const next = [...current];
+      next[existingIndex] = nextSession;
+      return next;
+    });
+  }
+
+  function commitGpsLocation(nextLocation: GpsCoordinates) {
+    currentGpsRef.current = nextLocation;
+    setCurrentGps(nextLocation);
+    setGpsStatus('ready');
+    setGpsMessage(formatGpsReadyMessage(nextLocation));
+  }
+
+  async function requestCurrentLocation(options?: { silent?: boolean }): Promise<GpsCoordinates | null> {
+    if (!('geolocation' in navigator)) {
+      setGpsStatus('error');
+      setGpsMessage('Este navegador no expone geolocalización.');
+      return null;
+    }
+
+    if (!window.isSecureContext) {
+      setGpsStatus('error');
+      setGpsMessage('La ubicación web requiere abrir la app en HTTPS o en localhost.');
+      return null;
+    }
+
+    if (!options?.silent) {
+      setGpsStatus('pending');
+      setGpsMessage('Solicitando una fijación GPS...');
+    }
+
+    return await new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const nextLocation = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+            accuracy: position.coords.accuracy ?? null,
+          };
+
+          commitGpsLocation(nextLocation);
+          resolve(nextLocation);
+        },
+        (error) => {
+          const hasPreviousFix = Boolean(currentGpsRef.current);
+          if (hasPreviousFix && error.code !== error.PERMISSION_DENIED) {
+            setGpsStatus('ready');
+            setGpsMessage(describeGeolocationError(error, true));
+            resolve(currentGpsRef.current);
+            return;
+          }
+
+          setGpsStatus('error');
+          setGpsMessage(describeGeolocationError(error, hasPreviousFix));
+          resolve(null);
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 5_000,
+          timeout: 15_000,
+        },
+      );
+    });
+  }
+
+  async function activateGpsAndApplyToDraft() {
+    setAppError(null);
+
+    const nextLocation = currentGpsRef.current ?? (await requestCurrentLocation());
+    if (!nextLocation) {
+      setAppError('No pude obtener una posición GPS en este momento.');
+      return;
+    }
+
+    setPointDraft((previous) => ({
       ...previous,
-      latitude: currentGpsRef.current?.lat.toFixed(6) ?? previous.latitude,
-      longitude: currentGpsRef.current?.lon.toFixed(6) ?? previous.longitude,
+      latitude: nextLocation.lat.toFixed(6),
+      longitude: nextLocation.lon.toFixed(6),
+      coordinateSource: 'auto',
     }));
   }
 
-  function resolveDraftGps(): Coordinates {
-    const latitudeText = captureDraft.latitude.trim();
-    const longitudeText = captureDraft.longitude.trim();
-    const latitude = parseCoordinate(latitudeText);
-    const longitude = parseCoordinate(longitudeText);
+  async function persistSession(nextSession: UiFieldSession) {
+    replaceSessionInState(nextSession);
 
-    if ((latitudeText && latitude === null) || (longitudeText && longitude === null)) {
-      throw new Error('Las coordenadas deben ser numéricas.');
-    }
-
-    if ((latitudeText && longitude === null) || (longitudeText && latitude === null)) {
-      throw new Error('Debes completar latitud y longitud o dejar ambas vacías para usar el GPS.');
-    }
-
-    if (latitude !== null && longitude !== null) {
-      return {
-        lat: latitude,
-        lon: longitude,
-        accuracy: currentGpsRef.current?.accuracy ?? null,
-      };
-    }
-
-    return currentGpsRef.current ?? FALLBACK_GPS;
-  }
-
-  function buildMetadataFromDraft(createdAt: string, mode: Exclude<CaptureMode, 'idle'>): RecordingMetadata {
-    return {
-      placeName: captureDraft.placeName.trim() || buildSuggestedPlaceName(createdAt, mode),
-      environmentType: captureDraft.environmentType.trim(),
-      weather: captureDraft.weather.trim(),
-      equipment: captureDraft.equipment.trim(),
-      description: captureDraft.description.trim(),
-      tags: normalizeTags(captureDraft.tagsText),
-    };
-  }
-
-  async function prepareRecorder(): Promise<MediaRecorder | null> {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setAppError('Este navegador no puede acceder al micrófono.');
-      return null;
-    }
-
-    if (typeof MediaRecorder === 'undefined') {
-      setAppError('MediaRecorder no está disponible en este navegador.');
-      return null;
+    if (storageMode === 'memory-only') {
+      return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
+      await saveFieldSession(dehydrateSession(nextSession));
+      setStorageMode('ready');
+    } catch (error) {
+      console.error('Saving session failed:', error);
+      setStorageMode('memory-only');
+      setStatusNote('Falló la escritura local. La sesión seguirá en memoria hasta recargar.');
+    }
+  }
+
+  async function refreshDetectedPlaceForCoordinates(
+    coordinates: GpsCoordinates,
+    options?: { force?: boolean },
+  ): Promise<DetectedPlaceSummary | null> {
+    const requestKey = `${coordinates.lat.toFixed(4)},${coordinates.lon.toFixed(4)}`;
+    if (!options?.force && requestKey === lastLocationKeyRef.current) {
+      return detectedPlace;
+    }
+
+    locationAbortRef.current?.abort();
+    const controller = new AbortController();
+    locationAbortRef.current = controller;
+    setLocationStatus('loading');
+    setLocationMessage('Consultando nombre del lugar...');
+
+    try {
+      const place = await reverseGeocodePlace(coordinates.lat, coordinates.lon, controller.signal);
+      lastLocationKeyRef.current = requestKey;
+      setDetectedPlace(place);
+      setLocationStatus('ready');
+      setLocationMessage(place.context || place.displayName || 'Lugar resuelto por coordenadas.');
+
+      setPointDraft((previous) => {
+        const nextPlaceName = place.placeName.trim();
+        const currentPlaceName = previous.placeName.trim();
+        const canOverwrite =
+          !currentPlaceName || currentPlaceName === lastAutomaticPlaceValueRef.current;
+
+        if (!nextPlaceName || !canOverwrite) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          placeName: nextPlaceName,
+        };
       });
 
-      const preferredMimeType = chooseAudioMimeType();
-      const recorder = preferredMimeType
-        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
-        : new MediaRecorder(stream);
-
-      mediaStreamRef.current = stream;
-      mediaRecorderRef.current = recorder;
-
-      return recorder;
+      if (place.placeName.trim()) {
+        lastAutomaticPlaceValueRef.current = place.placeName.trim();
+      }
+      return place;
     } catch (error) {
-      console.error('Microphone access failed:', error);
-      setAppError('Falló el acceso al micrófono. Revisa permisos y contexto seguro.');
+      if (controller.signal.aborted) {
+        return null;
+      }
+
+      console.error('Reverse geocoding failed:', error);
+      setLocationStatus('error');
+      setLocationMessage('No se pudo resolver el lugar a partir de las coordenadas. Revisa la conexión y vuelve a intentarlo.');
+      setDetectedPlace(null);
       return null;
     }
   }
 
-  async function persistAndHydrate(recording: StoredRecording) {
-    if (storageMode !== 'memory-only') {
-      try {
-        await saveStoredRecording(recording);
-        setStorageMode('ready');
-      } catch (error) {
-        console.error('Saving recording failed:', error);
-        setStorageMode('memory-only');
-        setStatusNote('Falló la escritura local. Las nuevas tomas quedarán en memoria hasta recargar.');
-      }
+  function refreshDetectedPlace() {
+    const coordinates = resolvePointCoordinates(pointDraft, currentGpsRef.current);
+    if (!coordinates) {
+      setAppError('Necesito coordenadas válidas para detectar el lugar.');
+      return;
     }
 
-    setRecordings((previous) => [hydrateRecording(recording), ...previous]);
+    setAppError(null);
+    void refreshDetectedPlaceForCoordinates(coordinates, { force: true });
   }
 
-  async function finalizeRecording(blob: Blob, durationMs: number, mode: Exclude<CaptureMode, 'idle'>) {
-    if (blob.size === 0) {
-      setAppError('La grabadora devolvió un clip vacío.');
+  function applyDetectedPlaceToDraft() {
+    if (!detectedPlace?.placeName.trim()) {
+      return;
+    }
+
+    const nextPlaceName = detectedPlace.placeName.trim();
+    lastAutomaticPlaceValueRef.current = nextPlaceName;
+    setPointDraft((previous) => ({
+      ...previous,
+      placeName: nextPlaceName,
+    }));
+  }
+
+  async function refreshWeatherForCoordinates(
+    coordinates: GpsCoordinates,
+    options?: { force?: boolean },
+  ): Promise<AutomaticWeatherSummary | null> {
+    const requestKey = `${coordinates.lat.toFixed(4)},${coordinates.lon.toFixed(4)}`;
+    if (!options?.force && requestKey === lastWeatherKeyRef.current) {
+      return weatherSnapshot;
+    }
+
+    weatherAbortRef.current?.abort();
+    const controller = new AbortController();
+    weatherAbortRef.current = controller;
+    setWeatherStatus('loading');
+    setWeatherMessage('Consultando clima automático...');
+
+    try {
+      const snapshot = await fetchAutomaticWeather(coordinates.lat, coordinates.lon, controller.signal);
+      lastWeatherKeyRef.current = requestKey;
+      setWeatherSnapshot(snapshot);
+      setWeatherStatus('ready');
+      setWeatherMessage(snapshot.details || 'Clima automático sincronizado.');
+
+      setPointDraft((previous) => {
+        const canOverwrite =
+          !previous.observedWeather.trim() ||
+          previous.observedWeather.trim() === lastAutomaticWeatherValueRef.current;
+
+        if (!canOverwrite) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          observedWeather: snapshot.summary,
+        };
+      });
+
+      lastAutomaticWeatherValueRef.current = snapshot.summary;
+      return snapshot;
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return null;
+      }
+
+      console.error('Automatic weather refresh failed:', error);
+      setWeatherStatus('error');
+      setWeatherMessage('No se pudo consultar el clima automático. Revisa la conexión y vuelve a intentarlo.');
+      setWeatherSnapshot(null);
+      return null;
+    }
+  }
+
+  function refreshAutomaticWeather() {
+    const coordinates = resolvePointCoordinates(pointDraft, currentGpsRef.current);
+    if (!coordinates) {
+      setAppError('Necesito coordenadas válidas para consultar el clima automático.');
+      return;
+    }
+
+    setAppError(null);
+    void refreshWeatherForCoordinates(coordinates, { force: true });
+  }
+
+  function applyAutomaticWeatherToDraft() {
+    if (!weatherSnapshot) {
+      return;
+    }
+
+    lastAutomaticWeatherValueRef.current = weatherSnapshot.summary;
+    setPointDraft((previous) => ({
+      ...previous,
+      observedWeather: weatherSnapshot.summary,
+    }));
+  }
+
+  function buildPointFromDraft(
+    createdAt: string,
+    coordinates: GpsCoordinates,
+    options?: {
+      automaticWeather?: AutomaticWeatherSummary | null;
+      detectedPlace?: DetectedPlaceSummary | null;
+      photos?: UiSessionPhoto[];
+    },
+  ): UiSessionPoint {
+    return {
+      id: uuidv4(),
+      createdAt,
+      gps: coordinates,
+      placeName:
+        pointDraft.placeName.trim() ||
+        options?.detectedPlace?.placeName.trim() ||
+        `Punto ${formatDateTime(createdAt, 'HH:mm:ss')}`,
+      habitat: pointDraft.habitat.trim(),
+      characteristics: pointDraft.characteristics.trim(),
+      observedWeather: pointDraft.observedWeather.trim() || options?.automaticWeather?.summary || '',
+      automaticWeather: options?.automaticWeather ?? null,
+      detectedPlace: options?.detectedPlace ?? null,
+      tags: normalizeTags(pointDraft.tagsText),
+      notes: pointDraft.notes.trim(),
+      zoomTakeReference: pointDraft.zoomTakeReference.trim(),
+      microphoneSetup: pointDraft.microphoneSetup.trim() || activeSession?.equipmentPreset || 'Zoom H6 · XY',
+      photos: options?.photos ?? [],
+    };
+  }
+
+  function handleDraftPhotosInput(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []) as File[];
+    if (files.length === 0) {
+      return;
+    }
+
+    const nextPhotos = files.map((file) => ({
+      id: uuidv4(),
+      fileName: file.name,
+      mimeType: file.type || 'image/jpeg',
+      blob: file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+
+    setDraftPhotos((current) => [...current, ...nextPhotos]);
+    event.target.value = '';
+  }
+
+  function removeDraftPhoto(photoId: string) {
+    setDraftPhotos((current) => {
+      const photo = current.find((entry) => entry.id === photoId);
+      if (photo) {
+        URL.revokeObjectURL(photo.previewUrl);
+      }
+      return current.filter((entry) => entry.id !== photoId);
+    });
+  }
+
+  function resetPointDraft(nextEquipmentPreset?: string) {
+    setPointDraft(buildPointDraft(nextEquipmentPreset ?? activeSession?.equipmentPreset ?? 'Zoom H6 · XY', currentGpsRef.current));
+    setDraftPhotos((current) => {
+      current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+      return [];
+    });
+    locationAbortRef.current?.abort();
+    setDetectedPlace(null);
+    setLocationStatus('idle');
+    setLocationMessage('Esperando coordenadas para detectar el lugar.');
+    lastLocationKeyRef.current = null;
+    lastAutomaticPlaceValueRef.current = '';
+    setWeatherSnapshot(null);
+    setWeatherStatus('idle');
+    setWeatherMessage('Esperando coordenadas para consultar el clima.');
+    lastWeatherKeyRef.current = null;
+    lastAutomaticWeatherValueRef.current = '';
+  }
+
+  function createSession() {
+    const createdAt = new Date().toISOString();
+    const nextSession: UiFieldSession = {
+      id: uuidv4(),
+      name: sessionDraft.name.trim() || `Salida ${formatDateTime(createdAt, 'yyyy-MM-dd')}`,
+      projectName: sessionDraft.projectName.trim(),
+      region: sessionDraft.region.trim(),
+      notes: sessionDraft.notes.trim(),
+      createdAt,
+      startedAt: createdAt,
+      status: 'active',
+      equipmentPreset: sessionDraft.equipmentPreset.trim() || 'Zoom H6 · XY',
+      points: [],
+    };
+
+    setActiveSessionId(nextSession.id);
+    setSelectedPointId(null);
+    void persistSession(nextSession);
+    setPointDraft(buildPointDraft(nextSession.equipmentPreset, currentGpsRef.current));
+    setSessionDraft(buildSessionDraft());
+    setStatusNote('Sesión iniciada. Empieza a registrar puntos de escucha.');
+    setView('point');
+  }
+
+  function updateActiveSessionField<K extends keyof UiFieldSession>(field: K, value: UiFieldSession[K]) {
+    if (!activeSession) {
+      return;
+    }
+
+    const nextSession = {
+      ...activeSession,
+      [field]: value,
+    };
+
+    void persistSession(nextSession);
+  }
+
+  async function closeActiveSession() {
+    if (!activeSession) {
+      return;
+    }
+
+    const nextSession: UiFieldSession = {
+      ...activeSession,
+      status: 'closed',
+      endedAt: new Date().toISOString(),
+    };
+
+    await persistSession(nextSession);
+    setActiveSessionId(null);
+    resetPointDraft(nextSession.equipmentPreset);
+    setStatusNote(`Sesión "${nextSession.name}" cerrada y lista para exportación.`);
+    setView('export');
+  }
+
+  async function addPointToSession() {
+    if (!activeSession || activeSession.status !== 'active') {
+      setAppError('Necesitas una sesión activa antes de registrar puntos.');
+      return;
+    }
+
+    let coordinates = resolvePointCoordinates(pointDraft, currentGpsRef.current);
+    if (!coordinates && pointDraft.coordinateSource === 'auto') {
+      coordinates = await requestCurrentLocation();
+    }
+
+    if (!coordinates) {
+      setAppError('Necesito coordenadas válidas para guardar el punto.');
       return;
     }
 
     const createdAt = new Date().toISOString();
-    const gps = resolveDraftGps();
-    const metadata = buildMetadataFromDraft(createdAt, mode);
+    const sessionPhotos: UiSessionPhoto[] = draftPhotos.map((photo) => ({
+      id: photo.id,
+      fileName: photo.fileName,
+      mimeType: photo.mimeType,
+      blob: photo.blob,
+      previewUrl: URL.createObjectURL(photo.blob),
+    }));
 
-    const storedRecording: StoredRecording = {
-      id: uuidv4(),
-      createdAt,
-      durationMs,
-      mode,
-      gps: {
-        lat: gps.lat,
-        lon: gps.lon,
-        accuracy: gps.accuracy,
-      },
-      mimeType: blob.type || chooseAudioMimeType() || 'audio/webm',
-      audioBlob: blob,
-      placeName: metadata.placeName,
-      environmentType: metadata.environmentType,
-      weather: metadata.weather,
-      equipment: metadata.equipment,
-      description: metadata.description,
-      title: metadata.placeName,
-      tags: metadata.tags,
-      notes: metadata.description,
+    const point = buildPointFromDraft(createdAt, coordinates, {
+      automaticWeather: weatherSnapshot,
+      detectedPlace,
+      photos: sessionPhotos,
+    });
+
+    const nextSession: UiFieldSession = {
+      ...activeSession,
+      points: [point, ...activeSession.points],
     };
 
-    await persistAndHydrate(storedRecording);
+    await persistSession(nextSession);
+    setSelectedPointId(point.id);
     setAppError(null);
-    setStatusNote(mode === 'walk' ? 'Tramo de ruta archivado.' : 'Toma archivada en el cuaderno de campo.');
+    setStatusNote(`Punto "${point.placeName}" guardado dentro de la sesión.`);
+    resetPointDraft(activeSession.equipmentPreset);
   }
 
-  async function startManualRecording() {
-    if (captureMode !== 'idle') {
+  async function addQuickPointToSession() {
+    if (!activeSession || activeSession.status !== 'active') {
+      setAppError('Necesitas una sesión activa antes de registrar un punto rápido.');
       return;
     }
 
-    setAppError(null);
-    try {
-      resolveDraftGps();
-    } catch (error) {
-      setAppError(error instanceof Error ? error.message : 'La ficha del lugar no es válida.');
+    let coordinates = currentGpsRef.current ?? resolvePointCoordinates(pointDraft, currentGpsRef.current);
+    if (!coordinates) {
+      coordinates = await requestCurrentLocation();
+    }
+
+    if (!coordinates) {
+      setAppError('Necesito GPS activo o coordenadas válidas para crear el punto automático.');
       return;
     }
 
-    const recorder = await prepareRecorder();
-    if (!recorder) {
-      return;
-    }
-
-    const chunks: Blob[] = [];
-    const startedAt = Date.now();
-
-      recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        chunks.push(event.data);
-      }
-    };
-
-    recorder.onerror = () => {
-      setAppError('La grabación falló al escribir la toma.');
-      setCaptureMode('idle');
-      closeCapture();
-    };
-
-    recorder.onstop = async () => {
-      const clipMimeType = recorder.mimeType || chunks[0]?.type || chooseAudioMimeType() || 'audio/webm';
-      const blob = new Blob(chunks, { type: clipMimeType });
-      try {
-        await finalizeRecording(blob, Math.max(1000, Date.now() - startedAt), 'manual');
-      } catch (error) {
-        setAppError(error instanceof Error ? error.message : 'No se pudo guardar la toma.');
-      }
-      setCaptureMode('idle');
-      closeCapture();
-    };
-
-    try {
-      recorder.start();
-      setCaptureMode('manual');
-      setStatusNote('Toma manual en marcha. Detén cuando la escena esté completa.');
-      startSessionTimer(startedAt);
-    } catch (error) {
-      console.error('Recorder start failed:', error);
-      setAppError('La grabadora no pudo iniciarse.');
-      closeCapture();
-    }
-  }
-
-  function stopManualRecording() {
-    if (captureMode !== 'manual' || !mediaRecorderRef.current) {
-      return;
-    }
-
-    setStatusNote('Cerrando la toma...');
-    stopSessionTimer();
-    mediaRecorderRef.current.stop();
-  }
-
-  async function startWalkMode() {
-    if (captureMode !== 'idle') {
-      return;
-    }
-
-    setAppError(null);
-    try {
-      resolveDraftGps();
-    } catch (error) {
-      setAppError(error instanceof Error ? error.message : 'La ficha del lugar no es válida.');
-      return;
-    }
-
-    const recorder = await prepareRecorder();
-    if (!recorder) {
-      return;
-    }
-
-    const sessionStartedAt = Date.now();
-    let sliceStartedAt = sessionStartedAt;
-
-    recorder.ondataavailable = async (event) => {
-      if (event.data.size === 0) {
-        return;
-      }
-
-      const now = Date.now();
-      const sliceDuration = Math.max(1000, now - sliceStartedAt);
-      sliceStartedAt = now;
-      try {
-        await finalizeRecording(event.data, sliceDuration, 'walk');
-      } catch (error) {
-        setAppError(error instanceof Error ? error.message : 'No se pudo guardar el tramo de ruta.');
-      }
-    };
-
-    recorder.onerror = () => {
-      setAppError('El modo ruta falló al cortar el audio.');
-      setCaptureMode('idle');
-      closeCapture();
-    };
-
-    recorder.onstop = () => {
-      setCaptureMode('idle');
-      closeCapture();
-      setStatusNote('Modo ruta pausado. El último tramo ya se ha guardado.');
-    };
-
-    try {
-      recorder.start(CAPTURE_SLICE_MS);
-      setCaptureMode('walk');
-      setStatusNote('Modo ruta activo. Se archivará un nuevo tramo cada 30 segundos.');
-      startSessionTimer(sessionStartedAt);
-    } catch (error) {
-      console.error('Walk mode start failed:', error);
-      setAppError('No se pudo iniciar el modo ruta.');
-      closeCapture();
-    }
-  }
-
-  function stopWalkMode() {
-    if (captureMode !== 'walk' || !mediaRecorderRef.current) {
-      return;
-    }
-
-    setStatusNote('Flushing final walk slice...');
-    stopSessionTimer();
-    mediaRecorderRef.current.stop();
-  }
-
-  async function removeRecording(recording: UiRecording) {
-    URL.revokeObjectURL(recording.audioUrl);
-    setRecordings((previous) => previous.filter((entry) => entry.id !== recording.id));
-
-    if (storageMode === 'ready') {
-      try {
-        await deleteStoredRecording(recording.id);
-      } catch (error) {
-        console.error('Deleting recording failed:', error);
-        setAppError('La toma se quitó de la vista, pero no se pudo borrar del almacenamiento.');
-      }
-    }
-  }
-
-  async function saveRecordingMetadata(recordingId: string, metadata: RecordingMetadata) {
-    const previous = recordings.find((entry) => entry.id === recordingId);
-    if (!previous) {
-      return;
-    }
-
-    setRecordings((current) =>
-      current.map((entry) => (entry.id === recordingId ? { ...entry, ...metadata } : entry)),
-    );
-
-    if (storageMode === 'ready') {
-      try {
-        await updateStoredRecordingMetadata(recordingId, metadata);
-      } catch (error) {
-        console.error('Metadata update failed:', error);
-        setRecordings((current) =>
-          current.map((entry) => (entry.id === recordingId ? previous : entry)),
-        );
-        setAppError('No se pudo guardar la ficha en el archivo.');
-        return;
-      }
-    }
-
-    setStatusNote('Ficha guardada en el archivo.');
-  }
-
-  async function exportRecordingPackage(recording: UiRecording) {
-    setIsExportingId(recording.id);
+    setIsQuickCapturing(true);
     setAppError(null);
 
     try {
-      const { default: JSZip } = await import('jszip');
-      const zip = new JSZip();
-      const baseName = slugifyForFile(recording.placeName);
-      const audioFileName = buildDownloadName(recording);
+      const [nextDetectedPlace, nextWeatherSnapshot] = await Promise.all([
+        refreshDetectedPlaceForCoordinates(coordinates, { force: true }),
+        refreshWeatherForCoordinates(coordinates, { force: true }),
+      ]);
 
-      zip.file(audioFileName, recording.audioBlob);
-      zip.file(
-        `${baseName}.json`,
-        JSON.stringify(
-          {
-            ...buildExportManifest(recording),
-            exportedAt: new Date().toISOString(),
-            exportTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          },
-          null,
-          2,
-        ),
-      );
+      const createdAt = new Date().toISOString();
+      const sessionPhotos: UiSessionPhoto[] = draftPhotos.map((photo) => ({
+        id: photo.id,
+        fileName: photo.fileName,
+        mimeType: photo.mimeType,
+        blob: photo.blob,
+        previewUrl: URL.createObjectURL(photo.blob),
+      }));
 
-      if (recording.imageUrl) {
-        const imageParts = dataUrlToParts(recording.imageUrl);
-        if (imageParts) {
-          zip.file(
-            `${baseName}-visual.${imageExtensionFromMimeType(imageParts.mimeType)}`,
-            imageParts.base64,
-            { base64: true },
-          );
-        } else {
-          zip.file(
-            `${baseName}-visual.txt`,
-            `Referencia visual\n${recording.imageUrl}\n\nPrompt\n${recording.prompt ?? ''}\n`,
-          );
-        }
-      }
-
-      const packageBlob = await zip.generateAsync({ type: 'blob' });
-      downloadBlob(packageBlob, `${baseName}-archive.zip`);
-      setStatusNote(`Paquete exportado para "${recording.placeName}".`);
-    } catch (error) {
-      console.error('Export package failed:', error);
-      setAppError('No se pudo generar el paquete de archivo.');
-    } finally {
-      setIsExportingId(null);
-    }
-  }
-
-  async function generateSoundscape(recording: UiRecording) {
-    const apiKey = process.env.GEMINI_API_KEY?.trim();
-    if (!apiKey) {
-      setAppError('Falta GEMINI_API_KEY. Añádela antes de generar visuales.');
-      return;
-    }
-
-    setAppError(null);
-    setIsGeneratingImageId(recording.id);
-
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const prompt = `Create an abstract cinematic image for a field recording captured in ${recording.placeName} at latitude ${recording.gps.lat.toFixed(5)} and longitude ${recording.gps.lon.toFixed(5)}. The environment is ${recording.environmentType || 'unspecified'} with weather described as ${recording.weather || 'unspecified'}. The place can be described as: ${recording.description || 'no additional place description'}. The clip lasts ${Math.round(recording.durationMs / 1000)} seconds and should feel ${recording.mode === 'walk' ? 'restless, moving, and wind-cut' : 'precise, attentive, and intimate'}. Use topographic patterns, warm signal lights, and atmospheric depth.`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-image-preview',
-        contents: [{ parts: [{ text: prompt }] }],
+      const point = buildPointFromDraft(createdAt, coordinates, {
+        automaticWeather: nextWeatherSnapshot ?? weatherSnapshot,
+        detectedPlace: nextDetectedPlace ?? detectedPlace,
+        photos: sessionPhotos,
       });
 
-      const parts = response.candidates?.[0]?.content?.parts ?? [];
-      let imageUrl = '';
+      const nextSession: UiFieldSession = {
+        ...activeSession,
+        points: [point, ...activeSession.points],
+      };
 
-      for (const part of parts as Array<{ inlineData?: { data?: string; mimeType?: string } }>) {
-        if (part.inlineData?.data) {
-          const mimeType = part.inlineData.mimeType ?? 'image/png';
-          imageUrl = `data:${mimeType};base64,${part.inlineData.data}`;
-          break;
-        }
-      }
-
-      if (!imageUrl) {
-        throw new Error('Gemini no devolvió una imagen embebida.');
-      }
-
-      setRecordings((previous) =>
-        previous.map((entry) => (entry.id === recording.id ? { ...entry, imageUrl, prompt } : entry)),
-      );
-
-      if (storageMode === 'ready') {
-        await updateStoredRecordingVisual(recording.id, imageUrl, prompt);
-      }
-
-      setStatusNote('Visual AI generado y asociado a la toma.');
-    } catch (error) {
-      console.error('Image generation failed:', error);
-      setAppError(error instanceof Error ? error.message : 'La generación de imagen falló.');
+      await persistSession(nextSession);
+      setSelectedPointId(point.id);
+      setStatusNote(`Punto rápido "${point.placeName}" creado con GPS, fecha, hora y clima.`);
+      resetPointDraft(activeSession.equipmentPreset);
     } finally {
-      setIsGeneratingImageId(null);
+      setIsQuickCapturing(false);
     }
   }
 
-  const latestRecording = recordings[0] ?? null;
-  const totalArchiveDurationMs = recordings.reduce((sum, recording) => sum + recording.durationMs, 0);
+  async function removePointFromActiveSession(pointId: string) {
+    if (!activeSession) {
+      return;
+    }
+
+    const pointToDelete = activeSession.points.find((point) => point.id === pointId);
+    if (!pointToDelete) {
+      return;
+    }
+
+    pointToDelete.photos.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+
+    const nextSession: UiFieldSession = {
+      ...activeSession,
+      points: activeSession.points.filter((point) => point.id !== pointId),
+    };
+
+    await persistSession(nextSession);
+    setSelectedPointId(nextSession.points[0]?.id ?? null);
+    setStatusNote('Punto eliminado de la sesión activa.');
+  }
+
+  async function removeSession(sessionId: string) {
+    const session = sessions.find((entry) => entry.id === sessionId);
+    if (!session) {
+      return;
+    }
+
+    revokeSessionUrls(session);
+    setSessions((current) => current.filter((entry) => entry.id !== sessionId));
+
+    if (activeSessionId === sessionId) {
+      setActiveSessionId(null);
+      setSelectedPointId(null);
+    }
+
+    if (storageMode === 'ready') {
+      try {
+        await deleteFieldSession(sessionId);
+      } catch (error) {
+        console.error('Deleting session failed:', error);
+        setAppError('La sesión desapareció de la vista, pero no se pudo borrar del archivo.');
+      }
+    }
+  }
+
+  async function exportSession(session: UiFieldSession) {
+    setIsExportingSessionId(session.id);
+    setAppError(null);
+
+    try {
+      await exportFieldSessionPackage(dehydrateSession(session));
+      setStatusNote(`Sesión "${session.name}" exportada.`);
+    } catch (error) {
+      console.error('Export session failed:', error);
+      setAppError('No se pudo exportar la sesión.');
+    } finally {
+      setIsExportingSessionId(null);
+    }
+  }
+
+  const captureDateLabel = formatDateTime(new Date(now), "d 'de' MMMM, yyyy");
+  const captureTimeLabel = formatDateTime(new Date(now), 'HH:mm:ss');
   const gpsLabel = currentGps
     ? `${currentGps.lat.toFixed(5)}, ${currentGps.lon.toFixed(5)}`
     : 'Sin señal activa';
-  const draftPlaceLabel = captureDraft.placeName.trim() || 'Lugar sin nombre';
-  const draftTagList = normalizeTags(captureDraft.tagsText);
-  const draftCoordinatesLabel =
-    captureDraft.latitude.trim() && captureDraft.longitude.trim()
-      ? `${captureDraft.latitude.trim()}, ${captureDraft.longitude.trim()}`
-      : gpsLabel;
-  const captureDateLabel = format(new Date(), 'MMM d, yyyy');
-  const captureTimeLabel = format(new Date(), 'HH:mm:ss');
-  const captureYearLabel = format(new Date(), 'yyyy');
+  const gpsAccuracyLabel = currentGps?.accuracy ? `${Math.round(currentGps.accuracy)} m` : 'Sin precisión';
+  const gpsStatusLabel =
+    gpsStatus === 'ready' ? 'GPS listo' : gpsStatus === 'pending' ? 'Buscando señal' : 'GPS no disponible';
+  const locationStatusLabel =
+    locationStatus === 'ready'
+      ? 'Lugar detectado'
+      : locationStatus === 'loading'
+        ? 'Detectando lugar'
+        : locationStatus === 'error'
+          ? 'Sin lugar detectado'
+          : 'Lugar pendiente';
+  const weatherStatusLabel =
+    weatherStatus === 'ready'
+      ? 'Clima sincronizado'
+      : weatherStatus === 'loading'
+        ? 'Consultando clima'
+        : weatherStatus === 'error'
+          ? 'Sin datos de clima'
+          : 'Clima pendiente';
+  const fileStatusLabel =
+    storageMode === 'ready' ? 'WRITE_READY' : storageMode === 'loading' ? 'LOADING...' : 'MEMORY_ONLY';
+  const gpsTelemetryValue = currentGps ? gpsLabel : 'SEARCHING...';
+  const pointBufferLabel = String(activeSession?.points.length ?? 0).padStart(3, '0');
+  const activeSessionMeta = activeSession
+    ? `${activeSession.projectName || 'sin proyecto'} · ${activeSession.region || 'sin zona'}`
+    : 'Crea una sesión para empezar a registrar puntos.';
+  const livePlaceLabel = detectedPlace?.placeName || 'Lugar pendiente';
+  const liveClimateLabel = weatherSnapshot?.summary || 'Clima pendiente';
+  const storageSummary =
+    storageMode === 'ready'
+      ? 'Archivo local disponible'
+      : storageMode === 'loading'
+        ? 'Preparando almacenamiento'
+        : 'Sólo memoria';
 
   return (
-    <div className="field-shell min-h-screen px-4 py-6 md:px-8 md:py-8">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6">
+    <div className="field-shell min-h-screen px-4 py-6 pb-32 md:px-8 md:py-8 md:pb-36">
+      <div className="mx-auto flex max-w-[1560px] flex-col gap-6">
         <motion.header
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="panel flex flex-col gap-6 p-5 md:p-7"
+          className="panel hero-shell flex flex-col gap-6 p-5 md:p-6"
         >
-          <div className="flex flex-wrap items-start justify-between gap-5">
-            <div className="space-y-3">
-              <p className="eyebrow text-[color:var(--signal-strong)]">Field Recorder Atlas</p>
-              <h1 className="font-['Fraunces'] text-4xl text-[color:var(--paper)] md:text-5xl">
-                Cuaderno de campo sonoro
-              </h1>
-              <p className="max-w-2xl text-sm leading-7 text-[color:var(--muted)]">
-                Una ficha clara para situar el lugar y una página separada para grabar sin distracciones.
-              </p>
+          <div className="header-grid gap-6">
+            <div className="header-main flex flex-wrap items-start justify-between gap-5">
+              <div className="space-y-3">
+                <p className="eyebrow">SOUNDSCAPE RECORDER</p>
+                <h1 className="display-heading header-title text-4xl md:text-5xl">
+                  {activeSession ? activeSession.name : 'Preparar nueva sesión'}
+                </h1>
+                <p className="module-copy max-w-3xl text-sm">{activeSessionMeta}</p>
+                <div className="header-geometry" aria-hidden="true">
+                  <span className="header-geometry__circle" />
+                  <span className="header-geometry__square" />
+                  <span className="header-geometry__triangle" />
+                </div>
+              </div>
+
+              <div className="header-clock">
+                <p className="eyebrow">Hora actual</p>
+                <p className="digital-clock mt-2">{captureTimeLabel}</p>
+                <p className="module-copy mt-2 text-sm">{captureDateLabel}</p>
+              </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="soft-card">
-                <p className="eyebrow text-[color:var(--muted)]">GPS</p>
-                <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{gpsLabel}</p>
-              </div>
-              <div className="soft-card">
-                <p className="eyebrow text-[color:var(--muted)]">Fecha</p>
-                <p className="mt-2 text-sm text-[color:var(--paper)]">{captureDateLabel}</p>
-              </div>
-              <div className="soft-card">
-                <p className="eyebrow text-[color:var(--muted)]">Archivo</p>
-                <p className="mt-2 text-sm text-[color:var(--paper)]">
-                  {storageMode === 'ready' ? 'Activo' : storageMode === 'loading' ? 'Cargando' : 'Sólo memoria'}
+            <div className="summary-grid">
+              <div className="summary-card">
+                <p className="eyebrow">Sesión activa</p>
+                <p className="summary-value">{activeSession ? activeSession.name : 'Sin sesión'}</p>
+                <p className="module-copy text-sm">
+                  {activeSession ? `${activeSession.points.length} puntos registrados` : 'Inicia una sesión para activar el flujo de campo.'}
                 </p>
               </div>
+              <div className="summary-card">
+                <p className="eyebrow">Contexto</p>
+                <p className="summary-value">{livePlaceLabel}</p>
+                <p className="module-copy text-sm">{liveClimateLabel}</p>
+              </div>
+              <div className="summary-card">
+                <p className="eyebrow">Archivo</p>
+                <p className="summary-value">{storageSummary}</p>
+                <p className="module-copy text-sm">{gpsStatusLabel}</p>
+              </div>
             </div>
           </div>
 
-          <div className="rounded-[24px] border border-[color:var(--line)] bg-[color:var(--panel-soft)] px-4 py-4 text-sm leading-6 text-[color:var(--muted)]">
+          <div className="status-strip text-sm leading-6 text-[color:var(--muted)]">
             {statusNote}
           </div>
+
           {appError ? (
-            <div className="rounded-[20px] border border-[color:rgba(181,106,67,0.3)] bg-[rgba(181,106,67,0.12)] px-4 py-3 text-sm text-[color:var(--paper)]">
+            <div className="error-strip text-sm text-[color:var(--accent)]">
               {appError}
             </div>
           ) : null}
         </motion.header>
 
-        <nav className="menu-shell sticky top-4 z-20 flex flex-wrap items-center gap-3">
-          <ViewButton active={view === 'entry'} label="Ficha" icon={MapPin} onClick={() => setView('entry')} />
-          <ViewButton active={view === 'record'} label="Grabar" icon={Mic} onClick={() => setView('record')} />
-          <ViewButton active={view === 'library'} label="Archivo" icon={History} onClick={() => setView('library')} />
+        <nav className="menu-shell bottom-dock fixed bottom-4 left-1/2 z-20 flex w-[calc(100%-2rem)] max-w-[430px] -translate-x-1/2 items-center gap-2 px-2 py-2 md:w-auto md:max-w-none">
+          <ViewButton active={view === 'session'} label="SESIÓN" icon={MapPin} onClick={() => setView('session')} />
+          <ViewButton active={view === 'point'} label="PUNTO" icon={Camera} onClick={() => setView('point')} />
+          <ViewButton active={view === 'export'} label="ARCHIVO" icon={Download} onClick={() => setView('export')} />
         </nav>
 
         <AnimatePresence mode="wait">
-          {view === 'entry' ? (
+          {view === 'session' ? (
             <motion.section
-              key="entry"
-              initial={{ opacity: 0, y: 16 }}
+              key="session"
+              initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              className="grid gap-6 xl:grid-cols-[1.18fr,0.82fr]"
+              exit={{ opacity: 0, y: -18 }}
+              className="grid gap-6 xl:grid-cols-[1.05fr,0.95fr]"
             >
-              <div className="panel p-5 md:p-7">
-                <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-                  <div>
-                    <p className="eyebrow text-[color:var(--signal-strong)]">Ficha del lugar</p>
-                    <h2 className="mt-2 font-['Fraunces'] text-3xl text-[color:var(--paper)]">
-                      Contexto antes de grabar
-                    </h2>
-                  </div>
-                  <button
-                    onClick={applyCurrentGpsToDraft}
-                    className="inline-flex items-center gap-2 rounded-full border border-[color:var(--line-strong)] bg-white/70 px-4 py-2 text-[10px] uppercase tracking-[0.24em] text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:text-[color:var(--signal-strong)]"
-                  >
-                    <MapPin className="h-4 w-4" />
-                    Usar GPS actual
-                  </button>
-                </div>
-
-                <div className="grid gap-6">
-                  <section className="grid gap-4">
-                    <h3 className="section-title">Lugar</h3>
-                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                      <span>Nombre del lugar</span>
-                      <input
-                        value={captureDraft.placeName}
-                        onChange={(event) => setCaptureDraft((previous) => ({ ...previous, placeName: event.target.value }))}
-                        className="field-input"
-                        placeholder="Laguna de Uña"
-                      />
-                    </label>
-                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                      <span>Descripción del lugar</span>
-                      <textarea
-                        value={captureDraft.description}
-                        onChange={(event) => setCaptureDraft((previous) => ({ ...previous, description: event.target.value }))}
-                        rows={6}
-                        className="field-input min-h-36"
-                        placeholder="Contexto del sitio, distancia a la fuente sonora, relieve, interferencias, accesos..."
-                      />
-                    </label>
-                  </section>
-
-                  <section className="grid gap-4">
-                    <h3 className="section-title">Condiciones</h3>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                        <span>Tipo de entorno</span>
-                        <input
-                          value={captureDraft.environmentType}
-                          onChange={(event) =>
-                            setCaptureDraft((previous) => ({ ...previous, environmentType: event.target.value }))
-                          }
-                          className="field-input"
-                          placeholder="Bosque, urbano, costa, río..."
-                        />
-                      </label>
-                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                        <span>Tiempo atmosférico</span>
-                        <input
-                          value={captureDraft.weather}
-                          onChange={(event) => setCaptureDraft((previous) => ({ ...previous, weather: event.target.value }))}
-                          className="field-input"
-                          placeholder="Nublado, 14C, viento flojo"
-                        />
-                      </label>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                        <span>Latitud</span>
-                        <input
-                          value={captureDraft.latitude}
-                          onChange={(event) => setCaptureDraft((previous) => ({ ...previous, latitude: event.target.value }))}
-                          className="field-input font-['IBM_Plex_Mono']"
-                          placeholder="40.123456"
-                        />
-                      </label>
-                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                        <span>Longitud</span>
-                        <input
-                          value={captureDraft.longitude}
-                          onChange={(event) => setCaptureDraft((previous) => ({ ...previous, longitude: event.target.value }))}
-                          className="field-input font-['IBM_Plex_Mono']"
-                          placeholder="-3.123456"
-                        />
-                      </label>
-                    </div>
-                  </section>
-
-                  <section className="grid gap-4">
-                    <h3 className="section-title">Equipo y etiquetas</h3>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                        <span>Equipo usado</span>
-                        <input
-                          value={captureDraft.equipment}
-                          onChange={(event) => setCaptureDraft((previous) => ({ ...previous, equipment: event.target.value }))}
-                          className="field-input"
-                          placeholder="Zoom H6, cápsula XY"
-                        />
-                      </label>
-                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                        <span>Tags</span>
-                        <input
-                          value={captureDraft.tagsText}
-                          onChange={(event) => setCaptureDraft((previous) => ({ ...previous, tagsText: event.target.value }))}
-                          className="field-input"
-                          placeholder="agua, pájaros, campanas"
-                        />
-                      </label>
-                    </div>
-                  </section>
-                </div>
-              </div>
-
-              <div className="grid gap-6">
-                <div className="panel p-5 md:p-6">
-                  <p className="eyebrow text-[color:var(--signal-strong)]">Resumen</p>
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <p className="font-['Fraunces'] text-3xl text-[color:var(--paper)]">{draftPlaceLabel}</p>
-                      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                        {captureDraft.description.trim() || 'Añade una descripción breve para recordar el contexto del sitio.'}
-                      </p>
-                    </div>
-                    <div className="grid gap-3">
-                      <div className="soft-card">
-                        <p className="eyebrow text-[color:var(--muted)]">Coordenadas</p>
-                        <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{draftCoordinatesLabel}</p>
+              {activeSession ? (
+                <>
+                  <div className="panel p-6 md:p-8">
+                    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+                      <div>
+                        <p className="eyebrow text-[color:var(--signal-strong)]">Sesión activa</p>
+                        <h2 className="display-heading mt-2 text-3xl text-[color:var(--ink)]">
+                          {activeSession.name}
+                        </h2>
                       </div>
-                      <div className="soft-card">
-                        <p className="eyebrow text-[color:var(--muted)]">Clima y entorno</p>
-                        <p className="mt-2 text-sm text-[color:var(--paper)]">
-                          {captureDraft.environmentType.trim() || 'Entorno sin indicar'} · {captureDraft.weather.trim() || 'clima sin indicar'}
+                      <button
+                        onClick={() => void closeActiveSession()}
+                        className="ui-button ui-button-danger"
+                      >
+                        Cerrar sesión
+                      </button>
+                    </div>
+
+                    <div className="grid gap-4">
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Nombre de la sesión</span>
+                        <input
+                          value={activeSession.name}
+                          onChange={(event) => updateActiveSessionField('name', event.target.value)}
+                          className="field-input"
+                        />
+                      </label>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Proyecto</span>
+                          <input
+                            value={activeSession.projectName}
+                            onChange={(event) => updateActiveSessionField('projectName', event.target.value)}
+                            className="field-input"
+                            placeholder="Archivo de paisajes de Gredos"
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Zona / región</span>
+                          <input
+                            value={activeSession.region}
+                            onChange={(event) => updateActiveSessionField('region', event.target.value)}
+                            className="field-input"
+                            placeholder="Cuenca alta del Tajo"
+                          />
+                        </label>
+                      </div>
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Preset de equipo</span>
+                        <input
+                          value={activeSession.equipmentPreset}
+                          onChange={(event) => updateActiveSessionField('equipmentPreset', event.target.value)}
+                          className="field-input"
+                          placeholder="Zoom H6 · XY"
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Notas de sesión</span>
+                        <textarea
+                          value={activeSession.notes}
+                          onChange={(event) => updateActiveSessionField('notes', event.target.value)}
+                          rows={5}
+                          className="field-input min-h-32"
+                          placeholder="Objetivo general de la salida, condiciones generales, logística..."
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-6">
+                    <div className="panel p-5">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="eyebrow text-[color:var(--signal-strong)]">Mapa de sesión</p>
+                          <p className="mt-2 text-sm text-[color:var(--muted)]">
+                            Cada punto documentado queda geolocalizado para revisión posterior.
+                          </p>
+                        </div>
+                        <div className="soft-card">
+                          <p className="eyebrow text-[color:var(--muted)]">Puntos</p>
+                          <p className="mt-2 text-sm text-[color:var(--ink)]">{activeSession.points.length}</p>
+                        </div>
+                      </div>
+                      <SessionMap
+                        points={activeSessionMapPoints}
+                        selectedPointId={selectedPointId}
+                        onSelectPoint={setSelectedPointId}
+                      />
+                    </div>
+
+                    <div className="panel p-6">
+                      <p className="eyebrow text-[color:var(--signal-strong)]">Punto seleccionado</p>
+                      {selectedPoint ? (
+                        <div className="mt-4 space-y-4">
+                          <div>
+                            <p className="display-heading text-3xl text-[color:var(--ink)]">{selectedPoint.placeName}</p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">
+                              {formatDateTime(selectedPoint.createdAt, "d MMM yyyy · HH:mm:ss")}
+                            </p>
+                          </div>
+                          {selectedPoint.photos[0] ? (
+                            <img
+                              src={selectedPoint.photos[0].previewUrl}
+                              alt={`Foto de ${selectedPoint.placeName}`}
+                              className="h-56 w-full border border-[color:var(--line)] object-cover"
+                            />
+                          ) : null}
+                          <div className="grid gap-3">
+                            <div className="soft-card">
+                              <p className="eyebrow text-[color:var(--muted)]">Lugar detectado</p>
+                              <p className="mt-2 text-sm text-[color:var(--ink)]">
+                                {selectedPoint.detectedPlace?.displayName || selectedPoint.placeName}
+                              </p>
+                              <p className="mt-2 text-sm text-[color:var(--muted)]">
+                                {selectedPoint.detectedPlace?.context || 'Sin contexto de geocodificación inversa'}
+                              </p>
+                            </div>
+                            <div className="soft-card">
+                              <p className="eyebrow text-[color:var(--muted)]">Coordenadas</p>
+                              <p className="telemetry-text mt-2 text-sm text-[color:var(--ink)]">
+                                {selectedPoint.gps.lat.toFixed(6)}, {selectedPoint.gps.lon.toFixed(6)}
+                              </p>
+                            </div>
+                            <div className="soft-card">
+                              <p className="eyebrow text-[color:var(--muted)]">Clima</p>
+                              <p className="mt-2 text-sm text-[color:var(--ink)]">
+                                {selectedPoint.observedWeather || 'Sin clima indicado'}
+                              </p>
+                            </div>
+                            <div className="soft-card">
+                              <p className="eyebrow text-[color:var(--muted)]">Referencia Zoom</p>
+                              <p className="mt-2 text-sm text-[color:var(--ink)]">
+                                {selectedPoint.zoomTakeReference || 'Sin referencia'}
+                              </p>
+                              <p className="mt-2 text-sm text-[color:var(--muted)]">
+                                {selectedPoint.microphoneSetup || 'Sin configuración'}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => void removePointFromActiveSession(selectedPoint.id)}
+                            className="ui-button ui-button-danger"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Eliminar punto
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="mt-4 text-sm leading-6 text-[color:var(--muted)]">
+                          Ve a la pestaña `Punto` y registra el primero para poblar esta sesión.
                         </p>
-                      </div>
-                      <div className="soft-card">
-                        <p className="eyebrow text-[color:var(--muted)]">Equipo</p>
-                        <p className="mt-2 text-sm text-[color:var(--paper)]">{captureDraft.equipment.trim() || 'No indicado'}</p>
-                      </div>
+                      )}
                     </div>
-                    {draftTagList.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {draftTagList.map((tag) => (
-                          <span key={tag} className="tag-pill">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-[color:var(--muted)]">Los tags aparecerán aquí cuando los añadas.</p>
-                    )}
                   </div>
-                </div>
+                </>
+              ) : (
+                <>
+                  <div className="panel p-6 md:p-8">
+                    <div className="mb-6">
+                      <p className="eyebrow text-[color:var(--signal-strong)]">Nueva sesión</p>
+                      <h2 className="display-heading mt-2 text-3xl text-[color:var(--ink)]">
+                        Inicia una jornada de campo
+                      </h2>
+                    </div>
 
-                <div className="panel p-5 md:p-6">
-                  <p className="eyebrow text-[color:var(--signal-strong)]">Flujo</p>
-                  <div className="mt-4 space-y-4 text-sm leading-7 text-[color:var(--muted)]">
-                    <p>1. Completa la ficha del lugar o usa el GPS actual para rellenar coordenadas.</p>
-                    <p>2. Pasa a la página de grabación cuando el contexto esté listo.</p>
-                    <p>3. Al archivar una toma, la ficha viaja con el audio al archivo local.</p>
+                    <div className="grid gap-4">
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Nombre de la sesión</span>
+                        <input
+                          value={sessionDraft.name}
+                          onChange={(event) => setSessionDraft((previous) => ({ ...previous, name: event.target.value }))}
+                          className="field-input"
+                        />
+                      </label>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Proyecto</span>
+                          <input
+                            value={sessionDraft.projectName}
+                            onChange={(event) => setSessionDraft((previous) => ({ ...previous, projectName: event.target.value }))}
+                            className="field-input"
+                            placeholder="Paisajes sonoros Sierra Norte"
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Zona / región</span>
+                          <input
+                            value={sessionDraft.region}
+                            onChange={(event) => setSessionDraft((previous) => ({ ...previous, region: event.target.value }))}
+                            className="field-input"
+                            placeholder="Serranía de Cuenca"
+                          />
+                        </label>
+                      </div>
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Preset de equipo</span>
+                        <input
+                          value={sessionDraft.equipmentPreset}
+                          onChange={(event) => setSessionDraft((previous) => ({ ...previous, equipmentPreset: event.target.value }))}
+                          className="field-input"
+                          placeholder="Zoom H6 · XY"
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                        <span>Notas</span>
+                        <textarea
+                          value={sessionDraft.notes}
+                          onChange={(event) => setSessionDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                          rows={5}
+                          className="field-input min-h-32"
+                          placeholder="Objetivo de la salida, ruta, permisos, clima esperado..."
+                        />
+                      </label>
+                    </div>
+
+                    <button
+                      onClick={createSession}
+                      className="ui-button ui-button-primary mt-6"
+                    >
+                      Iniciar sesión
+                    </button>
                   </div>
-                  <button
-                    onClick={() => setView('record')}
-                    className="mt-6 inline-flex items-center justify-center rounded-[18px] bg-[color:var(--signal-strong)] px-5 py-3 text-sm font-medium text-white transition hover:brightness-95"
-                  >
-                    Ir a grabación
-                  </button>
-                </div>
-              </div>
+
+                  <div className="panel p-6">
+                    <p className="eyebrow text-[color:var(--signal-strong)]">Qué guarda cada sesión</p>
+                    <div className="mt-4 space-y-4 text-sm leading-7 text-[color:var(--muted)]">
+                      <p>Fecha y hora exactas del trabajo de campo.</p>
+                      <p>Localización GPS de cada punto y clima automático por coordenadas.</p>
+                      <p>Fotos, tags, características del lugar y referencia de toma para asociarla luego a tu Zoom H6.</p>
+                    </div>
+                  </div>
+                </>
+              )}
             </motion.section>
           ) : null}
 
-          {view === 'record' ? (
+          {view === 'point' ? (
             <motion.section
-              key="record"
-              initial={{ opacity: 0, y: 16 }}
+              key="point"
+              initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              className="grid gap-6 xl:grid-cols-[0.95fr,1.05fr]"
+              exit={{ opacity: 0, y: -18 }}
+              className="grid gap-6 xl:grid-cols-[1.05fr,0.95fr]"
             >
-              <div className="panel flex flex-col gap-6 p-6 md:p-8">
-                <div className="space-y-2">
-                  <p className="eyebrow text-[color:var(--signal-strong)]">Grabación</p>
-                  <h2 className="font-['Fraunces'] text-4xl text-[color:var(--paper)]">
-                    {captureMode === 'manual' ? 'Grabando toma' : captureMode === 'walk' ? 'Modo ruta activo' : 'Preparado para grabar'}
-                  </h2>
-                  <p className="text-sm leading-7 text-[color:var(--muted)]">
-                    La ficha ya está separada. Aquí sólo ves el lugar activo, el tiempo y el control de captura.
+              {!activeSession ? (
+                <div className="panel px-6 py-16 text-center xl:col-span-2">
+                  <p className="display-heading text-3xl text-[color:var(--ink)]">No hay una sesión activa</p>
+                  <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-[color:var(--muted)]">
+                    Inicia primero una sesión para empezar a registrar puntos de escucha y referencias para tu Zoom H6.
                   </p>
                 </div>
-
-                <div className="mx-auto flex flex-col items-center gap-5 py-4">
-                  <button
-                    onClick={captureMode === 'manual' ? stopManualRecording : startManualRecording}
-                    disabled={captureMode === 'walk'}
-                    className={`capture-dial flex h-56 w-56 items-center justify-center rounded-full border text-center transition md:h-64 md:w-64 ${
-                      captureMode === 'manual'
-                        ? 'border-[color:rgba(181,106,67,0.35)] bg-[radial-gradient(circle_at_top,rgba(181,106,67,0.18),rgba(255,250,241,0.96)_72%)] text-[color:var(--paper)]'
-                        : 'border-[color:rgba(96,128,87,0.28)] bg-[radial-gradient(circle_at_top,rgba(96,128,87,0.14),rgba(255,250,241,0.96)_72%)] text-[color:var(--paper)]'
-                    } disabled:cursor-not-allowed disabled:opacity-45`}
-                  >
-                    <div className="space-y-3">
-                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[color:var(--line)] bg-white/70">
-                        {captureMode === 'manual' ? <Square className="h-6 w-6 fill-current" /> : <Mic className="h-7 w-7" />}
+              ) : (
+                <>
+                  <div className="panel point-panel p-6 md:p-8">
+                    <div className="point-panel__header flex flex-wrap items-start justify-between gap-5">
+                      <div className="space-y-3">
+                        <p className="eyebrow">Sesión activa</p>
+                        <h2 className="display-heading text-3xl text-[color:var(--ink)]">{activeSession.name}</h2>
+                        <p className="module-copy text-sm">{activeSessionMeta}</p>
                       </div>
-                      <div>
-                        <p className="eyebrow text-[color:var(--muted)]">
-                          {captureMode === 'manual' ? 'Detener y archivar' : 'Toma manual'}
+                      <div className="point-panel__time">
+                        <p className="eyebrow">Hora de referencia</p>
+                        <p className="digital-clock point-time mt-2">{captureTimeLabel}</p>
+                        <p className="module-copy mt-2 text-sm">{captureDateLabel}</p>
+                      </div>
+                    </div>
+
+                    <div className="primary-action-panel mt-8">
+                      <div className="space-y-3">
+                        <p className="eyebrow">Acción principal</p>
+                        <p className="display-heading text-3xl text-[color:var(--ink)]">Marcar punto ahora</p>
+                        <p className="module-copy text-sm">
+                          Crea un punto con GPS, lugar detectado, clima, fecha y hora. Si ya has preparado fotos o notas, también viajarán con él.
                         </p>
-                        <p className="mt-2 font-['Fraunces'] text-3xl">
-                          {captureMode === 'manual' ? 'Cerrar toma' : 'Registrar'}
+                      </div>
+
+                      <button
+                        onClick={() => void addQuickPointToSession()}
+                        disabled={isQuickCapturing}
+                        className="capture-main-button mt-6 disabled:cursor-wait disabled:opacity-65"
+                      >
+                        <span>{isQuickCapturing ? 'Creando punto...' : 'Marcar punto'}</span>
+                        <span className="primary-recorder-action__meta">GPS · lugar · clima · hora</span>
+                      </button>
+                    </div>
+
+                    <div className="context-panel mt-8">
+                      <div className="context-panel__intro">
+                        <p className="eyebrow">Contexto inmediato</p>
+                        <p className="module-copy text-sm">
+                          Esta es la información que acompañará al siguiente punto si lo registras ahora.
                         </p>
                       </div>
-                    </div>
-                  </button>
 
-                  <button
-                    onClick={captureMode === 'walk' ? stopWalkMode : startWalkMode}
-                    disabled={captureMode === 'manual'}
-                    className="inline-flex items-center gap-3 rounded-full border border-[color:var(--line-strong)] bg-white/70 px-5 py-3 text-sm text-[color:var(--paper)] transition hover:border-[color:var(--signal-strong)] hover:text-[color:var(--signal-strong)] disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    <Activity className="h-4 w-4" />
-                    {captureMode === 'walk' ? 'Detener modo ruta (30 s)' : 'Activar modo ruta (30 s)'}
-                  </button>
-                </div>
+                      <div className="context-grid mt-5">
+                        <div className="context-item">
+                          <p className="eyebrow">Lugar</p>
+                          <p className="summary-value">{detectedPlace?.placeName || 'Lugar pendiente'}</p>
+                          <p className="module-copy text-sm">
+                            {detectedPlace?.context || locationMessage || locationStatusLabel}
+                          </p>
+                        </div>
+                        <div className="context-item">
+                          <p className="eyebrow">GPS</p>
+                          <p className="telemetry-value">{gpsLabel}</p>
+                          <p className="module-copy text-sm">{gpsAccuracyLabel} · {gpsMessage}</p>
+                        </div>
+                        <div className="context-item">
+                          <p className="eyebrow">Clima</p>
+                          <p className="summary-value">{weatherSnapshot?.summary || 'Clima pendiente'}</p>
+                          <p className="module-copy text-sm">
+                            {weatherSnapshot ? weatherSnapshot.details : weatherMessage || weatherStatusLabel}
+                          </p>
+                        </div>
+                        <div className="context-item">
+                          <p className="eyebrow">Modo</p>
+                          <p className="summary-value">
+                            {pointDraft.coordinateSource === 'auto' ? 'GPS en directo' : 'Coordenadas manuales'}
+                          </p>
+                          <p className="module-copy text-sm">
+                            {pointDraft.coordinateSource === 'auto'
+                              ? 'La posición seguirá tu GPS.'
+                              : 'Usando coordenadas escritas a mano.'}
+                          </p>
+                        </div>
+                      </div>
 
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="soft-card">
-                    <p className="eyebrow text-[color:var(--muted)]">Tiempo</p>
-                    <p className="mt-2 font-['IBM_Plex_Mono'] text-2xl text-[color:var(--paper)]">{formatDuration(liveSessionMs)}</p>
-                  </div>
-                  <div className="soft-card">
-                    <p className="eyebrow text-[color:var(--muted)]">Hora</p>
-                    <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{captureTimeLabel}</p>
-                  </div>
-                  <div className="soft-card">
-                    <p className="eyebrow text-[color:var(--muted)]">Año</p>
-                    <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{captureYearLabel}</p>
-                  </div>
-                </div>
-              </div>
+                      <div className="context-actions mt-6">
+                        <button
+                          onClick={() => void activateGpsAndApplyToDraft()}
+                          className="ui-button ui-button-secondary"
+                        >
+                          <MapPin className="h-4 w-4" />
+                          {currentGpsRef.current ? 'Usar GPS actual' : 'Activar GPS'}
+                        </button>
+                        <button
+                          onClick={refreshDetectedPlace}
+                          disabled={locationStatus === 'loading'}
+                          className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${locationStatus === 'loading' ? 'animate-spin' : ''}`} />
+                          Actualizar lugar
+                        </button>
+                        <button
+                          onClick={refreshAutomaticWeather}
+                          disabled={weatherStatus === 'loading'}
+                          className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${weatherStatus === 'loading' ? 'animate-spin' : ''}`} />
+                          Actualizar clima
+                        </button>
+                        {detectedPlace &&
+                        detectedPlace.placeName.trim() &&
+                        pointDraft.placeName.trim() !== detectedPlace.placeName.trim() ? (
+                          <button onClick={applyDetectedPlaceToDraft} className="ui-button ui-button-primary">
+                            Usar lugar detectado
+                          </button>
+                        ) : null}
+                        {weatherSnapshot && pointDraft.observedWeather.trim() !== weatherSnapshot.summary ? (
+                          <button onClick={applyAutomaticWeatherToDraft} className="ui-button ui-button-primary">
+                            Usar clima automático
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
 
-              <div className="grid gap-6">
-                <div className="panel p-5 md:p-6">
-                  <p className="eyebrow text-[color:var(--signal-strong)]">Ficha activa</p>
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <p className="font-['Fraunces'] text-3xl text-[color:var(--paper)]">{draftPlaceLabel}</p>
-                      <p className="mt-2 text-sm text-[color:var(--muted)]">{draftCoordinatesLabel}</p>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div className="soft-card">
-                        <p className="eyebrow text-[color:var(--muted)]">Entorno</p>
-                        <p className="mt-2 text-sm text-[color:var(--paper)]">{captureDraft.environmentType.trim() || 'Sin indicar'}</p>
-                      </div>
-                      <div className="soft-card">
-                        <p className="eyebrow text-[color:var(--muted)]">Clima</p>
-                        <p className="mt-2 text-sm text-[color:var(--paper)]">{captureDraft.weather.trim() || 'Sin indicar'}</p>
-                      </div>
-                      <div className="soft-card">
-                        <p className="eyebrow text-[color:var(--muted)]">Equipo</p>
-                        <p className="mt-2 text-sm text-[color:var(--paper)]">{captureDraft.equipment.trim() || 'Sin indicar'}</p>
-                      </div>
-                      <div className="soft-card">
-                        <p className="eyebrow text-[color:var(--muted)]">GPS</p>
-                        <p className="mt-2 text-sm text-[color:var(--paper)]">{gpsMessage}</p>
-                      </div>
-                    </div>
-                    <p className="rounded-[20px] border border-[color:var(--line)] bg-[color:var(--panel-soft)] px-4 py-4 text-sm leading-6 text-[color:var(--muted)]">
-                      {captureDraft.description.trim() || 'La descripción del lugar se mostrará aquí mientras grabas.'}
-                    </p>
-                  </div>
-                </div>
+                    <details className="manual-details mt-8">
+                      <summary className="manual-details__summary">
+                        <div>
+                          <p className="eyebrow">Edición manual</p>
+                          <p className="summary-value">Completar o corregir el punto antes de guardarlo</p>
+                        </div>
+                        <span className="manual-details__hint">Abrir</span>
+                      </summary>
 
-                <div className="panel p-5 md:p-6">
-                  <p className="eyebrow text-[color:var(--signal-strong)]">Última toma</p>
-                  {latestRecording ? (
-                    <div className="mt-4 space-y-3">
-                      <p className="font-['Fraunces'] text-2xl text-[color:var(--paper)]">{latestRecording.placeName}</p>
-                      <p className="text-sm text-[color:var(--muted)]">
-                        {format(new Date(latestRecording.createdAt), 'MMM d · HH:mm')} · {latestRecording.weather || 'sin clima indicado'} · {latestRecording.equipment || 'sin equipo indicado'}
-                      </p>
-                      <audio controls preload="metadata" src={latestRecording.audioUrl} className="field-audio w-full" />
+                      <div className="manual-details__body mt-6 grid gap-5">
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Nombre exacto del lugar</span>
+                          <input
+                            value={pointDraft.placeName}
+                            onChange={(event) => setPointDraft((previous) => ({ ...previous, placeName: event.target.value }))}
+                            className="field-input"
+                            placeholder="Arroyo del molino, margen norte"
+                          />
+                        </label>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Hábitat / tipo de entorno</span>
+                            <input
+                              value={pointDraft.habitat}
+                              onChange={(event) => setPointDraft((previous) => ({ ...previous, habitat: event.target.value }))}
+                              className="field-input"
+                              placeholder="Ribera, bosque, urbano, costa..."
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Referencia Zoom H6</span>
+                            <input
+                              value={pointDraft.zoomTakeReference}
+                              onChange={(event) => setPointDraft((previous) => ({ ...previous, zoomTakeReference: event.target.value }))}
+                              className="field-input"
+                              placeholder="H6-032 / SD1-TK12"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Características del lugar</span>
+                          <textarea
+                            value={pointDraft.characteristics}
+                            onChange={(event) => setPointDraft((previous) => ({ ...previous, characteristics: event.target.value }))}
+                            rows={4}
+                            className="field-input min-h-28"
+                            placeholder="Distancia a la fuente, relieve, viento, barreras, presencia humana, agua, reverberación..."
+                          />
+                        </label>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Latitud</span>
+                            <input
+                              value={pointDraft.latitude}
+                              onChange={(event) =>
+                                setPointDraft((previous) => ({
+                                  ...previous,
+                                  latitude: event.target.value,
+                                  coordinateSource: 'manual',
+                                }))
+                              }
+                              className="field-input telemetry-text"
+                              placeholder="40.123456"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Longitud</span>
+                            <input
+                              value={pointDraft.longitude}
+                              onChange={(event) =>
+                                setPointDraft((previous) => ({
+                                  ...previous,
+                                  longitude: event.target.value,
+                                  coordinateSource: 'manual',
+                                }))
+                              }
+                              className="field-input telemetry-text"
+                              placeholder="-3.123456"
+                            />
+                          </label>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Clima observado</span>
+                            <input
+                              value={pointDraft.observedWeather}
+                              onChange={(event) => setPointDraft((previous) => ({ ...previous, observedWeather: event.target.value }))}
+                              className="field-input"
+                              placeholder="Cubierto, 12 ºC, viento flojo"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Setup / micros</span>
+                            <input
+                              value={pointDraft.microphoneSetup}
+                              onChange={(event) => setPointDraft((previous) => ({ ...previous, microphoneSetup: event.target.value }))}
+                              className="field-input"
+                              placeholder="Zoom H6 · XY 90º"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Tags</span>
+                          <input
+                            value={pointDraft.tagsText}
+                            onChange={(event) => setPointDraft((previous) => ({ ...previous, tagsText: event.target.value }))}
+                            className="field-input"
+                            placeholder="agua, aves, madrugada, viento"
+                          />
+                        </label>
+
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Notas</span>
+                          <textarea
+                            value={pointDraft.notes}
+                            onChange={(event) => setPointDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                            rows={4}
+                            className="field-input min-h-28"
+                            placeholder="Incidencias, accesibilidad, observaciones para el estudio..."
+                          />
+                        </label>
+
+                        <div className="panel p-4">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <div>
+                              <p className="eyebrow text-[color:var(--muted)]">Fotos del punto</p>
+                              <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                                Puedes añadir varias imágenes del lugar para documentarlo bien y exportarlas después.
+                              </p>
+                            </div>
+                          </div>
+
+                          <label className="upload-zone flex min-h-52 cursor-pointer flex-col items-center justify-center gap-3 px-5 py-6 text-center">
+                            <Camera className="h-8 w-8 text-[color:var(--signal-strong)]" />
+                            <div>
+                              <p className="display-heading text-2xl text-[color:var(--ink)]">Añadir fotos</p>
+                              <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                                El material gráfico viajará dentro del paquete profesional de la sesión.
+                              </p>
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              multiple
+                              className="hidden"
+                              onChange={handleDraftPhotosInput}
+                            />
+                          </label>
+
+                          {draftPhotos.length > 0 ? (
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                              {draftPhotos.map((photo) => (
+                                <div key={photo.id} className="soft-card">
+                                  <img
+                                    src={photo.previewUrl}
+                                    alt={photo.fileName}
+                                    className="h-36 w-full border border-[color:var(--line)] object-cover"
+                                  />
+                                  <div className="mt-3 flex items-center justify-between gap-3">
+                                    <p className="text-sm text-[color:var(--ink)]">{photo.fileName}</p>
+                                    <button
+                                      onClick={() => removeDraftPhoto(photo.id)}
+                                      className="icon-button"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <button
+                          onClick={() => void addPointToSession()}
+                          className="ui-button ui-button-secondary w-full"
+                        >
+                          Guardar punto manual
+                        </button>
+                      </div>
+                    </details>
+                  </div>
+
+                  <div className="grid gap-6">
+                    <div className="panel p-6">
+                      <p className="eyebrow text-[color:var(--signal-strong)]">Sesión en curso</p>
+                      <div className="mt-4 space-y-4">
+                        <p className="display-heading text-3xl text-[color:var(--ink)]">{activeSession.name}</p>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="soft-card">
+                            <p className="eyebrow text-[color:var(--muted)]">Fecha</p>
+                            <p className="mt-2 text-sm text-[color:var(--ink)]">{captureDateLabel}</p>
+                          </div>
+                          <div className="soft-card">
+                            <p className="eyebrow text-[color:var(--muted)]">GPS</p>
+                            <p className="telemetry-text mt-2 text-sm text-[color:var(--ink)]">{gpsLabel}</p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">{gpsAccuracyLabel}</p>
+                          </div>
+                        </div>
+                        <SessionMap
+                          points={activeSessionMapPoints}
+                          selectedPointId={selectedPointId}
+                          onSelectPoint={setSelectedPointId}
+                          draftPoint={
+                            draftPointCoordinates
+                              ? {
+                                  lat: draftPointCoordinates.lat,
+                                  lon: draftPointCoordinates.lon,
+                                  label: draftPointLabel,
+                                }
+                              : null
+                          }
+                        />
+                      </div>
                     </div>
-                  ) : (
-                    <p className="mt-4 text-sm leading-6 text-[color:var(--muted)]">
-                      Cuando cierres una toma aparecerá aquí lista para revisar o exportar.
-                    </p>
-                  )}
-                </div>
-              </div>
+
+                    <div className="grid gap-5">
+                      {activeSession.points.length === 0 ? (
+                        <div className="panel px-6 py-12 text-center">
+                          <p className="display-heading text-3xl text-[color:var(--ink)]">Todavía no hay puntos</p>
+                          <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-[color:var(--muted)]">
+                            Guarda el primer punto para empezar a construir el registro profesional de la sesión.
+                          </p>
+                        </div>
+                      ) : (
+                        activeSession.points.map((point) => (
+                          <React.Fragment key={point.id}>
+                            <SessionPointCard
+                              point={{
+                                id: point.id,
+                                placeName: point.placeName,
+                                createdAt: point.createdAt,
+                                observedWeather: point.observedWeather,
+                                zoomTakeReference: point.zoomTakeReference,
+                                microphoneSetup: point.microphoneSetup,
+                                tags: point.tags,
+                                photoPreviewUrl: point.photos[0]?.previewUrl,
+                              }}
+                              active={point.id === selectedPointId}
+                              onSelect={() => setSelectedPointId(point.id)}
+                            />
+                          </React.Fragment>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </motion.section>
           ) : null}
 
-          {view === 'library' ? (
+          {view === 'export' ? (
             <motion.section
-              key="library"
-              initial={{ opacity: 0, y: 16 }}
+              key="export"
+              initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
+              exit={{ opacity: 0, y: -18 }}
               className="space-y-5"
             >
-              <div className="panel flex flex-wrap items-end justify-between gap-4 p-5 md:p-6">
+              <div className="panel flex flex-wrap items-end justify-between gap-4 p-6">
                 <div>
-                  <p className="eyebrow text-[color:var(--signal-strong)]">Archivo</p>
-                  <h2 className="mt-2 font-['Fraunces'] text-3xl text-[color:var(--paper)]">
-                    Tomas de campo con ficha, coordenadas y exportación
+                  <p className="eyebrow text-[color:var(--signal-strong)]">Exportación profesional</p>
+                  <h2 className="display-heading mt-2 text-3xl text-[color:var(--ink)]">
+                    Sesiones listas para llevar al estudio
                   </h2>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="soft-card">
-                    <p className="eyebrow text-[color:var(--muted)]">Tomas</p>
-                    <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{recordings.length}</p>
+                    <p className="eyebrow text-[color:var(--muted)]">Sesiones</p>
+                    <p className="mt-2 text-sm text-[color:var(--ink)]">{sessions.length}</p>
                   </div>
                   <div className="soft-card">
-                    <p className="eyebrow text-[color:var(--muted)]">Duración total</p>
-                    <p className="mt-2 font-['IBM_Plex_Mono'] text-sm text-[color:var(--paper)]">{formatDuration(totalArchiveDurationMs)}</p>
+                    <p className="eyebrow text-[color:var(--muted)]">Puntos totales</p>
+                    <p className="mt-2 text-sm text-[color:var(--ink)]">
+                      {sessions.reduce((count, session) => count + session.points.length, 0)}
+                    </p>
                   </div>
                 </div>
               </div>
 
-              <AnimatePresence mode="popLayout">
-                {recordings.length === 0 ? (
-                  <motion.div
-                    key="library-empty"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="panel px-6 py-16 text-center"
-                  >
-                    <History className="mx-auto h-12 w-12 text-[color:var(--muted)]/50" />
-                    <p className="mt-4 font-['Fraunces'] text-3xl text-[color:var(--paper)]">Todavía no hay tomas</p>
-                    <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-[color:var(--muted)]">
-                      Completa primero una ficha y registra la primera toma para poblar el archivo.
-                    </p>
-                  </motion.div>
-                ) : (
-                  <div className="grid gap-5">
-                    {recordings.map((recording) => (
-                      <React.Fragment key={recording.id}>
-                        <RecordingCard
-                          recording={recording}
-                          isGeneratingImage={isGeneratingImageId === recording.id}
-                          isExportingPackage={isExportingId === recording.id}
-                          onDelete={() => removeRecording(recording)}
-                          onGenerateImage={() => generateSoundscape(recording)}
-                          onSaveMetadata={(metadata) => saveRecordingMetadata(recording.id, metadata)}
-                          onExportPackage={() => exportRecordingPackage(recording)}
-                        />
-                      </React.Fragment>
-                    ))}
-                  </div>
-                )}
-              </AnimatePresence>
+              {sessions.length === 0 ? (
+                <div className="panel px-6 py-16 text-center">
+                  <History className="mx-auto h-12 w-12 text-[color:var(--muted)]/50" />
+                  <p className="display-heading mt-4 text-3xl text-[color:var(--ink)]">Aún no hay sesiones</p>
+                  <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-[color:var(--muted)]">
+                    Inicia una jornada de campo, registra puntos y aquí podrás exportar cada sesión en un paquete estructurado.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-5">
+                  {sessions.map((session) => (
+                    <div key={session.id} className="panel flex flex-col gap-5 p-6">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`telemetry-chip ${
+                                session.status === 'active'
+                                  ? 'border-[color:var(--line-strong)] text-[color:var(--ink)]'
+                                  : 'border-[color:var(--signal-strong)] text-[color:var(--signal-strong)]'
+                              }`}
+                            >
+                              {session.status === 'active' ? 'Activa' : 'Cerrada'}
+                            </span>
+                          </div>
+                          <p className="display-heading text-3xl text-[color:var(--ink)]">{session.name}</p>
+                          <p className="text-sm text-[color:var(--muted)]">
+                            {formatDateTime(session.startedAt, "d MMM yyyy · HH:mm")} · {session.projectName || 'sin proyecto'} ·{' '}
+                            {session.region || 'sin zona'}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => void exportSession(session)}
+                            disabled={isExportingSessionId === session.id}
+                            className="ui-button ui-button-primary disabled:cursor-wait disabled:opacity-60"
+                          >
+                            <Download className="h-4 w-4" />
+                            {isExportingSessionId === session.id ? 'Exportando' : 'Exportar sesión'}
+                          </button>
+                          <button
+                            onClick={() => void removeSession(session.id)}
+                            className="icon-button"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div className="soft-card">
+                          <p className="eyebrow text-[color:var(--muted)]">Puntos</p>
+                          <p className="mt-2 text-sm text-[color:var(--ink)]">{session.points.length}</p>
+                        </div>
+                        <div className="soft-card">
+                          <p className="eyebrow text-[color:var(--muted)]">Fotos</p>
+                          <p className="mt-2 text-sm text-[color:var(--ink)]">
+                            {session.points.reduce((count, point) => count + point.photos.length, 0)}
+                          </p>
+                        </div>
+                        <div className="soft-card">
+                          <p className="eyebrow text-[color:var(--muted)]">Equipo</p>
+                          <p className="mt-2 text-sm text-[color:var(--ink)]">{session.equipmentPreset}</p>
+                        </div>
+                      </div>
+
+                      <p className="text-sm leading-7 text-[color:var(--muted)]">
+                        El paquete ZIP contiene `session.json` y una carpeta por punto con su `point.json`, las fotos asociadas y todas las referencias necesarias para casar después cada toma con tu Zoom H6.
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </motion.section>
           ) : null}
         </AnimatePresence>

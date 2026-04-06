@@ -1,20 +1,24 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Field Recorder
 
-# Run and deploy your AI Studio app
+Herramienta de campo para documentar sesiones de grabación de soundscapes con referencias listas para asociar después a tomas hechas con una Zoom H6.
 
-This contains everything you need to run your app locally.
+## Qué hace
 
-View your app in AI Studio: https://ai.studio/apps/2d73df70-3fd9-4527-b325-7009aa0643db
+- Inicia y cierra sesiones de campo.
+- Registra puntos con GPS, fecha, hora y clima automático.
+- Detecta el lugar a partir de coordenadas.
+- Asocia fotos, notas, tags, características del entorno y referencia de toma.
+- Muestra los puntos en mapa y exporta cada sesión en un paquete ZIP estructurado.
 
-## Run Locally
+## Desarrollo local
 
-**Prerequisites:**  Node.js
+**Requisitos:** Node.js
 
+1. Instala dependencias con `npm install`.
+2. Copia `.env.example` a `.env.local` sólo si necesitas ajustar variables locales.
+3. Arranca el entorno con `npm run dev`.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Seguridad
+
+- La app no expone claves Gemini en el cliente.
+- Si en el futuro añades IA generativa, la clave debe vivir en backend o en una función servidor, nunca en Vite ni en el bundle frontend.

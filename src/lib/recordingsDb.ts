@@ -1,5 +1,6 @@
 export interface RecordingMetadata {
   placeName: string;
+  soundFocus: string;
   environmentType: string;
   weather: string;
   equipment: string;
@@ -20,6 +21,7 @@ export interface StoredRecording {
   mimeType: string;
   audioBlob: Blob;
   placeName?: string;
+  soundFocus?: string;
   environmentType?: string;
   weather?: string;
   equipment?: string;
@@ -27,6 +29,7 @@ export interface StoredRecording {
   title?: string;
   tags?: string[];
   notes?: string;
+  placePhotoBlob?: Blob;
   imageUrl?: string;
   prompt?: string;
 }
@@ -149,6 +152,7 @@ export async function updateStoredRecordingMetadata(
 ): Promise<void> {
   await patchStoredRecording(id, {
     placeName: metadata.placeName,
+    soundFocus: metadata.soundFocus,
     environmentType: metadata.environmentType,
     weather: metadata.weather,
     equipment: metadata.equipment,
