@@ -101,9 +101,12 @@ const SCHEMA_STATEMENTS = [
 let schemaReadyPromise: Promise<void> | null = null;
 
 function getDatabaseUrl(): string {
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_URL_NO_POOLING;
   if (!databaseUrl) {
-    throw new Error('Missing DATABASE_URL.');
+    throw new Error('Missing DATABASE_URL or POSTGRES_URL.');
   }
 
   return databaseUrl;

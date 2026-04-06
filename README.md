@@ -45,7 +45,7 @@ La app está preparada para desplegarse como frontend estático de Vite.
 
 ## Catálogo remoto
 
-- La base remota usa `DATABASE_URL` y está pensada para conectarse a Neon Postgres en Vercel.
+- La base remota usa `DATABASE_URL` o `POSTGRES_URL` y está pensada para conectarse a Neon Postgres en Vercel.
 - El esquema SQL base está en [db/schema.sql](/Volumes/Nexus/DevProyjects/field-recorder/db/schema.sql).
 - Las rutas `api/catalog/session` y `api/catalog/sessions` crean el esquema si no existe y sincronizan una sesión completa.
 - La app mantiene `IndexedDB` como caché offline y sincroniza después con Neon cuando vuelve la red.
