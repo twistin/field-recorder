@@ -69,12 +69,14 @@ button,
 a,
 audio,
 summary,
+select,
 input,
 textarea {
   -webkit-tap-highlight-color: transparent;
 }
 
 button,
+select,
 input,
 textarea {
   font: inherit;

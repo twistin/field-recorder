@@ -3,6 +3,7 @@ import {
   Camera,
   CloudSun,
   Download,
+  Upload,
   History,
   MapPin,
   RefreshCw,
@@ -23,11 +24,18 @@ import {
 import { exportFieldSessionPackage } from './lib/exportFieldSession';
 import { reverseGeocodePlace } from './lib/locationLookup';
 import { fetchAutomaticWeather } from './lib/weather';
+import {
+  autoMatchAudioTake,
+  buildImportedAudioTakes,
+  mergeSessionAudioTakes,
+  reconcileSessionAudioTakes,
+} from './lib/zoomImport';
 import type {
   AutomaticWeatherSummary,
   DetectedPlaceSummary,
   FieldSession,
   GpsCoordinates,
+  SessionAudioTake,
   SessionPhoto,
   SessionPoint,
 } from './types/fieldSessions';
@@ -91,6 +99,82 @@ function normalizeTags(value: string): string[] {
   );
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatTakeDuration(durationSeconds: number | null): string {
+  if (durationSeconds == null || !Number.isFinite(durationSeconds)) {
+    return 'Duración n/d';
+  }
+
+  if (durationSeconds < 60) {
+    return `${durationSeconds.toFixed(1)} s`;
+  }
+
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = Math.round(durationSeconds % 60)
+    .toString()
+    .padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+
+function formatTakeTechnicalSummary(take: SessionAudioTake): string {
+  const parts = [
+    take.channels ? `${take.channels} ch` : null,
+    take.sampleRateHz ? `${Math.round(take.sampleRateHz / 1000)} kHz` : null,
+    take.bitDepth ? `${take.bitDepth} bit` : null,
+    take.durationSeconds != null ? formatTakeDuration(take.durationSeconds) : null,
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(' · ') : 'Metadatos técnicos pendientes';
+}
+
+function parseOptionalNumber(value: string): number | null {
+  const normalized = value.trim().replace(',', '.');
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseOptionalBoolean(value: string): boolean | null {
+  if (value === 'true') {
+    return true;
+  }
+
+  if (value === 'false') {
+    return false;
+  }
+
+  return null;
+}
+
+function shouldOverwritePointPlaceName(placeName: string): boolean {
+  const normalized = placeName.trim();
+  return !normalized || /^Punto\s\d{2}:\d{2}:\d{2}$/i.test(normalized);
+}
+
+function pointNeedsLocationEnrichment(point: Pick<SessionPoint, 'detectedPlace'>): boolean {
+  return !point.detectedPlace;
+}
+
+function pointNeedsWeatherEnrichment(point: Pick<SessionPoint, 'automaticWeather'>): boolean {
+  return !point.automaticWeather;
+}
+
+function pointNeedsAutomaticEnrichment(
+  point: Pick<SessionPoint, 'automaticWeather' | 'detectedPlace'>,
+): boolean {
+  return pointNeedsLocationEnrichment(point) || pointNeedsWeatherEnrichment(point);
+}
+
 function parseCoordinate(value: string): number | null {
   const normalized = value.trim().replace(',', '.');
   if (!normalized) {
@@ -131,10 +215,33 @@ function buildPointDraft(
   };
 }
 
-function hydrateSession(session: FieldSession): UiFieldSession {
+function normalizeAudioTake(take: SessionAudioTake): SessionAudioTake {
+  return {
+    ...take,
+    durationSeconds: take.durationSeconds ?? null,
+    sampleRateHz: take.sampleRateHz ?? null,
+    bitDepth: take.bitDepth ?? null,
+    channels: take.channels ?? null,
+    inputSetup: take.inputSetup ?? '',
+    lowCutEnabled: take.lowCutEnabled ?? null,
+    limiterEnabled: take.limiterEnabled ?? null,
+    phantomPowerEnabled: take.phantomPowerEnabled ?? null,
+    takeNotes: take.takeNotes ?? '',
+  };
+}
+
+function normalizeFieldSession(session: FieldSession): FieldSession {
   return {
     ...session,
-    points: session.points.map((point) => ({
+    audioTakes: (session.audioTakes ?? []).map(normalizeAudioTake),
+  };
+}
+
+function hydrateSession(session: FieldSession): UiFieldSession {
+  const normalizedSession = normalizeFieldSession(session);
+  return {
+    ...normalizedSession,
+    points: normalizedSession.points.map((point) => ({
       ...point,
       photos: point.photos.map((photo) => ({
         ...photo,
@@ -260,16 +367,22 @@ export default function App() {
   const [weatherStatus, setWeatherStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [weatherMessage, setWeatherMessage] = useState('Esperando coordenadas para consultar el clima.');
   const [weatherSnapshot, setWeatherSnapshot] = useState<AutomaticWeatherSummary | null>(null);
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
   const [now, setNow] = useState(() => Date.now());
   const [storageMode, setStorageMode] = useState<'loading' | 'ready' | 'memory-only'>('loading');
   const [statusNote, setStatusNote] = useState('Inicia una sesión y ve registrando puntos con GPS, clima, notas y fotos.');
   const [appError, setAppError] = useState<string | null>(null);
   const [isExportingSessionId, setIsExportingSessionId] = useState<string | null>(null);
   const [isQuickCapturing, setIsQuickCapturing] = useState(false);
+  const [isImportingSessionId, setIsImportingSessionId] = useState<string | null>(null);
+  const [isSyncingPendingMetadata, setIsSyncingPendingMetadata] = useState(false);
+  const [zoomImportTargetSessionId, setZoomImportTargetSessionId] = useState<string | null>(null);
 
   const currentGpsRef = useRef<GpsCoordinates | null>(null);
   const sessionsRef = useRef<UiFieldSession[]>([]);
   const draftPhotosRef = useRef<DraftPhoto[]>([]);
+  const zoomImportInputRef = useRef<HTMLInputElement | null>(null);
+  const isSyncingPendingMetadataRef = useRef(false);
   const locationAbortRef = useRef<AbortController | null>(null);
   const lastLocationKeyRef = useRef<string | null>(null);
   const lastAutomaticPlaceValueRef = useRef<string>('');
@@ -293,12 +406,41 @@ export default function App() {
   }, [draftPhotos]);
 
   useEffect(() => {
+    if (!zoomImportInputRef.current) {
+      return;
+    }
+
+    zoomImportInputRef.current.setAttribute('webkitdirectory', '');
+    zoomImportInputRef.current.setAttribute('directory', '');
+  }, []);
+
+  useEffect(() => {
     const timerId = window.setInterval(() => {
       setNow(Date.now());
     }, 1000);
 
     return () => {
       window.clearInterval(timerId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setStatusNote('Conexión recuperada. Reintentando sincronizar lugar y clima pendientes.');
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setStatusNote('Modo offline activo. Los puntos se guardarán y se enriquecerán al volver la conexión.');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
@@ -487,6 +629,15 @@ export default function App() {
       return;
     }
 
+    if (!isOnline) {
+      locationAbortRef.current?.abort();
+      setLocationStatus('idle');
+      setLocationMessage('Sin conexión. El lugar se resolverá cuando vuelva la red.');
+      setDetectedPlace(null);
+      lastLocationKeyRef.current = null;
+      return;
+    }
+
     const timerId = window.setTimeout(() => {
       void refreshDetectedPlaceForCoordinates(coordinates);
     }, 700);
@@ -494,7 +645,7 @@ export default function App() {
     return () => {
       window.clearTimeout(timerId);
     };
-  }, [pointDraft.coordinateSource, pointDraft.latitude, pointDraft.longitude, currentGps?.lat, currentGps?.lon]);
+  }, [isOnline, pointDraft.coordinateSource, pointDraft.latitude, pointDraft.longitude, currentGps?.lat, currentGps?.lon]);
 
   useEffect(() => {
     const coordinates = resolvePointCoordinates(pointDraft, currentGps);
@@ -507,6 +658,15 @@ export default function App() {
       return;
     }
 
+    if (!isOnline) {
+      weatherAbortRef.current?.abort();
+      setWeatherStatus('idle');
+      setWeatherMessage('Sin conexión. El clima se consultará cuando vuelva la red.');
+      setWeatherSnapshot(null);
+      lastWeatherKeyRef.current = null;
+      return;
+    }
+
     const timerId = window.setTimeout(() => {
       void refreshWeatherForCoordinates(coordinates);
     }, 550);
@@ -514,7 +674,7 @@ export default function App() {
     return () => {
       window.clearTimeout(timerId);
     };
-  }, [pointDraft.coordinateSource, pointDraft.latitude, pointDraft.longitude, currentGps?.lat, currentGps?.lon]);
+  }, [isOnline, pointDraft.coordinateSource, pointDraft.latitude, pointDraft.longitude, currentGps?.lat, currentGps?.lon]);
 
   useEffect(() => {
     return () => {
@@ -635,6 +795,12 @@ export default function App() {
     coordinates: GpsCoordinates,
     options?: { force?: boolean },
   ): Promise<DetectedPlaceSummary | null> {
+    if (!isOnline) {
+      setLocationStatus('idle');
+      setLocationMessage('Sin conexión. El lugar se resolverá cuando vuelva la red.');
+      return null;
+    }
+
     const requestKey = `${coordinates.lat.toFixed(4)},${coordinates.lon.toFixed(4)}`;
     if (!options?.force && requestKey === lastLocationKeyRef.current) {
       return detectedPlace;
@@ -714,6 +880,12 @@ export default function App() {
     coordinates: GpsCoordinates,
     options?: { force?: boolean },
   ): Promise<AutomaticWeatherSummary | null> {
+    if (!isOnline) {
+      setWeatherStatus('idle');
+      setWeatherMessage('Sin conexión. El clima se consultará cuando vuelva la red.');
+      return null;
+    }
+
     const requestKey = `${coordinates.lat.toFixed(4)},${coordinates.lon.toFixed(4)}`;
     if (!options?.force && requestKey === lastWeatherKeyRef.current) {
       return weatherSnapshot;
@@ -875,6 +1047,7 @@ export default function App() {
       status: 'active',
       equipmentPreset: sessionDraft.equipmentPreset.trim() || 'Zoom H6 · XY',
       points: [],
+      audioTakes: [],
     };
 
     setActiveSessionId(nextSession.id);
@@ -947,10 +1120,12 @@ export default function App() {
       detectedPlace,
       photos: sessionPhotos,
     });
+    const nextPoints = [point, ...activeSession.points];
 
     const nextSession: UiFieldSession = {
       ...activeSession,
-      points: [point, ...activeSession.points],
+      points: nextPoints,
+      audioTakes: reconcileSessionAudioTakes(nextPoints, activeSession.audioTakes),
     };
 
     await persistSession(nextSession);
@@ -999,10 +1174,12 @@ export default function App() {
         detectedPlace: nextDetectedPlace ?? detectedPlace,
         photos: sessionPhotos,
       });
+      const nextPoints = [point, ...activeSession.points];
 
       const nextSession: UiFieldSession = {
         ...activeSession,
-        points: [point, ...activeSession.points],
+        points: nextPoints,
+        audioTakes: reconcileSessionAudioTakes(nextPoints, activeSession.audioTakes),
       };
 
       await persistSession(nextSession);
@@ -1029,6 +1206,10 @@ export default function App() {
     const nextSession: UiFieldSession = {
       ...activeSession,
       points: activeSession.points.filter((point) => point.id !== pointId),
+      audioTakes: reconcileSessionAudioTakes(
+        activeSession.points.filter((point) => point.id !== pointId),
+        activeSession.audioTakes,
+      ),
     };
 
     await persistSession(nextSession);
@@ -1075,6 +1256,233 @@ export default function App() {
     }
   }
 
+  async function enrichPointForArchive(point: UiSessionPoint): Promise<{ point: UiSessionPoint; changed: boolean }> {
+    let changed = false;
+    let nextPoint = point;
+
+    if (pointNeedsLocationEnrichment(nextPoint)) {
+      try {
+        const detectedPlaceSummary = await reverseGeocodePlace(nextPoint.gps.lat, nextPoint.gps.lon);
+        nextPoint = {
+          ...nextPoint,
+          detectedPlace: detectedPlaceSummary,
+          placeName: shouldOverwritePointPlaceName(nextPoint.placeName)
+            ? detectedPlaceSummary.placeName || nextPoint.placeName
+            : nextPoint.placeName,
+        };
+        changed = true;
+      } catch (error) {
+        console.error('Pending location enrichment failed:', error);
+      }
+    }
+
+    if (pointNeedsWeatherEnrichment(nextPoint)) {
+      try {
+        const automaticWeatherSummary = await fetchAutomaticWeather(nextPoint.gps.lat, nextPoint.gps.lon);
+        nextPoint = {
+          ...nextPoint,
+          automaticWeather: automaticWeatherSummary,
+          observedWeather: nextPoint.observedWeather.trim() || automaticWeatherSummary.summary,
+        };
+        changed = true;
+      } catch (error) {
+        console.error('Pending weather enrichment failed:', error);
+      }
+    }
+
+    return { point: nextPoint, changed };
+  }
+
+  async function syncPendingMetadataQueue(options?: { force?: boolean }) {
+    if (!isOnline || isSyncingPendingMetadataRef.current) {
+      return;
+    }
+
+    const sessionsWithPending = sessionsRef.current.filter((session) =>
+      session.points.some((point) => pointNeedsAutomaticEnrichment(point)),
+    );
+
+    if (sessionsWithPending.length === 0) {
+      if (options?.force) {
+        setStatusNote('No hay metadatos pendientes por sincronizar.');
+      }
+      return;
+    }
+
+    isSyncingPendingMetadataRef.current = true;
+    setIsSyncingPendingMetadata(true);
+
+    let updatedSessions = 0;
+    let updatedPoints = 0;
+
+    try {
+      for (const sessionSnapshot of sessionsWithPending) {
+        const liveSession = sessionsRef.current.find((entry) => entry.id === sessionSnapshot.id);
+        if (!liveSession) {
+          continue;
+        }
+
+        let sessionChanged = false;
+        const nextPoints: UiSessionPoint[] = [];
+
+        for (const point of liveSession.points) {
+          if (!pointNeedsAutomaticEnrichment(point)) {
+            nextPoints.push(point);
+            continue;
+          }
+
+          const enrichedPoint = await enrichPointForArchive(point);
+          nextPoints.push(enrichedPoint.point);
+
+          if (enrichedPoint.changed) {
+            sessionChanged = true;
+            updatedPoints += 1;
+          }
+        }
+
+        if (!sessionChanged) {
+          continue;
+        }
+
+        updatedSessions += 1;
+        await persistSession({
+          ...liveSession,
+          points: nextPoints,
+        });
+      }
+
+      if (updatedPoints > 0) {
+        setStatusNote(
+          `Sincronizados ${updatedPoints} puntos pendientes en ${updatedSessions} sesión${updatedSessions === 1 ? '' : 'es'}.`,
+        );
+      } else if (options?.force) {
+        setStatusNote('No pude enriquecer los puntos pendientes en este momento.');
+      }
+    } finally {
+      isSyncingPendingMetadataRef.current = false;
+      setIsSyncingPendingMetadata(false);
+    }
+  }
+
+  async function updateSessionAudioTake(
+    sessionId: string,
+    takeId: string,
+    updater: (take: SessionAudioTake, session: UiFieldSession) => SessionAudioTake,
+  ) {
+    const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+    if (!session) {
+      return;
+    }
+
+    const nextSession: UiFieldSession = {
+      ...session,
+      audioTakes: session.audioTakes.map((take) => (take.id === takeId ? updater(take, session) : take)),
+    };
+
+    await persistSession(nextSession);
+  }
+
+  async function assignAudioTakeToPoint(
+    sessionId: string,
+    takeId: string,
+    nextPointId: string | null,
+  ) {
+    await updateSessionAudioTake(sessionId, takeId, (take, session) => {
+      if (!nextPointId) {
+        return {
+          ...take,
+          associatedPointId: null,
+          matchedBy: 'unmatched',
+          confidence: 'low',
+          matchedPointDeltaMinutes: null,
+        };
+      }
+
+      const linkedPoint = session.points.find((point) => point.id === nextPointId) ?? null;
+      const deltaMinutes = linkedPoint
+        ? Math.round(
+            Math.abs(new Date(take.inferredRecordedAt).getTime() - new Date(linkedPoint.createdAt).getTime()) /
+              60_000,
+          )
+        : null;
+
+      return {
+        ...take,
+        associatedPointId: nextPointId,
+        matchedBy: 'manual',
+        confidence: 'high',
+        matchedPointDeltaMinutes: deltaMinutes,
+      };
+    });
+  }
+
+  async function autoAssignAudioTake(sessionId: string, takeId: string) {
+    await updateSessionAudioTake(sessionId, takeId, (take, session) =>
+      autoMatchAudioTake(
+        {
+          ...take,
+          matchedBy: 'unmatched',
+          associatedPointId: null,
+          matchedPointDeltaMinutes: null,
+        },
+        session.points,
+      ),
+    );
+  }
+
+  function openZoomImportPicker(sessionId: string) {
+    setZoomImportTargetSessionId(sessionId);
+    zoomImportInputRef.current?.click();
+  }
+
+  async function handleZoomImportInput(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []) as File[];
+    const sessionId = zoomImportTargetSessionId;
+    event.target.value = '';
+
+    if (!sessionId || files.length === 0) {
+      setZoomImportTargetSessionId(null);
+      return;
+    }
+
+    const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+    if (!session) {
+      setZoomImportTargetSessionId(null);
+      setAppError('No encontré la sesión destino para importar las tomas.');
+      return;
+    }
+
+    setIsImportingSessionId(sessionId);
+    setAppError(null);
+
+    try {
+      const importedTakes = await buildImportedAudioTakes(files, session.points);
+      const nextAudioTakes = reconcileSessionAudioTakes(
+        session.points,
+        mergeSessionAudioTakes(session.audioTakes, importedTakes),
+      );
+      const nextSession: UiFieldSession = {
+        ...session,
+        audioTakes: nextAudioTakes,
+      };
+
+      await persistSession(nextSession);
+
+      const linkedCount = importedTakes.filter((take) => take.associatedPointId).length;
+      const unmatchedCount = importedTakes.length - linkedCount;
+      setStatusNote(
+        `Importadas ${importedTakes.length} tomas de Zoom H6. ${linkedCount} asociadas, ${unmatchedCount} pendientes.`,
+      );
+      setView('export');
+    } catch (error) {
+      console.error('Zoom H6 import failed:', error);
+      setAppError('No se pudieron importar las tomas de la Zoom H6.');
+    } finally {
+      setIsImportingSessionId(null);
+      setZoomImportTargetSessionId(null);
+    }
+  }
+
   const captureDateLabel = formatDateTime(new Date(now), "d 'de' MMMM, yyyy");
   const captureTimeLabel = formatDateTime(new Date(now), 'HH:mm:ss');
   const gpsLabel = currentGps
@@ -1103,6 +1511,10 @@ export default function App() {
     storageMode === 'ready' ? 'WRITE_READY' : storageMode === 'loading' ? 'LOADING...' : 'MEMORY_ONLY';
   const gpsTelemetryValue = currentGps ? gpsLabel : 'SEARCHING...';
   const pointBufferLabel = String(activeSession?.points.length ?? 0).padStart(3, '0');
+  const pendingEnrichmentCount = sessions.reduce(
+    (count, session) => count + session.points.filter((point) => pointNeedsAutomaticEnrichment(point)).length,
+    0,
+  );
   const activeSessionMeta = activeSession
     ? `${activeSession.projectName || 'sin proyecto'} · ${activeSession.region || 'sin zona'}`
     : 'Crea una sesión para empezar a registrar puntos.';
@@ -1115,9 +1527,30 @@ export default function App() {
         ? 'Preparando almacenamiento'
         : 'Sólo memoria';
 
+  useEffect(() => {
+    if (!isOnline || storageMode !== 'ready') {
+      return;
+    }
+
+    if (pendingEnrichmentCount === 0) {
+      return;
+    }
+
+    void syncPendingMetadataQueue();
+  }, [isOnline, pendingEnrichmentCount, storageMode]);
+
   return (
     <div className="field-shell min-h-screen px-4 py-6 pb-32 md:px-8 md:py-8 md:pb-36">
       <div className="mx-auto flex max-w-[1560px] flex-col gap-6">
+        <input
+          ref={zoomImportInputRef}
+          type="file"
+          accept=".wav,.WAV,.mp3,.MP3,audio/*"
+          multiple
+          className="hidden"
+          onChange={handleZoomImportInput}
+        />
+
         <motion.header
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1830,7 +2263,18 @@ export default function App() {
                     Sesiones listas para llevar al estudio
                   </h2>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="telemetry-chip">{isOnline ? 'Online' : 'Offline'}</span>
+                  <button
+                    onClick={() => void syncPendingMetadataQueue({ force: true })}
+                    disabled={!isOnline || isSyncingPendingMetadata}
+                    className="ui-button ui-button-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isSyncingPendingMetadata ? 'animate-spin' : ''}`} />
+                    {isSyncingPendingMetadata ? 'Sincronizando pendientes' : 'Sincronizar pendientes'}
+                  </button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
                   <div className="soft-card">
                     <p className="eyebrow text-[color:var(--muted)]">Sesiones</p>
                     <p className="mt-2 text-sm text-[color:var(--ink)]">{sessions.length}</p>
@@ -1840,6 +2284,16 @@ export default function App() {
                     <p className="mt-2 text-sm text-[color:var(--ink)]">
                       {sessions.reduce((count, session) => count + session.points.length, 0)}
                     </p>
+                  </div>
+                  <div className="soft-card">
+                    <p className="eyebrow text-[color:var(--muted)]">Tomas H6</p>
+                    <p className="mt-2 text-sm text-[color:var(--ink)]">
+                      {sessions.reduce((count, session) => count + session.audioTakes.length, 0)}
+                    </p>
+                  </div>
+                  <div className="soft-card">
+                    <p className="eyebrow text-[color:var(--muted)]">Pendientes offline</p>
+                    <p className="mt-2 text-sm text-[color:var(--ink)]">{pendingEnrichmentCount}</p>
                   </div>
                 </div>
               </div>
@@ -1878,6 +2332,14 @@ export default function App() {
 
                         <div className="flex items-center gap-2">
                           <button
+                            onClick={() => openZoomImportPicker(session.id)}
+                            disabled={isImportingSessionId === session.id}
+                            className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
+                          >
+                            <Upload className="h-4 w-4" />
+                            {isImportingSessionId === session.id ? 'Importando Zoom H6' : 'Importar Zoom H6'}
+                          </button>
+                          <button
                             onClick={() => void exportSession(session)}
                             disabled={isExportingSessionId === session.id}
                             className="ui-button ui-button-primary disabled:cursor-wait disabled:opacity-60"
@@ -1894,7 +2356,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="grid gap-4 md:grid-cols-3">
+                      <div className="grid gap-4 md:grid-cols-5">
                         <div className="soft-card">
                           <p className="eyebrow text-[color:var(--muted)]">Puntos</p>
                           <p className="mt-2 text-sm text-[color:var(--ink)]">{session.points.length}</p>
@@ -1906,13 +2368,286 @@ export default function App() {
                           </p>
                         </div>
                         <div className="soft-card">
+                          <p className="eyebrow text-[color:var(--muted)]">Tomas H6</p>
+                          <p className="mt-2 text-sm text-[color:var(--ink)]">{session.audioTakes.length}</p>
+                        </div>
+                        <div className="soft-card">
+                          <p className="eyebrow text-[color:var(--muted)]">Asociadas</p>
+                          <p className="mt-2 text-sm text-[color:var(--ink)]">
+                            {session.audioTakes.filter((take) => take.associatedPointId).length}
+                          </p>
+                        </div>
+                        <div className="soft-card">
                           <p className="eyebrow text-[color:var(--muted)]">Equipo</p>
                           <p className="mt-2 text-sm text-[color:var(--ink)]">{session.equipmentPreset}</p>
                         </div>
                       </div>
 
+                      {session.audioTakes.length > 0 ? (
+                        <div className="grid gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <p className="eyebrow text-[color:var(--signal-strong)]">Índice de tomas Zoom H6</p>
+                            <p className="text-sm text-[color:var(--muted)]">
+                              {session.audioTakes.filter((take) => take.associatedPointId).length} asociadas ·{' '}
+                              {session.audioTakes.filter((take) => !take.associatedPointId).length} pendientes
+                            </p>
+                          </div>
+
+                          <div className="grid gap-3">
+                            {session.audioTakes.map((take) => {
+                              const linkedPoint = session.points.find((point) => point.id === take.associatedPointId) ?? null;
+                              const matchLabel =
+                                take.matchedBy === 'reference'
+                                  ? 'Referencia'
+                                  : take.matchedBy === 'time'
+                                    ? 'Tiempo'
+                                    : take.matchedBy === 'manual'
+                                      ? 'Manual'
+                                    : 'Pendiente';
+
+                              return (
+                                <details key={take.id} className="soft-card">
+                                  <summary className="manual-details__summary">
+                                    <div className="space-y-2">
+                                      <p className="text-sm text-[color:var(--ink)]">{take.fileName}</p>
+                                      <p className="text-sm text-[color:var(--muted)]">
+                                        {formatDateTime(take.inferredRecordedAt, "d MMM yyyy · HH:mm:ss")} · {formatFileSize(take.sizeBytes)}
+                                      </p>
+                                      <p className="text-sm text-[color:var(--muted)]">{formatTakeTechnicalSummary(take)}</p>
+                                      <p className="text-sm text-[color:var(--ink)]">
+                                        {linkedPoint
+                                          ? `${linkedPoint.placeName} · ${
+                                              take.matchedBy === 'reference'
+                                                ? 'asociada por referencia'
+                                                : take.matchedBy === 'manual'
+                                                  ? 'asignación manual'
+                                                  : `a ${take.matchedPointDeltaMinutes ?? '?'} min del punto`
+                                            }`
+                                          : 'Sin asociación todavía'}
+                                      </p>
+                                    </div>
+
+                                    <div className="flex flex-col items-end gap-2">
+                                      <span className="telemetry-chip">{matchLabel}</span>
+                                      <span className="manual-details__hint">Editar</span>
+                                    </div>
+                                  </summary>
+
+                                  <div className="manual-details__body mt-5 grid gap-4">
+                                    <div className="grid gap-4 md:grid-cols-[1fr,auto]">
+                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                        <span>Punto asociado</span>
+                                        <select
+                                          value={take.associatedPointId ?? ''}
+                                          onChange={(event) =>
+                                            void assignAudioTakeToPoint(session.id, take.id, event.target.value || null)
+                                          }
+                                          className="field-input"
+                                        >
+                                          <option value="">Sin asignar</option>
+                                          {session.points.map((point) => (
+                                            <option key={point.id} value={point.id}>
+                                              {point.placeName} · {formatDateTime(point.createdAt, 'HH:mm:ss')}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+
+                                      <div className="flex items-end">
+                                        <button
+                                          onClick={() => void autoAssignAudioTake(session.id, take.id)}
+                                          className="ui-button ui-button-secondary"
+                                        >
+                                          Autoasignar
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                        <span>Referencia detectada</span>
+                                        <input
+                                          defaultValue={take.detectedReference}
+                                          onBlur={(event) =>
+                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                              ...currentTake,
+                                              detectedReference: event.target.value.trim(),
+                                            }))
+                                          }
+                                          className="field-input"
+                                          placeholder="ZOOM0001"
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                        <span>Setup de entrada</span>
+                                        <input
+                                          defaultValue={take.inputSetup}
+                                          onBlur={(event) =>
+                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                              ...currentTake,
+                                              inputSetup: event.target.value.trim(),
+                                            }))
+                                          }
+                                          className="field-input"
+                                          placeholder="XY 90º / In 1-2"
+                                        />
+                                      </label>
+                                    </div>
+
+                                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                        <span>Duración (s)</span>
+                                        <input
+                                          defaultValue={take.durationSeconds ?? ''}
+                                          onBlur={(event) =>
+                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                              ...currentTake,
+                                              durationSeconds: parseOptionalNumber(event.target.value),
+                                            }))
+                                          }
+                                          className="field-input"
+                                          placeholder="125.4"
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                        <span>Sample rate</span>
+                                        <input
+                                          defaultValue={take.sampleRateHz ?? ''}
+                                          onBlur={(event) =>
+                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                              ...currentTake,
+                                              sampleRateHz: parseOptionalNumber(event.target.value),
+                                            }))
+                                          }
+                                          className="field-input"
+                                          placeholder="48000"
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                        <span>Bit depth</span>
+                                        <input
+                                          defaultValue={take.bitDepth ?? ''}
+                                          onBlur={(event) =>
+                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                              ...currentTake,
+                                              bitDepth: parseOptionalNumber(event.target.value),
+                                            }))
+                                          }
+                                          className="field-input"
+                                          placeholder="24"
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                        <span>Canales</span>
+                                        <input
+                                          defaultValue={take.channels ?? ''}
+                                          onBlur={(event) =>
+                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                              ...currentTake,
+                                              channels: parseOptionalNumber(event.target.value),
+                                            }))
+                                          }
+                                          className="field-input"
+                                          placeholder="2"
+                                        />
+                                      </label>
+                                    </div>
+
+                                    <div className="grid gap-4 md:grid-cols-3">
+                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                        <span>Low cut</span>
+                                        <select
+                                          value={
+                                            take.lowCutEnabled == null ? '' : take.lowCutEnabled ? 'true' : 'false'
+                                          }
+                                          onChange={(event) =>
+                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                              ...currentTake,
+                                              lowCutEnabled: parseOptionalBoolean(event.target.value),
+                                            }))
+                                          }
+                                          className="field-input"
+                                        >
+                                          <option value="">Desconocido</option>
+                                          <option value="true">Sí</option>
+                                          <option value="false">No</option>
+                                        </select>
+                                      </label>
+
+                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                        <span>Limiter</span>
+                                        <select
+                                          value={
+                                            take.limiterEnabled == null ? '' : take.limiterEnabled ? 'true' : 'false'
+                                          }
+                                          onChange={(event) =>
+                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                              ...currentTake,
+                                              limiterEnabled: parseOptionalBoolean(event.target.value),
+                                            }))
+                                          }
+                                          className="field-input"
+                                        >
+                                          <option value="">Desconocido</option>
+                                          <option value="true">Sí</option>
+                                          <option value="false">No</option>
+                                        </select>
+                                      </label>
+
+                                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                        <span>Phantom</span>
+                                        <select
+                                          value={
+                                            take.phantomPowerEnabled == null
+                                              ? ''
+                                              : take.phantomPowerEnabled
+                                                ? 'true'
+                                                : 'false'
+                                          }
+                                          onChange={(event) =>
+                                            void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                              ...currentTake,
+                                              phantomPowerEnabled: parseOptionalBoolean(event.target.value),
+                                            }))
+                                          }
+                                          className="field-input"
+                                        >
+                                          <option value="">Desconocido</option>
+                                          <option value="true">Sí</option>
+                                          <option value="false">No</option>
+                                        </select>
+                                      </label>
+                                    </div>
+
+                                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                      <span>Notas de la toma</span>
+                                      <textarea
+                                        defaultValue={take.takeNotes}
+                                        onBlur={(event) =>
+                                          void updateSessionAudioTake(session.id, take.id, (currentTake) => ({
+                                            ...currentTake,
+                                            takeNotes: event.target.value.trim(),
+                                          }))
+                                        }
+                                        rows={3}
+                                        className="field-input min-h-24"
+                                        placeholder="Incidencias, clipping, viento, problema de cable, toma útil..."
+                                      />
+                                    </label>
+                                  </div>
+                                </details>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm leading-7 text-[color:var(--muted)]">
+                          Importa la carpeta de audio de la Zoom H6 para construir un índice profesional y asociar automáticamente las tomas a los puntos.
+                        </p>
+                      )}
+
                       <p className="text-sm leading-7 text-[color:var(--muted)]">
-                        El paquete ZIP contiene `session.json` y una carpeta por punto con su `point.json`, las fotos asociadas y todas las referencias necesarias para casar después cada toma con tu Zoom H6.
+                        El paquete ZIP contiene `session.json`, `takes.csv`, `takes.json` y una carpeta por punto con su `point.json`, fotos y todas las referencias necesarias para casar después cada toma con tu Zoom H6.
                       </p>
                     </div>
                   ))}

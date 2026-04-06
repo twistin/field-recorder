@@ -24,6 +24,35 @@ export interface SessionPhoto {
   blob: Blob;
 }
 
+export type AudioTakeMatchMethod = 'reference' | 'time' | 'manual' | 'unmatched';
+export type AudioTakeMatchConfidence = 'high' | 'medium' | 'low';
+
+export interface SessionAudioTake {
+  id: string;
+  source: 'zoom-h6';
+  fileName: string;
+  relativePath: string;
+  mimeType: string;
+  sizeBytes: number;
+  importedAt: string;
+  lastModified: string;
+  inferredRecordedAt: string;
+  associatedPointId: string | null;
+  matchedBy: AudioTakeMatchMethod;
+  confidence: AudioTakeMatchConfidence;
+  matchedPointDeltaMinutes: number | null;
+  detectedReference: string;
+  durationSeconds: number | null;
+  sampleRateHz: number | null;
+  bitDepth: number | null;
+  channels: number | null;
+  inputSetup: string;
+  lowCutEnabled: boolean | null;
+  limiterEnabled: boolean | null;
+  phantomPowerEnabled: boolean | null;
+  takeNotes: string;
+}
+
 export interface SessionPoint {
   id: string;
   createdAt: string;
@@ -53,4 +82,5 @@ export interface FieldSession {
   status: 'active' | 'closed';
   equipmentPreset: string;
   points: SessionPoint[];
+  audioTakes: SessionAudioTake[];
 }
