@@ -22,6 +22,9 @@ export interface SessionPhoto {
   fileName: string;
   mimeType: string;
   blob: Blob;
+  cloudPath?: string | null;
+  cloudUrl?: string | null;
+  cloudSyncedAt?: string | null;
 }
 
 export type AudioTakeMatchMethod = 'reference' | 'time' | 'manual' | 'unmatched';
@@ -83,4 +86,12 @@ export interface FieldSession {
   equipmentPreset: string;
   points: SessionPoint[];
   audioTakes: SessionAudioTake[];
+  cloudSyncStatus?: 'local-only' | 'pending' | 'syncing' | 'synced' | 'error';
+  cloudSyncedAt?: string | null;
+  cloudError?: string | null;
+  cloudManifestPath?: string | null;
+  cloudManifestUrl?: string | null;
+  catalogSyncStatus?: 'local-only' | 'pending' | 'syncing' | 'synced' | 'error';
+  catalogSyncedAt?: string | null;
+  catalogError?: string | null;
 }

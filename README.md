@@ -29,7 +29,26 @@ La app está preparada para desplegarse como frontend estático de Vite.
    `Build Command`: `npm run build`
    `Output Directory`: `dist`
    `Node.js`: `22.x`
-4. Despliega y prueba desde el dominio HTTPS real de Vercel.
+4. Crea un Blob store en Vercel y comprueba que la variable `BLOB_READ_WRITE_TOKEN` queda asociada al proyecto.
+5. Añade una base Neon Postgres al proyecto y comprueba que `DATABASE_URL` queda disponible.
+6. Despliega y prueba desde el dominio HTTPS real de Vercel.
+
+## Respaldo en nube
+
+- La app puede respaldar sesiones y fotos en Vercel Blob.
+- Las fotos suben con `Client Uploads`, directamente desde el navegador a Blob.
+- Cada cambio local deja la sesión en estado pendiente hasta que se sincroniza.
+- Si vuelves a estar online, la app intenta reanudar el respaldo de sesiones pendientes.
+- El manifiesto remoto sigue subiendo desde función servidor e incluye metadatos de puntos, tomas Zoom H6 y fotos ya subidas a Blob.
+- El catálogo remoto guarda sesiones, puntos, fotos y tomas en Neon Postgres para poder consultarlas después fuera del navegador.
+- Para probar el respaldo en local usa el despliegue de Vercel o `vercel dev`; `vite dev` no sirve las rutas `api/*`.
+
+## Catálogo remoto
+
+- La base remota usa `DATABASE_URL` y está pensada para conectarse a Neon Postgres en Vercel.
+- El esquema SQL base está en [db/schema.sql](/Volumes/Nexus/DevProyjects/field-recorder/db/schema.sql).
+- Las rutas `api/catalog/session` y `api/catalog/sessions` crean el esquema si no existe y sincronizan una sesión completa.
+- La app mantiene `IndexedDB` como caché offline y sincroniza después con Neon cuando vuelve la red.
 
 ## Geolocalización en producción
 

@@ -30,6 +30,8 @@ import {
   mergeSessionAudioTakes,
   reconcileSessionAudioTakes,
 } from './lib/zoomImport';
+import { syncSessionToCloud } from './lib/cloudSync';
+import { syncSessionToCatalog } from './lib/catalogSync';
 import type {
   AutomaticWeatherSummary,
   DetectedPlaceSummary,
@@ -230,10 +232,34 @@ function normalizeAudioTake(take: SessionAudioTake): SessionAudioTake {
   };
 }
 
+function prepareSessionForLocalMutation(
+  session: FieldSession,
+  options?: { markCloudPending?: boolean; markCatalogPending?: boolean },
+): FieldSession {
+  const preserveCloudSyncState = options?.markCloudPending === false;
+  const preserveCatalogSyncState = options?.markCatalogPending === false;
+
+  return {
+    ...session,
+    cloudSyncStatus: preserveCloudSyncState ? session.cloudSyncStatus ?? 'local-only' : 'pending',
+    cloudError: preserveCloudSyncState ? session.cloudError ?? null : null,
+    catalogSyncStatus: preserveCatalogSyncState ? session.catalogSyncStatus ?? 'local-only' : 'pending',
+    catalogError: preserveCatalogSyncState ? session.catalogError ?? null : null,
+  };
+}
+
 function normalizeFieldSession(session: FieldSession): FieldSession {
   return {
     ...session,
     audioTakes: (session.audioTakes ?? []).map(normalizeAudioTake),
+    cloudSyncStatus: session.cloudSyncStatus ?? 'local-only',
+    cloudSyncedAt: session.cloudSyncedAt ?? null,
+    cloudError: session.cloudError ?? null,
+    cloudManifestPath: session.cloudManifestPath ?? null,
+    cloudManifestUrl: session.cloudManifestUrl ?? null,
+    catalogSyncStatus: session.catalogSyncStatus ?? 'local-only',
+    catalogSyncedAt: session.catalogSyncedAt ?? null,
+    catalogError: session.catalogError ?? null,
   };
 }
 
@@ -258,6 +284,43 @@ function dehydrateSession(session: UiFieldSession): FieldSession {
       ...point,
       photos: point.photos.map(({ previewUrl: _previewUrl, ...photo }) => photo),
     })),
+  };
+}
+
+function mergeCloudSyncedSessionIntoUi(
+  cloudSession: FieldSession,
+  currentUiSession: UiFieldSession,
+): UiFieldSession {
+  return {
+    ...currentUiSession,
+    cloudSyncStatus: cloudSession.cloudSyncStatus ?? currentUiSession.cloudSyncStatus,
+    cloudSyncedAt: cloudSession.cloudSyncedAt ?? currentUiSession.cloudSyncedAt,
+    cloudError: cloudSession.cloudError ?? null,
+    cloudManifestPath: cloudSession.cloudManifestPath ?? currentUiSession.cloudManifestPath ?? null,
+    cloudManifestUrl: cloudSession.cloudManifestUrl ?? currentUiSession.cloudManifestUrl ?? null,
+    points: currentUiSession.points.map((point) => {
+      const syncedPoint = cloudSession.points.find((entry) => entry.id === point.id);
+      if (!syncedPoint) {
+        return point;
+      }
+
+      return {
+        ...point,
+        photos: point.photos.map((photo) => {
+          const syncedPhoto = syncedPoint.photos.find((entry) => entry.id === photo.id);
+          if (!syncedPhoto) {
+            return photo;
+          }
+
+          return {
+            ...photo,
+            cloudPath: syncedPhoto.cloudPath ?? null,
+            cloudUrl: syncedPhoto.cloudUrl ?? null,
+            cloudSyncedAt: syncedPhoto.cloudSyncedAt ?? null,
+          };
+        }),
+      };
+    }),
   };
 }
 
@@ -376,6 +439,8 @@ export default function App() {
   const [isQuickCapturing, setIsQuickCapturing] = useState(false);
   const [isImportingSessionId, setIsImportingSessionId] = useState<string | null>(null);
   const [isSyncingPendingMetadata, setIsSyncingPendingMetadata] = useState(false);
+  const [isSyncingCloudSessionId, setIsSyncingCloudSessionId] = useState<string | null>(null);
+  const [isSyncingCatalogSessionId, setIsSyncingCatalogSessionId] = useState<string | null>(null);
   const [zoomImportTargetSessionId, setZoomImportTargetSessionId] = useState<string | null>(null);
 
   const currentGpsRef = useRef<GpsCoordinates | null>(null);
@@ -383,6 +448,8 @@ export default function App() {
   const draftPhotosRef = useRef<DraftPhoto[]>([]);
   const zoomImportInputRef = useRef<HTMLInputElement | null>(null);
   const isSyncingPendingMetadataRef = useRef(false);
+  const isSyncingCloudSessionIdRef = useRef<string | null>(null);
+  const isSyncingCatalogSessionIdRef = useRef<string | null>(null);
   const locationAbortRef = useRef<AbortController | null>(null);
   const lastLocationKeyRef = useRef<string | null>(null);
   const lastAutomaticPlaceValueRef = useRef<string>('');
@@ -774,15 +841,23 @@ export default function App() {
     }));
   }
 
-  async function persistSession(nextSession: UiFieldSession) {
-    replaceSessionInState(nextSession);
+  async function persistSession(
+    nextSession: UiFieldSession,
+    options?: { markCloudPending?: boolean; markCatalogPending?: boolean },
+  ) {
+    const preparedSession = options?.markCloudPending === false
+      && options?.markCatalogPending === false
+      ? nextSession
+      : (prepareSessionForLocalMutation(nextSession, options) as UiFieldSession);
+
+    replaceSessionInState(preparedSession);
 
     if (storageMode === 'memory-only') {
       return;
     }
 
     try {
-      await saveFieldSession(dehydrateSession(nextSession));
+      await saveFieldSession(dehydrateSession(preparedSession));
       setStorageMode('ready');
     } catch (error) {
       console.error('Saving session failed:', error);
@@ -1256,6 +1331,147 @@ export default function App() {
     }
   }
 
+  async function syncSessionToCloudBackup(sessionId: string) {
+    const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+    if (!session) {
+      return;
+    }
+
+    if (!isOnline) {
+      setAppError('Necesitas conexión para respaldar la sesión en Vercel Blob.');
+      return;
+    }
+
+    if (isSyncingCloudSessionIdRef.current) {
+      return;
+    }
+
+    isSyncingCloudSessionIdRef.current = sessionId;
+    setIsSyncingCloudSessionId(sessionId);
+    setAppError(null);
+
+    const syncingSession: UiFieldSession = {
+      ...session,
+      cloudSyncStatus: 'syncing',
+      cloudError: null,
+    };
+
+    replaceSessionInState(syncingSession);
+
+    try {
+      const cloudSession = await syncSessionToCloud(dehydrateSession(syncingSession));
+      const nextUiSession = mergeCloudSyncedSessionIntoUi(cloudSession, syncingSession);
+      await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
+      setStatusNote(`Sesión "${nextUiSession.name}" respaldada en la nube.`);
+    } catch (error) {
+      console.error('Cloud backup failed:', error);
+      const nextUiSession: UiFieldSession = {
+        ...session,
+        cloudSyncStatus: 'error',
+        cloudError: 'No se pudo respaldar en la nube.',
+      };
+      await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
+      setAppError('No se pudo sincronizar la sesión con Vercel Blob.');
+    } finally {
+      isSyncingCloudSessionIdRef.current = null;
+      setIsSyncingCloudSessionId(null);
+    }
+  }
+
+  async function syncSessionToCatalogStore(sessionId: string) {
+    const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+    if (!session) {
+      return;
+    }
+
+    if (!isOnline) {
+      setAppError('Necesitas conexión para sincronizar la sesión con el catálogo remoto.');
+      return;
+    }
+
+    if (isSyncingCatalogSessionIdRef.current || isSyncingCloudSessionIdRef.current) {
+      return;
+    }
+
+    isSyncingCatalogSessionIdRef.current = sessionId;
+    setIsSyncingCatalogSessionId(sessionId);
+    setAppError(null);
+
+    const syncingSession: UiFieldSession = {
+      ...session,
+      catalogSyncStatus: 'syncing',
+      catalogError: null,
+    };
+
+    replaceSessionInState(syncingSession);
+
+    try {
+      const catalogResult = await syncSessionToCatalog(dehydrateSession(syncingSession));
+      const nextUiSession: UiFieldSession = {
+        ...syncingSession,
+        catalogSyncStatus: 'synced',
+        catalogSyncedAt: catalogResult.syncedAt,
+        catalogError: null,
+      };
+      await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
+      setStatusNote(`Sesión "${nextUiSession.name}" sincronizada con el catálogo remoto.`);
+    } catch (error) {
+      console.error('Catalog sync failed:', error);
+      const nextUiSession: UiFieldSession = {
+        ...session,
+        catalogSyncStatus: 'error',
+        catalogError: 'No se pudo sincronizar el catálogo remoto.',
+      };
+      await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
+      setAppError('No se pudo sincronizar la sesión con la base remota.');
+    } finally {
+      isSyncingCatalogSessionIdRef.current = null;
+      setIsSyncingCatalogSessionId(null);
+    }
+  }
+
+  async function syncPendingCloudSessions() {
+    if (!isOnline || isSyncingCloudSessionIdRef.current) {
+      return;
+    }
+
+    const pendingSessions = sessionsRef.current.filter((session) =>
+      session.cloudSyncStatus === 'pending' ||
+      session.cloudSyncStatus === 'local-only' ||
+      session.cloudSyncStatus === 'error',
+    );
+
+    if (pendingSessions.length === 0) {
+      setStatusNote('No hay sesiones pendientes de respaldo.');
+      return;
+    }
+
+    for (const session of pendingSessions) {
+      await syncSessionToCloudBackup(session.id);
+    }
+  }
+
+  async function syncPendingCatalogSessions() {
+    if (!isOnline || isSyncingCatalogSessionIdRef.current || isSyncingCloudSessionIdRef.current) {
+      return;
+    }
+
+    const pendingSessions = sessionsRef.current.filter((session) =>
+      session.catalogSyncStatus === 'pending' ||
+      session.catalogSyncStatus === 'local-only' ||
+      session.catalogSyncStatus === 'error',
+    );
+
+    if (pendingSessions.length === 0) {
+      setStatusNote('No hay sesiones pendientes de catálogo remoto.');
+      return;
+    }
+
+    for (const session of pendingSessions) {
+      await syncSessionToCatalogStore(session.id);
+    }
+  }
+
   async function enrichPointForArchive(point: UiSessionPoint): Promise<{ point: UiSessionPoint; changed: boolean }> {
     let changed = false;
     let nextPoint = point;
@@ -1515,6 +1731,26 @@ export default function App() {
     (count, session) => count + session.points.filter((point) => pointNeedsAutomaticEnrichment(point)).length,
     0,
   );
+  const pendingCloudSessionCount = sessions.filter(
+    (session) =>
+      session.cloudSyncStatus === 'pending' ||
+      session.cloudSyncStatus === 'local-only' ||
+      session.cloudSyncStatus === 'error',
+  ).length;
+  const autoSyncCloudSessionCount = sessions.filter(
+    (session) => session.cloudSyncStatus === 'pending' || session.cloudSyncStatus === 'local-only',
+  ).length;
+  const syncedCloudSessionCount = sessions.filter((session) => session.cloudSyncStatus === 'synced').length;
+  const pendingCatalogSessionCount = sessions.filter(
+    (session) =>
+      session.catalogSyncStatus === 'pending' ||
+      session.catalogSyncStatus === 'local-only' ||
+      session.catalogSyncStatus === 'error',
+  ).length;
+  const autoSyncCatalogSessionCount = sessions.filter(
+    (session) => session.catalogSyncStatus === 'pending' || session.catalogSyncStatus === 'local-only',
+  ).length;
+  const syncedCatalogSessionCount = sessions.filter((session) => session.catalogSyncStatus === 'synced').length;
   const activeSessionMeta = activeSession
     ? `${activeSession.projectName || 'sin proyecto'} · ${activeSession.region || 'sin zona'}`
     : 'Crea una sesión para empezar a registrar puntos.';
@@ -1538,6 +1774,42 @@ export default function App() {
 
     void syncPendingMetadataQueue();
   }, [isOnline, pendingEnrichmentCount, storageMode]);
+
+  useEffect(() => {
+    if (!isOnline || storageMode !== 'ready' || autoSyncCloudSessionCount === 0) {
+      return;
+    }
+
+    if (isSyncingCloudSessionIdRef.current) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      void syncPendingCloudSessions();
+    }, 1800);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [autoSyncCloudSessionCount, isOnline, storageMode]);
+
+  useEffect(() => {
+    if (!isOnline || storageMode !== 'ready' || autoSyncCatalogSessionCount === 0) {
+      return;
+    }
+
+    if (isSyncingCatalogSessionIdRef.current || isSyncingCloudSessionIdRef.current) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      void syncPendingCatalogSessions();
+    }, 3200);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [autoSyncCatalogSessionCount, isOnline, storageMode, syncedCloudSessionCount]);
 
   return (
     <div className="field-shell min-h-screen px-4 py-6 pb-32 md:px-8 md:py-8 md:pb-36">
@@ -2273,8 +2545,24 @@ export default function App() {
                     <RefreshCw className={`h-4 w-4 ${isSyncingPendingMetadata ? 'animate-spin' : ''}`} />
                     {isSyncingPendingMetadata ? 'Sincronizando pendientes' : 'Sincronizar pendientes'}
                   </button>
+                  <button
+                    onClick={() => void syncPendingCloudSessions()}
+                    disabled={!isOnline || pendingCloudSessionCount === 0 || Boolean(isSyncingCloudSessionId)}
+                    className="ui-button ui-button-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Upload className="h-4 w-4" />
+                    {isSyncingCloudSessionId ? 'Respaldando nube' : 'Respaldar pendientes'}
+                  </button>
+                  <button
+                    onClick={() => void syncPendingCatalogSessions()}
+                    disabled={!isOnline || pendingCatalogSessionCount === 0 || Boolean(isSyncingCatalogSessionId)}
+                    className="ui-button ui-button-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Upload className="h-4 w-4" />
+                    {isSyncingCatalogSessionId ? 'Sincronizando catálogo' : 'Catálogo pendientes'}
+                  </button>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-6">
                   <div className="soft-card">
                     <p className="eyebrow text-[color:var(--muted)]">Sesiones</p>
                     <p className="mt-2 text-sm text-[color:var(--ink)]">{sessions.length}</p>
@@ -2294,6 +2582,20 @@ export default function App() {
                   <div className="soft-card">
                     <p className="eyebrow text-[color:var(--muted)]">Pendientes offline</p>
                     <p className="mt-2 text-sm text-[color:var(--ink)]">{pendingEnrichmentCount}</p>
+                  </div>
+                  <div className="soft-card">
+                    <p className="eyebrow text-[color:var(--muted)]">Respaldadas</p>
+                    <p className="mt-2 text-sm text-[color:var(--ink)]">{syncedCloudSessionCount}</p>
+                  </div>
+                  <div className="soft-card">
+                    <p className="eyebrow text-[color:var(--muted)]">Pendientes nube</p>
+                    <p className="mt-2 text-sm text-[color:var(--ink)]">{pendingCloudSessionCount}</p>
+                  </div>
+                  <div className="soft-card">
+                    <p className="eyebrow text-[color:var(--muted)]">Catálogo remoto</p>
+                    <p className="mt-2 text-sm text-[color:var(--ink)]">
+                      {syncedCatalogSessionCount} OK · {pendingCatalogSessionCount} pendientes
+                    </p>
                   </div>
                 </div>
               </div>
@@ -2322,15 +2624,63 @@ export default function App() {
                             >
                               {session.status === 'active' ? 'Activa' : 'Cerrada'}
                             </span>
+                            <span className="telemetry-chip">
+                              {session.cloudSyncStatus === 'synced'
+                                ? 'Nube OK'
+                                : session.cloudSyncStatus === 'syncing'
+                                  ? 'Subiendo'
+                                  : session.cloudSyncStatus === 'error'
+                                    ? 'Error nube'
+                                    : session.cloudSyncStatus === 'pending'
+                                      ? 'Pendiente nube'
+                                    : 'Solo local'}
+                            </span>
+                            <span className="telemetry-chip">
+                              {session.catalogSyncStatus === 'synced'
+                                ? 'Catálogo OK'
+                                : session.catalogSyncStatus === 'syncing'
+                                  ? 'Catalogando'
+                                  : session.catalogSyncStatus === 'error'
+                                    ? 'Error catálogo'
+                                    : session.catalogSyncStatus === 'pending'
+                                      ? 'Pendiente catálogo'
+                                      : 'Sin catálogo'}
+                            </span>
                           </div>
                           <p className="display-heading text-3xl text-[color:var(--ink)]">{session.name}</p>
                           <p className="text-sm text-[color:var(--muted)]">
                             {formatDateTime(session.startedAt, "d MMM yyyy · HH:mm")} · {session.projectName || 'sin proyecto'} ·{' '}
                             {session.region || 'sin zona'}
                           </p>
+                          <p className="text-sm text-[color:var(--muted)]">
+                            {session.cloudSyncedAt
+                              ? `Último respaldo: ${formatDateTime(session.cloudSyncedAt, "d MMM yyyy · HH:mm")}`
+                              : 'Sin respaldo en nube todavía'}
+                          </p>
+                          <p className="text-sm text-[color:var(--muted)]">
+                            {session.catalogSyncedAt
+                              ? `Último catálogo: ${formatDateTime(session.catalogSyncedAt, "d MMM yyyy · HH:mm")}`
+                              : 'Sin catálogo remoto todavía'}
+                          </p>
                         </div>
 
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => void syncSessionToCloudBackup(session.id)}
+                            disabled={!isOnline || isSyncingCloudSessionId === session.id}
+                            className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
+                          >
+                            <Upload className="h-4 w-4" />
+                            {isSyncingCloudSessionId === session.id ? 'Respaldando' : 'Respaldar nube'}
+                          </button>
+                          <button
+                            onClick={() => void syncSessionToCatalogStore(session.id)}
+                            disabled={!isOnline || isSyncingCatalogSessionId === session.id}
+                            className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
+                          >
+                            <Upload className="h-4 w-4" />
+                            {isSyncingCatalogSessionId === session.id ? 'Catalogando' : 'Sincronizar catálogo'}
+                          </button>
                           <button
                             onClick={() => openZoomImportPicker(session.id)}
                             disabled={isImportingSessionId === session.id}
@@ -2647,7 +2997,9 @@ export default function App() {
                       )}
 
                       <p className="text-sm leading-7 text-[color:var(--muted)]">
-                        El paquete ZIP contiene `session.json`, `takes.csv`, `takes.json` y una carpeta por punto con su `point.json`, fotos y todas las referencias necesarias para casar después cada toma con tu Zoom H6.
+                        El paquete ZIP contiene `session.json`, `session-report.md`, `points.csv`, `points.geojson`,
+                        `takes.csv`, `takes.json` y una carpeta por punto con su `point.json`, fotos y todas las
+                        referencias necesarias para casar después cada toma con tu Zoom H6.
                       </p>
                     </div>
                   ))}
