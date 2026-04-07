@@ -640,6 +640,30 @@ audio {
   color: var(--muted);
 }
 
+.field-section {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.1rem 1.2rem;
+  border: 2px solid var(--ink);
+  background: rgba(255, 251, 242, 0.82);
+}
+
+.field-section__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 2px solid rgba(16, 16, 16, 0.14);
+}
+
+.field-section__copy {
+  margin-top: 0.45rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
 .point-panel__time .digital-clock,
 .point-time {
   font-size: clamp(2rem, 7vw, 3.3rem);

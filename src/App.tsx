@@ -2857,173 +2857,210 @@ export default function App() {
                       </summary>
 
                       <div className="manual-details__body mt-6 grid gap-5">
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Nombre exacto del lugar</span>
-                          <input
-                            value={pointDraft.placeName}
-                            onChange={(event) => setPointDraft((previous) => ({ ...previous, placeName: event.target.value }))}
-                            className="field-input"
-                            placeholder="Arroyo del molino, margen norte"
-                          />
-                        </label>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                            <span>Hábitat / tipo de entorno</span>
-                            <input
-                              value={pointDraft.habitat}
-                              onChange={(event) => setPointDraft((previous) => ({ ...previous, habitat: event.target.value }))}
-                              className="field-input"
-                              placeholder="Ribera, bosque, urbano, costa..."
-                            />
-                          </label>
-                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                            <span>Referencia Zoom H6</span>
-                            <input
-                              value={pointDraft.zoomTakeReference}
-                              onChange={(event) => setPointDraft((previous) => ({ ...previous, zoomTakeReference: event.target.value }))}
-                              className="field-input"
-                              placeholder="H6-032 / SD1-TK12"
-                            />
-                          </label>
-                        </div>
-
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Características del lugar</span>
-                          <textarea
-                            value={pointDraft.characteristics}
-                            onChange={(event) => setPointDraft((previous) => ({ ...previous, characteristics: event.target.value }))}
-                            rows={4}
-                            className="field-input min-h-28"
-                            placeholder="Distancia a la fuente, relieve, viento, barreras, presencia humana, agua, reverberación..."
-                          />
-                        </label>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                            <span>Latitud</span>
-                            <input
-                              value={pointDraft.latitude}
-                              onChange={(event) =>
-                                setPointDraft((previous) => ({
-                                  ...previous,
-                                  latitude: event.target.value,
-                                  coordinateSource: 'manual',
-                                }))
-                              }
-                              className="field-input telemetry-text"
-                              placeholder="40.123456"
-                            />
-                          </label>
-                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                            <span>Longitud</span>
-                            <input
-                              value={pointDraft.longitude}
-                              onChange={(event) =>
-                                setPointDraft((previous) => ({
-                                  ...previous,
-                                  longitude: event.target.value,
-                                  coordinateSource: 'manual',
-                                }))
-                              }
-                              className="field-input telemetry-text"
-                              placeholder="-3.123456"
-                            />
-                          </label>
-                        </div>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                            <span>Clima observado</span>
-                            <input
-                              value={pointDraft.observedWeather}
-                              onChange={(event) => setPointDraft((previous) => ({ ...previous, observedWeather: event.target.value }))}
-                              className="field-input"
-                              placeholder="Cubierto, 12 ºC, viento flojo"
-                            />
-                          </label>
-                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                            <span>Setup / micros</span>
-                            <input
-                              value={pointDraft.microphoneSetup}
-                              onChange={(event) => setPointDraft((previous) => ({ ...previous, microphoneSetup: event.target.value }))}
-                              className="field-input"
-                              placeholder="Zoom H6 · XY 90º"
-                            />
-                          </label>
-                        </div>
-
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Tags</span>
-                          <input
-                            value={pointDraft.tagsText}
-                            onChange={(event) => setPointDraft((previous) => ({ ...previous, tagsText: event.target.value }))}
-                            className="field-input"
-                            placeholder="agua, aves, madrugada, viento"
-                          />
-                        </label>
-
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Notas</span>
-                          <textarea
-                            value={pointDraft.notes}
-                            onChange={(event) => setPointDraft((previous) => ({ ...previous, notes: event.target.value }))}
-                            rows={4}
-                            className="field-input min-h-28"
-                            placeholder="Incidencias, accesibilidad, observaciones para el estudio..."
-                          />
-                        </label>
-
-                        <div className="panel p-4">
-                          <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="field-section">
+                          <div className="field-section__header">
                             <div>
-                              <p className="eyebrow text-[color:var(--muted)]">Fotos del punto</p>
-                              <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                                Puedes añadir varias imágenes del lugar para documentarlo bien y exportarlas después.
+                              <p className="eyebrow text-[color:var(--signal-strong)]">Datos básicos</p>
+                              <p className="field-section__copy">
+                                Identifica el lugar, el entorno y las coordenadas del punto.
                               </p>
                             </div>
                           </div>
 
-                          <label className="upload-zone flex min-h-52 cursor-pointer flex-col items-center justify-center gap-3 px-5 py-6 text-center">
-                            <Camera className="h-8 w-8 text-[color:var(--signal-strong)]" />
+                          <div className="grid gap-5">
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Nombre exacto del lugar</span>
+                              <input
+                                value={pointDraft.placeName}
+                                onChange={(event) => setPointDraft((previous) => ({ ...previous, placeName: event.target.value }))}
+                                className="field-input"
+                                placeholder="Arroyo del molino, margen norte"
+                              />
+                            </label>
+
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                <span>Hábitat / tipo de entorno</span>
+                                <input
+                                  value={pointDraft.habitat}
+                                  onChange={(event) => setPointDraft((previous) => ({ ...previous, habitat: event.target.value }))}
+                                  className="field-input"
+                                  placeholder="Ribera, bosque, urbano, costa..."
+                                />
+                              </label>
+                              <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                <span>Clima observado</span>
+                                <input
+                                  value={pointDraft.observedWeather}
+                                  onChange={(event) => setPointDraft((previous) => ({ ...previous, observedWeather: event.target.value }))}
+                                  className="field-input"
+                                  placeholder="Cubierto, 12 ºC, viento flojo"
+                                />
+                              </label>
+                            </div>
+
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                <span>Latitud</span>
+                                <input
+                                  value={pointDraft.latitude}
+                                  onChange={(event) =>
+                                    setPointDraft((previous) => ({
+                                      ...previous,
+                                      latitude: event.target.value,
+                                      coordinateSource: 'manual',
+                                    }))
+                                  }
+                                  className="field-input telemetry-text"
+                                  placeholder="40.123456"
+                                />
+                              </label>
+                              <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                <span>Longitud</span>
+                                <input
+                                  value={pointDraft.longitude}
+                                  onChange={(event) =>
+                                    setPointDraft((previous) => ({
+                                      ...previous,
+                                      longitude: event.target.value,
+                                      coordinateSource: 'manual',
+                                    }))
+                                  }
+                                  className="field-input telemetry-text"
+                                  placeholder="-3.123456"
+                                />
+                              </label>
+                            </div>
+
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Tags</span>
+                              <input
+                                value={pointDraft.tagsText}
+                                onChange={(event) => setPointDraft((previous) => ({ ...previous, tagsText: event.target.value }))}
+                                className="field-input"
+                                placeholder="agua, aves, madrugada, viento"
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="field-section">
+                          <div className="field-section__header">
                             <div>
-                              <p className="display-heading text-2xl text-[color:var(--ink)]">Añadir fotos</p>
-                              <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                                El material gráfico viajará dentro del paquete profesional de la sesión.
+                              <p className="eyebrow text-[color:var(--signal-strong)]">Documentación</p>
+                              <p className="field-section__copy">
+                                Describe el lugar y añade material visual para el archivo del punto.
                               </p>
                             </div>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              capture="environment"
-                              multiple
-                              className="hidden"
-                              onChange={handleDraftPhotosInput}
-                            />
-                          </label>
+                          </div>
 
-                          {draftPhotos.length > 0 ? (
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                              {draftPhotos.map((photo) => (
-                                <div key={photo.id} className="soft-card">
-                                  <img
-                                    src={photo.previewUrl}
-                                    alt={photo.fileName}
-                                    className="h-36 w-full border border-[color:var(--line)] object-cover"
-                                  />
-                                  <div className="mt-3 flex items-center justify-between gap-3">
-                                    <p className="text-sm text-[color:var(--ink)]">{photo.fileName}</p>
-                                    <button
-                                      onClick={() => removeDraftPhoto(photo.id)}
-                                      className="icon-button"
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </button>
-                                  </div>
+                          <div className="grid gap-5">
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Características del lugar</span>
+                              <textarea
+                                value={pointDraft.characteristics}
+                                onChange={(event) => setPointDraft((previous) => ({ ...previous, characteristics: event.target.value }))}
+                                rows={4}
+                                className="field-input min-h-28"
+                                placeholder="Distancia a la fuente, relieve, viento, barreras, presencia humana, agua, reverberación..."
+                              />
+                            </label>
+
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Notas</span>
+                              <textarea
+                                value={pointDraft.notes}
+                                onChange={(event) => setPointDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                                rows={4}
+                                className="field-input min-h-28"
+                                placeholder="Incidencias, accesibilidad, observaciones para el estudio..."
+                              />
+                            </label>
+
+                            <div className="panel p-4">
+                              <div className="mb-3 flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="eyebrow text-[color:var(--muted)]">Fotos del punto</p>
+                                  <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                                    Puedes añadir varias imágenes del lugar para documentarlo bien y exportarlas después.
+                                  </p>
                                 </div>
-                              ))}
+                              </div>
+
+                              <label className="upload-zone flex min-h-52 cursor-pointer flex-col items-center justify-center gap-3 px-5 py-6 text-center">
+                                <Camera className="h-8 w-8 text-[color:var(--signal-strong)]" />
+                                <div>
+                                  <p className="display-heading text-2xl text-[color:var(--ink)]">Añadir fotos</p>
+                                  <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                                    El material gráfico viajará dentro del paquete profesional de la sesión.
+                                  </p>
+                                </div>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  multiple
+                                  className="hidden"
+                                  onChange={handleDraftPhotosInput}
+                                />
+                              </label>
+
+                              {draftPhotos.length > 0 ? (
+                                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                  {draftPhotos.map((photo) => (
+                                    <div key={photo.id} className="soft-card">
+                                      <img
+                                        src={photo.previewUrl}
+                                        alt={photo.fileName}
+                                        className="h-36 w-full border border-[color:var(--line)] object-cover"
+                                      />
+                                      <div className="mt-3 flex items-center justify-between gap-3">
+                                        <p className="text-sm text-[color:var(--ink)]">{photo.fileName}</p>
+                                        <button
+                                          onClick={() => removeDraftPhoto(photo.id)}
+                                          className="icon-button"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
                             </div>
-                          ) : null}
+                          </div>
+                        </div>
+
+                        <div className="field-section">
+                          <div className="field-section__header">
+                            <div>
+                              <p className="eyebrow text-[color:var(--signal-strong)]">Audio / Zoom H6</p>
+                              <p className="field-section__copy">
+                                Deja preparada la referencia de toma y la configuración de micros.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Referencia Zoom H6</span>
+                              <input
+                                value={pointDraft.zoomTakeReference}
+                                onChange={(event) => setPointDraft((previous) => ({ ...previous, zoomTakeReference: event.target.value }))}
+                                className="field-input"
+                                placeholder="H6-032 / SD1-TK12"
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Setup / micros</span>
+                              <input
+                                value={pointDraft.microphoneSetup}
+                                onChange={(event) => setPointDraft((previous) => ({ ...previous, microphoneSetup: event.target.value }))}
+                                className="field-input"
+                                placeholder="Zoom H6 · XY 90º"
+                              />
+                            </label>
+                          </div>
                         </div>
 
                         <button
