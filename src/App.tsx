@@ -492,6 +492,7 @@ export default function App() {
   const [draftPhotos, setDraftPhotos] = useState<DraftPhoto[]>([]);
   const [sessions, setSessions] = useState<UiFieldSession[]>([]);
   const [selectedArchiveProjectKey, setSelectedArchiveProjectKey] = useState<'all' | string>('all');
+  const [captureWorkspace, setCaptureWorkspace] = useState<'map' | 'points'>('map');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
   const [currentGps, setCurrentGps] = useState<GpsCoordinates | null>(null);
@@ -531,8 +532,13 @@ export default function App() {
   const lastAutomaticWeatherValueRef = useRef<string>('');
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+  const sortedActiveSessionPoints = activeSession
+    ? [...activeSession.points].sort(
+        (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+      )
+    : [];
   const selectedPoint =
-    activeSession?.points.find((point) => point.id === selectedPointId) ?? activeSession?.points[0] ?? null;
+    activeSession?.points.find((point) => point.id === selectedPointId) ?? sortedActiveSessionPoints[0] ?? null;
   const activeSessionMapPoints = activeSession ? buildSessionMapPoints(activeSession.points) : [];
   const archiveProjectGroups = groupSessionsByProject(sessions);
   const draftPointCoordinates = resolvePointCoordinates(pointDraft, currentGps);
@@ -1857,11 +1863,7 @@ export default function App() {
     ? activeSession.points.reduce((count, point) => count + point.photos.length, 0)
     : 0;
   const recentProjectGroups = archiveProjectGroups.slice(0, 4);
-  const latestActivePoints = activeSession
-    ? [...activeSession.points]
-        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-        .slice(0, 4)
-    : [];
+  const latestActivePoints = sortedActiveSessionPoints.slice(0, 4);
   const livePlaceLabel = detectedPlace?.placeName || 'Lugar pendiente';
   const liveClimateLabel = weatherSnapshot?.summary || 'Clima pendiente';
   const storageSummary =
@@ -3038,76 +3040,158 @@ export default function App() {
                     <div className="panel p-6">
                       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <p className="eyebrow text-[color:var(--signal-strong)]">Mapa en vivo</p>
+                          <p className="eyebrow text-[color:var(--signal-strong)]">Navegación de captura</p>
                           <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
-                            Revisa el recorrido de la jornada y el punto que estás preparando ahora.
+                            Alterna entre el mapa y la lista de puntos sin cargar toda la información a la vez.
                           </p>
                         </div>
-                        <div className="soft-card">
-                          <p className="eyebrow text-[color:var(--muted)]">Puntos</p>
-                          <p className="mt-2 text-sm text-[color:var(--ink)]">{activeSession.points.length}</p>
+                        <div className="segment-switch">
+                          <button
+                            onClick={() => setCaptureWorkspace('map')}
+                            className={`segment-switch__button ${captureWorkspace === 'map' ? 'is-active' : ''}`}
+                          >
+                            Mapa
+                          </button>
+                          <button
+                            onClick={() => setCaptureWorkspace('points')}
+                            className={`segment-switch__button ${captureWorkspace === 'points' ? 'is-active' : ''}`}
+                          >
+                            Puntos
+                          </button>
                         </div>
                       </div>
-                      <div className="mt-4 space-y-4">
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div className="soft-card">
-                            <p className="eyebrow text-[color:var(--muted)]">Fecha</p>
-                            <p className="mt-2 text-sm text-[color:var(--ink)]">{captureDateLabel}</p>
-                          </div>
-                          <div className="soft-card">
-                            <p className="eyebrow text-[color:var(--muted)]">GPS</p>
-                            <p className="telemetry-text mt-2 text-sm text-[color:var(--ink)]">{gpsLabel}</p>
-                            <p className="mt-2 text-sm text-[color:var(--muted)]">{gpsAccuracyLabel}</p>
-                          </div>
-                        </div>
-                        <SessionMap
-                          points={activeSessionMapPoints}
-                          selectedPointId={selectedPointId}
-                          onSelectPoint={setSelectedPointId}
-                          draftPoint={
-                            draftPointCoordinates
-                              ? {
-                                  lat: draftPointCoordinates.lat,
-                                  lon: draftPointCoordinates.lon,
-                                  label: draftPointLabel,
-                                }
-                              : null
-                          }
-                        />
-                      </div>
-                    </div>
 
-                    <div className="grid gap-5">
-                      {activeSession.points.length === 0 ? (
-                        <div className="panel px-6 py-12 text-center">
+                      {captureWorkspace === 'map' ? (
+                        <div className="mt-4 space-y-4">
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="soft-card">
+                              <p className="eyebrow text-[color:var(--muted)]">Fecha</p>
+                              <p className="mt-2 text-sm text-[color:var(--ink)]">{captureDateLabel}</p>
+                            </div>
+                            <div className="soft-card">
+                              <p className="eyebrow text-[color:var(--muted)]">Puntos</p>
+                              <p className="mt-2 text-sm text-[color:var(--ink)]">{activeSession.points.length}</p>
+                            </div>
+                          </div>
+                          <SessionMap
+                            points={activeSessionMapPoints}
+                            selectedPointId={selectedPointId}
+                            onSelectPoint={setSelectedPointId}
+                            draftPoint={
+                              draftPointCoordinates
+                                ? {
+                                    lat: draftPointCoordinates.lat,
+                                    lon: draftPointCoordinates.lon,
+                                    label: draftPointLabel,
+                                  }
+                                : null
+                            }
+                          />
+                        </div>
+                      ) : activeSession.points.length === 0 ? (
+                        <div className="px-1 py-8 text-center">
                           <p className="display-heading text-3xl text-[color:var(--ink)]">Todavía no hay puntos</p>
                           <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-[color:var(--muted)]">
                             Guarda el primer punto para empezar a construir el registro profesional de la sesión.
                           </p>
                         </div>
                       ) : (
-                        [...activeSession.points]
-                          .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-                          .map((point) => (
-                          <React.Fragment key={point.id}>
-                            <SessionPointCard
-                              point={{
-                                id: point.id,
-                                placeName: point.placeName,
-                                createdAt: point.createdAt,
-                                observedWeather: point.observedWeather,
-                                zoomTakeReference: point.zoomTakeReference,
-                                microphoneSetup: point.microphoneSetup,
-                                tags: point.tags,
-                                photoPreviewUrl: point.photos[0]?.previewUrl,
-                              }}
-                              active={point.id === selectedPointId}
-                              onSelect={() => setSelectedPointId(point.id)}
-                            />
-                          </React.Fragment>
-                          ))
+                        <div className="grid gap-5">
+                          <div className="grid gap-3">
+                            {sortedActiveSessionPoints.map((point) => (
+                              <React.Fragment key={point.id}>
+                                <SessionPointCard
+                                  point={{
+                                    id: point.id,
+                                    placeName: point.placeName,
+                                    createdAt: point.createdAt,
+                                    observedWeather: point.observedWeather,
+                                    zoomTakeReference: point.zoomTakeReference,
+                                    microphoneSetup: point.microphoneSetup,
+                                    tags: point.tags,
+                                    photoPreviewUrl: point.photos[0]?.previewUrl,
+                                  }}
+                                  active={point.id === selectedPoint?.id}
+                                  onSelect={() => setSelectedPointId(point.id)}
+                                />
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
+
+                    {selectedPoint ? (
+                      <div className="panel p-6">
+                        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="eyebrow text-[color:var(--signal-strong)]">Punto seleccionado</p>
+                            <p className="display-heading mt-2 text-3xl text-[color:var(--ink)]">{selectedPoint.placeName}</p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">
+                              {formatDateTime(selectedPoint.createdAt, "d MMM yyyy · HH:mm:ss")}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => void removePointFromActiveSession(selectedPoint.id)}
+                            className="ui-button ui-button-danger"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Eliminar punto
+                          </button>
+                        </div>
+
+                        {selectedPoint.photos[0] ? (
+                          <img
+                            src={selectedPoint.photos[0].previewUrl}
+                            alt={`Foto de ${selectedPoint.placeName}`}
+                            className="mb-4 h-56 w-full border border-[color:var(--line)] object-cover"
+                          />
+                        ) : null}
+
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="soft-card">
+                            <p className="eyebrow text-[color:var(--muted)]">Lugar detectado</p>
+                            <p className="mt-2 text-sm text-[color:var(--ink)]">
+                              {selectedPoint.detectedPlace?.displayName || selectedPoint.placeName}
+                            </p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">
+                              {selectedPoint.detectedPlace?.context || 'Sin contexto de geocodificación inversa'}
+                            </p>
+                          </div>
+                          <div className="soft-card">
+                            <p className="eyebrow text-[color:var(--muted)]">Coordenadas</p>
+                            <p className="telemetry-text mt-2 text-sm text-[color:var(--ink)]">
+                              {selectedPoint.gps.lat.toFixed(6)}, {selectedPoint.gps.lon.toFixed(6)}
+                            </p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">
+                              {selectedPoint.gps.accuracy ? `${Math.round(selectedPoint.gps.accuracy)} m de precisión` : 'Sin precisión disponible'}
+                            </p>
+                          </div>
+                          <div className="soft-card">
+                            <p className="eyebrow text-[color:var(--muted)]">Clima</p>
+                            <p className="mt-2 text-sm text-[color:var(--ink)]">
+                              {selectedPoint.observedWeather || 'Sin clima indicado'}
+                            </p>
+                          </div>
+                          <div className="soft-card">
+                            <p className="eyebrow text-[color:var(--muted)]">Referencia Zoom</p>
+                            <p className="mt-2 text-sm text-[color:var(--ink)]">
+                              {selectedPoint.zoomTakeReference || 'Sin referencia'}
+                            </p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">
+                              {selectedPoint.microphoneSetup || 'Sin configuración'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="panel px-6 py-10 text-center">
+                        <p className="display-heading text-3xl text-[color:var(--ink)]">Sin punto seleccionado</p>
+                        <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-[color:var(--muted)]">
+                          Marca un punto nuevo o selecciónalo en el mapa o en la lista para revisar su ficha.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

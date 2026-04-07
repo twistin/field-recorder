@@ -575,6 +575,41 @@ audio {
   gap: 1rem 1.5rem;
 }
 
+.segment-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  border: 2px solid var(--ink);
+  background: var(--panel-soft);
+}
+
+.segment-switch__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 5.5rem;
+  padding: 0.65rem 0.9rem;
+  border: 2px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  font-family: "League Spartan", sans-serif;
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.segment-switch__button:hover {
+  transform: translateY(-1px);
+}
+
+.segment-switch__button.is-active {
+  border-color: var(--ink);
+  background: var(--blue);
+  color: #fffdf8;
+}
+
 .manual-details {
   padding-top: 0.95rem;
   border-top: 3px solid var(--ink);
