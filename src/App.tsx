@@ -3,6 +3,7 @@ import {
   Camera,
   CloudSun,
   Download,
+  House,
   Upload,
   History,
   MapPin,
@@ -1851,6 +1852,16 @@ export default function App() {
   const activeSessionMeta = activeSession
     ? `${activeSession.projectName || 'sin proyecto'} · ${activeSession.region || 'sin zona'}`
     : 'Crea una sesión para empezar a registrar puntos.';
+  const activeSessionProjectName = activeSession ? resolveProjectName(activeSession.projectName) : 'Sin proyecto';
+  const activeSessionPhotoCount = activeSession
+    ? activeSession.points.reduce((count, point) => count + point.photos.length, 0)
+    : 0;
+  const recentProjectGroups = archiveProjectGroups.slice(0, 4);
+  const latestActivePoints = activeSession
+    ? [...activeSession.points]
+        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+        .slice(0, 4)
+    : [];
   const livePlaceLabel = detectedPlace?.placeName || 'Lugar pendiente';
   const liveClimateLabel = weatherSnapshot?.summary || 'Clima pendiente';
   const storageSummary =
@@ -1859,6 +1870,25 @@ export default function App() {
       : storageMode === 'loading'
         ? 'Preparando almacenamiento'
         : 'Sólo memoria';
+  const currentViewLabel = view === 'session' ? 'Inicio' : view === 'point' ? 'Captura' : 'Proyectos';
+  const currentViewTitle =
+    view === 'session'
+      ? activeSession
+        ? 'Jornada preparada para salir al campo'
+        : 'Prepara una jornada nueva'
+      : view === 'point'
+        ? activeSession
+          ? 'Registrar puntos de escucha'
+          : 'Activa una sesión antes de capturar'
+        : 'Proyectos guardados y archivo de estudio';
+  const currentViewDescription =
+    view === 'session'
+      ? activeSession
+        ? 'Desde aquí decides el proyecto activo, revisas el estado general y entras al flujo de captura sin perderte.'
+        : 'Crea una sesión, define proyecto y zona, y deja listo el trabajo antes de salir.'
+      : view === 'point'
+        ? 'Pantalla operativa para marcar puntos, adjuntar fotos, revisar el mapa y seguir la jornada en tiempo real.'
+        : 'Consulta proyectos, sesiones, importaciones Zoom H6, respaldos y paquetes listos para el estudio.';
 
   useEffect(() => {
     if (!isOnline || storageMode !== 'ready') {
@@ -2312,47 +2342,32 @@ export default function App() {
         <motion.header
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="panel hero-shell flex flex-col gap-6 p-5 md:p-6"
+          className="panel flex flex-col gap-5 p-5 md:p-6"
         >
-          <div className="header-grid gap-6">
-            <div className="header-main flex flex-wrap items-start justify-between gap-5">
-              <div className="space-y-3">
-                <p className="eyebrow">SOUNDSCAPE RECORDER</p>
-                <h1 className="display-heading header-title text-4xl md:text-5xl">
-                  {activeSession ? activeSession.name : 'Preparar nueva sesión'}
-                </h1>
-                <p className="module-copy max-w-3xl text-sm">{activeSessionMeta}</p>
-                <div className="header-geometry" aria-hidden="true">
-                  <span className="header-geometry__circle" />
-                  <span className="header-geometry__square" />
-                  <span className="header-geometry__triangle" />
-                </div>
-              </div>
-
-              <div className="header-clock">
-                <p className="eyebrow">Hora actual</p>
-                <p className="digital-clock mt-2">{captureTimeLabel}</p>
-                <p className="module-copy mt-2 text-sm">{captureDateLabel}</p>
-              </div>
+          <div className="grid gap-5 lg:grid-cols-[1.1fr,0.9fr]">
+            <div className="space-y-3">
+              <p className="eyebrow">SOUNDSCAPE RECORDER · {currentViewLabel}</p>
+              <h1 className="display-heading max-w-4xl text-4xl md:text-5xl">{currentViewTitle}</h1>
+              <p className="module-copy max-w-3xl text-sm">{currentViewDescription}</p>
             </div>
 
-            <div className="summary-grid">
-              <div className="summary-card">
-                <p className="eyebrow">Sesión activa</p>
-                <p className="summary-value">{activeSession ? activeSession.name : 'Sin sesión'}</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="soft-card">
+                <p className="eyebrow">Hora</p>
+                <p className="summary-value">{captureTimeLabel}</p>
+                <p className="module-copy text-sm">{captureDateLabel}</p>
+              </div>
+              <div className="soft-card">
+                <p className="eyebrow">Sesión</p>
+                <p className="summary-value">{activeSession ? 'Activa' : 'Sin abrir'}</p>
                 <p className="module-copy text-sm">
-                  {activeSession ? `${activeSession.points.length} puntos registrados` : 'Inicia una sesión para activar el flujo de campo.'}
+                  {activeSession ? activeSession.name : 'Prepara una jornada en Inicio.'}
                 </p>
               </div>
-              <div className="summary-card">
-                <p className="eyebrow">Contexto</p>
-                <p className="summary-value">{livePlaceLabel}</p>
-                <p className="module-copy text-sm">{liveClimateLabel}</p>
-              </div>
-              <div className="summary-card">
-                <p className="eyebrow">Archivo</p>
-                <p className="summary-value">{storageSummary}</p>
-                <p className="module-copy text-sm">{gpsStatusLabel}</p>
+              <div className="soft-card">
+                <p className="eyebrow">GPS</p>
+                <p className="summary-value">{currentGps ? gpsAccuracyLabel : 'Sin señal'}</p>
+                <p className="module-copy text-sm">{gpsLabel}</p>
               </div>
             </div>
           </div>
@@ -2369,9 +2384,9 @@ export default function App() {
         </motion.header>
 
         <nav className="menu-shell bottom-dock fixed bottom-4 left-1/2 z-20 flex w-[calc(100%-2rem)] max-w-[430px] -translate-x-1/2 items-center gap-2 px-2 py-2 md:w-auto md:max-w-none">
-          <ViewButton active={view === 'session'} label="SESIÓN" icon={MapPin} onClick={() => setView('session')} />
-          <ViewButton active={view === 'point'} label="PUNTO" icon={Camera} onClick={() => setView('point')} />
-          <ViewButton active={view === 'export'} label="ARCHIVO" icon={Download} onClick={() => setView('export')} />
+          <ViewButton active={view === 'session'} label="INICIO" icon={House} onClick={() => setView('session')} />
+          <ViewButton active={view === 'point'} label="CAPTURA" icon={Camera} onClick={() => setView('point')} />
+          <ViewButton active={view === 'export'} label="PROYECTOS" icon={History} onClick={() => setView('export')} />
         </nav>
 
         <AnimatePresence mode="wait">
@@ -2383,25 +2398,138 @@ export default function App() {
               exit={{ opacity: 0, y: -18 }}
               className="grid gap-6 xl:grid-cols-[1.05fr,0.95fr]"
             >
-              {activeSession ? (
-                <>
-                  <div className="panel p-6 md:p-8">
-                    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-                      <div>
-                        <p className="eyebrow text-[color:var(--signal-strong)]">Sesión activa</p>
-                        <h2 className="display-heading mt-2 text-3xl text-[color:var(--ink)]">
-                          {activeSession.name}
-                        </h2>
+              <div className="grid gap-6">
+                <div className="panel p-6 md:p-8">
+                  {activeSession ? (
+                    <div className="space-y-6">
+                      <div className="space-y-3">
+                        <p className="eyebrow text-[color:var(--signal-strong)]">Inicio</p>
+                        <h2 className="display-heading text-3xl text-[color:var(--ink)]">Continuar jornada</h2>
+                        <p className="text-sm leading-7 text-[color:var(--muted)]">
+                          Todo lo importante de la salida actual está aquí. Desde este panel entras a capturar puntos o saltas al archivo del proyecto.
+                        </p>
                       </div>
-                      <button
-                        onClick={() => void closeActiveSession()}
-                        className="ui-button ui-button-danger"
-                      >
-                        Cerrar sesión
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="soft-card">
+                          <p className="eyebrow text-[color:var(--muted)]">Sesión activa</p>
+                          <p className="summary-value">{activeSession.name}</p>
+                          <p className="module-copy text-sm">{formatDateTime(activeSession.startedAt, "d MMM yyyy · HH:mm")}</p>
+                        </div>
+                        <div className="soft-card">
+                          <p className="eyebrow text-[color:var(--muted)]">Proyecto</p>
+                          <p className="summary-value">{activeSessionProjectName}</p>
+                          <p className="module-copy text-sm">{activeSession.region || 'Zona sin definir'}</p>
+                        </div>
+                        <div className="soft-card">
+                          <p className="eyebrow text-[color:var(--muted)]">Registro actual</p>
+                          <p className="summary-value">{activeSession.points.length} puntos</p>
+                          <p className="module-copy text-sm">{activeSessionPhotoCount} fotos · {activeSession.audioTakes.length} tomas H6</p>
+                        </div>
+                        <div className="soft-card">
+                          <p className="eyebrow text-[color:var(--muted)]">Estado de respaldo</p>
+                          <p className="summary-value">{storageSummary}</p>
+                          <p className="module-copy text-sm">
+                            {pendingCloudSessionCount > 0 || pendingCatalogSessionCount > 0
+                              ? 'Hay sincronizaciones pendientes.'
+                              : 'Sincronización al día.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-3">
+                        <button onClick={() => setView('point')} className="ui-button ui-button-primary">
+                          <Camera className="h-4 w-4" />
+                          Ir a captura
+                        </button>
+                        <button onClick={() => setView('export')} className="ui-button ui-button-secondary">
+                          <History className="h-4 w-4" />
+                          Ver proyectos
+                        </button>
+                        <button onClick={() => void closeActiveSession()} className="ui-button ui-button-danger">
+                          Cerrar sesión
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="space-y-3">
+                        <p className="eyebrow text-[color:var(--signal-strong)]">Inicio</p>
+                        <h2 className="display-heading text-3xl text-[color:var(--ink)]">Crear una nueva jornada</h2>
+                        <p className="text-sm leading-7 text-[color:var(--muted)]">
+                          Define primero el proyecto, la zona y el equipo. Después entrarás en una pantalla de captura mucho más limpia.
+                        </p>
+                      </div>
+
+                      <div className="grid gap-4">
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Nombre de la sesión</span>
+                          <input
+                            value={sessionDraft.name}
+                            onChange={(event) => setSessionDraft((previous) => ({ ...previous, name: event.target.value }))}
+                            className="field-input"
+                          />
+                        </label>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Proyecto</span>
+                            <input
+                              value={sessionDraft.projectName}
+                              onChange={(event) => setSessionDraft((previous) => ({ ...previous, projectName: event.target.value }))}
+                              className="field-input"
+                              placeholder="Paisajes sonoros Sierra Norte"
+                              list="project-name-options"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Zona / región</span>
+                            <input
+                              value={sessionDraft.region}
+                              onChange={(event) => setSessionDraft((previous) => ({ ...previous, region: event.target.value }))}
+                              className="field-input"
+                              placeholder="Serranía de Cuenca"
+                            />
+                          </label>
+                        </div>
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Preset de equipo</span>
+                          <input
+                            value={sessionDraft.equipmentPreset}
+                            onChange={(event) => setSessionDraft((previous) => ({ ...previous, equipmentPreset: event.target.value }))}
+                            className="field-input"
+                            placeholder="Zoom H6 · XY"
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                          <span>Notas</span>
+                          <textarea
+                            value={sessionDraft.notes}
+                            onChange={(event) => setSessionDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                            rows={5}
+                            className="field-input min-h-32"
+                            placeholder="Objetivo de la salida, ruta, permisos, clima esperado..."
+                          />
+                        </label>
+                      </div>
+
+                      <button onClick={createSession} className="ui-button ui-button-primary">
+                        Iniciar sesión
                       </button>
                     </div>
+                  )}
+                </div>
 
-                    <div className="grid gap-4">
+                {activeSession ? (
+                  <details className="manual-details">
+                    <summary className="manual-details__summary">
+                      <div>
+                        <p className="eyebrow">Ajustes de sesión</p>
+                        <p className="summary-value">Editar nombre, proyecto, zona y notas</p>
+                      </div>
+                      <span className="manual-details__hint">Abrir</span>
+                    </summary>
+
+                    <div className="manual-details__body mt-6 grid gap-4">
                       <label className="grid gap-2 text-sm text-[color:var(--muted)]">
                         <span>Nombre de la sesión</span>
                         <input
@@ -2451,173 +2579,134 @@ export default function App() {
                         />
                       </label>
                     </div>
-                  </div>
-
-                  <div className="grid gap-6">
-                    <div className="panel p-5">
-                      <div className="mb-4 flex items-center justify-between gap-3">
-                        <div>
-                          <p className="eyebrow text-[color:var(--signal-strong)]">Mapa de sesión</p>
-                          <p className="mt-2 text-sm text-[color:var(--muted)]">
-                            Cada punto documentado queda geolocalizado para revisión posterior.
-                          </p>
-                        </div>
-                        <div className="soft-card">
-                          <p className="eyebrow text-[color:var(--muted)]">Puntos</p>
-                          <p className="mt-2 text-sm text-[color:var(--ink)]">{activeSession.points.length}</p>
-                        </div>
-                      </div>
-                      <SessionMap
-                        points={activeSessionMapPoints}
-                        selectedPointId={selectedPointId}
-                        onSelectPoint={setSelectedPointId}
-                      />
-                    </div>
-
-                    <div className="panel p-6">
-                      <p className="eyebrow text-[color:var(--signal-strong)]">Punto seleccionado</p>
-                      {selectedPoint ? (
-                        <div className="mt-4 space-y-4">
-                          <div>
-                            <p className="display-heading text-3xl text-[color:var(--ink)]">{selectedPoint.placeName}</p>
-                            <p className="mt-2 text-sm text-[color:var(--muted)]">
-                              {formatDateTime(selectedPoint.createdAt, "d MMM yyyy · HH:mm:ss")}
-                            </p>
-                          </div>
-                          {selectedPoint.photos[0] ? (
-                            <img
-                              src={selectedPoint.photos[0].previewUrl}
-                              alt={`Foto de ${selectedPoint.placeName}`}
-                              className="h-56 w-full border border-[color:var(--line)] object-cover"
-                            />
-                          ) : null}
-                          <div className="grid gap-3">
-                            <div className="soft-card">
-                              <p className="eyebrow text-[color:var(--muted)]">Lugar detectado</p>
-                              <p className="mt-2 text-sm text-[color:var(--ink)]">
-                                {selectedPoint.detectedPlace?.displayName || selectedPoint.placeName}
-                              </p>
-                              <p className="mt-2 text-sm text-[color:var(--muted)]">
-                                {selectedPoint.detectedPlace?.context || 'Sin contexto de geocodificación inversa'}
-                              </p>
-                            </div>
-                            <div className="soft-card">
-                              <p className="eyebrow text-[color:var(--muted)]">Coordenadas</p>
-                              <p className="telemetry-text mt-2 text-sm text-[color:var(--ink)]">
-                                {selectedPoint.gps.lat.toFixed(6)}, {selectedPoint.gps.lon.toFixed(6)}
-                              </p>
-                            </div>
-                            <div className="soft-card">
-                              <p className="eyebrow text-[color:var(--muted)]">Clima</p>
-                              <p className="mt-2 text-sm text-[color:var(--ink)]">
-                                {selectedPoint.observedWeather || 'Sin clima indicado'}
-                              </p>
-                            </div>
-                            <div className="soft-card">
-                              <p className="eyebrow text-[color:var(--muted)]">Referencia Zoom</p>
-                              <p className="mt-2 text-sm text-[color:var(--ink)]">
-                                {selectedPoint.zoomTakeReference || 'Sin referencia'}
-                              </p>
-                              <p className="mt-2 text-sm text-[color:var(--muted)]">
-                                {selectedPoint.microphoneSetup || 'Sin configuración'}
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => void removePointFromActiveSession(selectedPoint.id)}
-                            className="ui-button ui-button-danger"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Eliminar punto
-                          </button>
-                        </div>
-                      ) : (
-                        <p className="mt-4 text-sm leading-6 text-[color:var(--muted)]">
-                          Ve a la pestaña `Punto` y registra el primero para poblar esta sesión.
-                        </p>
-                      )}
+                  </details>
+                ) : (
+                  <div className="panel p-6">
+                    <p className="eyebrow text-[color:var(--signal-strong)]">Qué resuelve esta app</p>
+                    <div className="mt-4 space-y-4 text-sm leading-7 text-[color:var(--muted)]">
+                      <p>Abres una jornada, marcas puntos en el terreno y cada localización queda unida a GPS, fecha, clima, fotos y notas.</p>
+                      <p>Después importas las tomas de la Zoom H6, las asocias a los puntos y exportas el proyecto limpio para estudio.</p>
                     </div>
                   </div>
-                </>
-              ) : (
-                <>
-                  <div className="panel p-6 md:p-8">
-                    <div className="mb-6">
-                      <p className="eyebrow text-[color:var(--signal-strong)]">Nueva sesión</p>
-                      <h2 className="display-heading mt-2 text-3xl text-[color:var(--ink)]">
-                        Inicia una jornada de campo
-                      </h2>
-                    </div>
+                )}
+              </div>
 
-                    <div className="grid gap-4">
-                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                        <span>Nombre de la sesión</span>
-                        <input
-                          value={sessionDraft.name}
-                          onChange={(event) => setSessionDraft((previous) => ({ ...previous, name: event.target.value }))}
-                          className="field-input"
-                        />
-                      </label>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Proyecto</span>
-                          <input
-                            value={sessionDraft.projectName}
-                            onChange={(event) => setSessionDraft((previous) => ({ ...previous, projectName: event.target.value }))}
-                            className="field-input"
-                            placeholder="Paisajes sonoros Sierra Norte"
-                            list="project-name-options"
-                          />
-                        </label>
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Zona / región</span>
-                          <input
-                            value={sessionDraft.region}
-                            onChange={(event) => setSessionDraft((previous) => ({ ...previous, region: event.target.value }))}
-                            className="field-input"
-                            placeholder="Serranía de Cuenca"
-                          />
-                        </label>
-                      </div>
-                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                        <span>Preset de equipo</span>
-                        <input
-                          value={sessionDraft.equipmentPreset}
-                          onChange={(event) => setSessionDraft((previous) => ({ ...previous, equipmentPreset: event.target.value }))}
-                          className="field-input"
-                          placeholder="Zoom H6 · XY"
-                        />
-                      </label>
-                      <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                        <span>Notas</span>
-                        <textarea
-                          value={sessionDraft.notes}
-                          onChange={(event) => setSessionDraft((previous) => ({ ...previous, notes: event.target.value }))}
-                          rows={5}
-                          className="field-input min-h-32"
-                          placeholder="Objetivo de la salida, ruta, permisos, clima esperado..."
-                        />
-                      </label>
+              <div className="grid gap-6">
+                <div className="panel p-6">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="eyebrow text-[color:var(--signal-strong)]">
+                        {activeSession ? 'Estado de la jornada' : 'Flujo recomendado'}
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                        {activeSession
+                          ? 'Antes de salir, comprueba que el GPS, el clima y el lugar detectado están listos.'
+                          : 'Empieza creando una jornada y después entra en Captura para registrar puntos.'}
+                      </p>
                     </div>
+                    {activeSession ? (
+                      <button onClick={() => setView('point')} className="ui-button ui-button-secondary">
+                        Abrir captura
+                      </button>
+                    ) : null}
+                  </div>
 
-                    <button
-                      onClick={createSession}
-                      className="ui-button ui-button-primary mt-6"
-                    >
-                      Iniciar sesión
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="soft-card">
+                      <p className="eyebrow text-[color:var(--muted)]">GPS</p>
+                      <p className="summary-value">{gpsStatusLabel}</p>
+                      <p className="module-copy text-sm">{gpsLabel}</p>
+                    </div>
+                    <div className="soft-card">
+                      <p className="eyebrow text-[color:var(--muted)]">Lugar</p>
+                      <p className="summary-value">{livePlaceLabel}</p>
+                      <p className="module-copy text-sm">{locationMessage || locationStatusLabel}</p>
+                    </div>
+                    <div className="soft-card">
+                      <p className="eyebrow text-[color:var(--muted)]">Clima</p>
+                      <p className="summary-value">{liveClimateLabel}</p>
+                      <p className="module-copy text-sm">{weatherSnapshot?.details || weatherStatusLabel}</p>
+                    </div>
+                    <div className="soft-card">
+                      <p className="eyebrow text-[color:var(--muted)]">Archivo</p>
+                      <p className="summary-value">{storageSummary}</p>
+                      <p className="module-copy text-sm">{fileStatusLabel}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="panel p-6">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="eyebrow text-[color:var(--signal-strong)]">
+                        {activeSession ? 'Últimos puntos de la jornada' : 'Proyectos recientes'}
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                        {activeSession
+                          ? 'Accede rápido a las localizaciones ya marcadas y vuelve a una de ellas si necesitas revisar datos.'
+                          : 'Tus proyectos archivados aparecen agrupados para que el histórico no se convierta en una lista inmanejable.'}
+                      </p>
+                    </div>
+                    <button onClick={() => setView('export')} className="ui-button ui-button-secondary">
+                      Abrir proyectos
                     </button>
                   </div>
 
-                  <div className="panel p-6">
-                    <p className="eyebrow text-[color:var(--signal-strong)]">Qué guarda cada sesión</p>
-                    <div className="mt-4 space-y-4 text-sm leading-7 text-[color:var(--muted)]">
-                      <p>Fecha y hora exactas del trabajo de campo.</p>
-                      <p>Localización GPS de cada punto y clima automático por coordenadas.</p>
-                      <p>Fotos, tags, características del lugar y referencia de toma para asociarla luego a tu Zoom H6.</p>
+                  {activeSession ? (
+                    latestActivePoints.length > 0 ? (
+                      <div className="grid gap-3">
+                        {latestActivePoints.map((point) => (
+                          <button
+                            key={point.id}
+                            onClick={() => {
+                              setSelectedPointId(point.id);
+                              setView('point');
+                            }}
+                            className="soft-card text-left"
+                          >
+                            <p className="text-sm text-[color:var(--ink)]">{point.placeName}</p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">
+                              {formatDateTime(point.createdAt, "d MMM yyyy · HH:mm:ss")}
+                            </p>
+                            <p className="mt-2 text-sm text-[color:var(--muted)]">
+                              {point.observedWeather || 'Clima sin anotar'} · {point.zoomTakeReference || 'Sin referencia Zoom'}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm leading-7 text-[color:var(--muted)]">
+                        Todavía no has marcado ningún punto en esta jornada. Entra en Captura y registra la primera localización.
+                      </p>
+                    )
+                  ) : recentProjectGroups.length > 0 ? (
+                    <div className="grid gap-3">
+                      {recentProjectGroups.map((group) => (
+                        <button
+                          key={group.key}
+                          onClick={() => {
+                            setSelectedArchiveProjectKey(group.key);
+                            setView('export');
+                          }}
+                          className="soft-card text-left"
+                        >
+                          <p className="text-sm text-[color:var(--ink)]">{group.name}</p>
+                          <p className="mt-2 text-sm text-[color:var(--muted)]">
+                            {group.sessionCount} sesiones · {group.pointCount} puntos · {group.audioTakeCount} tomas H6
+                          </p>
+                          <p className="mt-2 text-sm text-[color:var(--muted)]">
+                            Última salida: {formatDateTime(group.latestStartedAt, "d MMM yyyy · HH:mm")}
+                          </p>
+                        </button>
+                      ))}
                     </div>
-                  </div>
-                </>
-              )}
+                  ) : (
+                    <p className="text-sm leading-7 text-[color:var(--muted)]">
+                      Aún no hay proyectos archivados. Cuando cierres las primeras jornadas aparecerán aquí de forma agrupada.
+                    </p>
+                  )}
+                </div>
+              </div>
             </motion.section>
           ) : null}
 
@@ -2631,22 +2720,27 @@ export default function App() {
             >
               {!activeSession ? (
                 <div className="panel px-6 py-16 text-center xl:col-span-2">
-                  <p className="display-heading text-3xl text-[color:var(--ink)]">No hay una sesión activa</p>
+                  <p className="display-heading text-3xl text-[color:var(--ink)]">No hay una jornada activa</p>
                   <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-[color:var(--muted)]">
-                    Inicia primero una sesión para empezar a registrar puntos de escucha y referencias para tu Zoom H6.
+                    Ve a `Inicio`, crea una sesión y luego vuelve aquí para registrar puntos de escucha y referencias para tu Zoom H6.
                   </p>
+                  <div className="mt-6">
+                    <button onClick={() => setView('session')} className="ui-button ui-button-primary">
+                      Ir a inicio
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <>
                   <div className="panel point-panel p-6 md:p-8">
                     <div className="point-panel__header flex flex-wrap items-start justify-between gap-5">
                       <div className="space-y-3">
-                        <p className="eyebrow">Sesión activa</p>
-                        <h2 className="display-heading text-3xl text-[color:var(--ink)]">{activeSession.name}</h2>
-                        <p className="module-copy text-sm">{activeSessionMeta}</p>
+                        <p className="eyebrow">Captura</p>
+                        <h2 className="display-heading text-3xl text-[color:var(--ink)]">Registrar punto en {activeSessionProjectName}</h2>
+                        <p className="module-copy text-sm">{activeSession.name} · {activeSession.region || 'zona sin definir'}</p>
                       </div>
                       <div className="point-panel__time">
-                        <p className="eyebrow">Hora de referencia</p>
+                        <p className="eyebrow">Jornada activa</p>
                         <p className="digital-clock point-time mt-2">{captureTimeLabel}</p>
                         <p className="module-copy mt-2 text-sm">{captureDateLabel}</p>
                       </div>
@@ -2942,9 +3036,19 @@ export default function App() {
 
                   <div className="grid gap-6">
                     <div className="panel p-6">
-                      <p className="eyebrow text-[color:var(--signal-strong)]">Sesión en curso</p>
+                      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="eyebrow text-[color:var(--signal-strong)]">Mapa en vivo</p>
+                          <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">
+                            Revisa el recorrido de la jornada y el punto que estás preparando ahora.
+                          </p>
+                        </div>
+                        <div className="soft-card">
+                          <p className="eyebrow text-[color:var(--muted)]">Puntos</p>
+                          <p className="mt-2 text-sm text-[color:var(--ink)]">{activeSession.points.length}</p>
+                        </div>
+                      </div>
                       <div className="mt-4 space-y-4">
-                        <p className="display-heading text-3xl text-[color:var(--ink)]">{activeSession.name}</p>
                         <div className="grid gap-3 md:grid-cols-2">
                           <div className="soft-card">
                             <p className="eyebrow text-[color:var(--muted)]">Fecha</p>
@@ -2982,7 +3086,9 @@ export default function App() {
                           </p>
                         </div>
                       ) : (
-                        activeSession.points.map((point) => (
+                        [...activeSession.points]
+                          .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+                          .map((point) => (
                           <React.Fragment key={point.id}>
                             <SessionPointCard
                               point={{
@@ -2999,7 +3105,7 @@ export default function App() {
                               onSelect={() => setSelectedPointId(point.id)}
                             />
                           </React.Fragment>
-                        ))
+                          ))
                       )}
                     </div>
                   </div>
@@ -3018,9 +3124,9 @@ export default function App() {
             >
               <div className="panel flex flex-wrap items-end justify-between gap-4 p-6">
                 <div>
-                  <p className="eyebrow text-[color:var(--signal-strong)]">Archivo por proyectos</p>
+                  <p className="eyebrow text-[color:var(--signal-strong)]">Proyectos guardados</p>
                   <h2 className="display-heading mt-2 text-3xl text-[color:var(--ink)]">
-                    Ordena tus jornadas sin saturar la página
+                    Archivo estructurado para revisar y exportar
                   </h2>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
