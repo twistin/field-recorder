@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import type { FieldSession } from '../types/fieldSessions';
+import type { FieldSession, SessionPoint } from '../types/fieldSessions';
 
 function slugifyForFile(value: string): string {
   const slug = value
@@ -43,6 +43,16 @@ function escapeCsvValue(value: string | number | boolean | null | undefined): st
   return `"${escaped}"`;
 }
 
+function escapeXmlValue(value: string | number | boolean | null | undefined): string {
+  const normalized = value == null ? '' : String(value);
+  return normalized
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 function buildPointsCsv(session: FieldSession): string {
   const lines = [
     [
@@ -58,6 +68,9 @@ function buildPointsCsv(session: FieldSession): string {
       'observed_weather',
       'automatic_weather_summary',
       'automatic_weather_details',
+      'soundscape_summary',
+      'soundscape_details',
+      'soundscape_tags',
       'detected_place_name',
       'detected_place_context',
       'tags',
@@ -92,6 +105,9 @@ function buildPointsCsv(session: FieldSession): string {
         point.observedWeather,
         point.automaticWeather?.summary ?? '',
         point.automaticWeather?.details ?? '',
+        point.soundscapeClassification?.summary ?? '',
+        point.soundscapeClassification?.details ?? '',
+        point.soundscapeClassification?.tags.join('|') ?? '',
         point.detectedPlace?.displayName ?? point.detectedPlace?.placeName ?? '',
         point.detectedPlace?.context ?? '',
         point.tags.join('|'),
@@ -138,6 +154,9 @@ function buildPointsGeoJson(session: FieldSession): string {
             observedWeather: point.observedWeather,
             automaticWeatherSummary: point.automaticWeather?.summary ?? '',
             automaticWeatherDetails: point.automaticWeather?.details ?? '',
+            soundscapeSummary: point.soundscapeClassification?.summary ?? '',
+            soundscapeDetails: point.soundscapeClassification?.details ?? '',
+            soundscapeTags: point.soundscapeClassification?.tags ?? [],
             detectedPlaceName: point.detectedPlace?.displayName ?? point.detectedPlace?.placeName ?? '',
             detectedPlaceContext: point.detectedPlace?.context ?? '',
             tags: point.tags,
@@ -154,6 +173,95 @@ function buildPointsGeoJson(session: FieldSession): string {
     null,
     2,
   );
+}
+
+function buildPointCsv(session: FieldSession, point: SessionPoint): string {
+  const linkedTakes = session.audioTakes.filter((take) => take.associatedPointId === point.id);
+
+  return [
+    [
+      'session_name',
+      'session_project',
+      'session_region',
+      'point_id',
+      'created_at',
+      'place_name',
+      'latitude',
+      'longitude',
+      'gps_accuracy_m',
+      'observed_weather',
+      'automatic_weather_summary',
+      'automatic_weather_details',
+      'ai_soundscape_summary',
+      'ai_soundscape_details',
+      'ai_soundscape_tags',
+      'habitat',
+      'characteristics',
+      'notes',
+      'manual_tags',
+      'zoom_take_reference',
+      'microphone_setup',
+      'linked_take_files',
+      'photos_count',
+    ]
+      .map(escapeCsvValue)
+      .join(','),
+    [
+      session.name,
+      session.projectName,
+      session.region,
+      point.id,
+      point.createdAt,
+      point.placeName,
+      point.gps.lat,
+      point.gps.lon,
+      point.gps.accuracy,
+      point.observedWeather,
+      point.automaticWeather?.summary ?? '',
+      point.automaticWeather?.details ?? '',
+      point.soundscapeClassification?.summary ?? '',
+      point.soundscapeClassification?.details ?? '',
+      point.soundscapeClassification?.tags.join('|') ?? '',
+      point.habitat,
+      point.characteristics,
+      point.notes,
+      point.tags.join('|'),
+      point.zoomTakeReference,
+      point.microphoneSetup,
+      linkedTakes.map((take) => take.fileName).join('|'),
+      point.photos.length,
+    ]
+      .map(escapeCsvValue)
+      .join(','),
+  ].join('\n');
+}
+
+function buildPointKml(session: FieldSession, point: SessionPoint): string {
+  const descriptionParts = [
+    `<strong>Sesión:</strong> ${escapeXmlValue(session.name)}`,
+    `<strong>Proyecto:</strong> ${escapeXmlValue(session.projectName || 'Sin proyecto')}`,
+    `<strong>Región:</strong> ${escapeXmlValue(session.region || 'Sin región')}`,
+    `<strong>Clima:</strong> ${escapeXmlValue(point.observedWeather || 'Sin dato')}`,
+    `<strong>IA sonora:</strong> ${escapeXmlValue(point.soundscapeClassification?.summary || 'Sin clasificar')}`,
+    `<strong>Tags:</strong> ${escapeXmlValue(point.tags.join(', ') || 'Sin tags')}`,
+    `<strong>Zoom H6:</strong> ${escapeXmlValue(point.zoomTakeReference || 'Sin referencia')}`,
+    `<strong>Micros:</strong> ${escapeXmlValue(point.microphoneSetup || 'Sin dato')}`,
+    `<strong>Notas:</strong> ${escapeXmlValue(point.notes || 'Sin notas')}`,
+  ];
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${escapeXmlValue(point.placeName || session.name)}</name>
+    <Placemark>
+      <name>${escapeXmlValue(point.placeName || 'Registro de campo')}</name>
+      <description><![CDATA[${descriptionParts.join('<br />')}]]></description>
+      <Point>
+        <coordinates>${point.gps.lon},${point.gps.lat},0</coordinates>
+      </Point>
+    </Placemark>
+  </Document>
+</kml>`;
 }
 
 function buildSessionReport(session: FieldSession): string {
@@ -192,6 +300,7 @@ function buildSessionReport(session: FieldSession): string {
     lines.push(`- Time: ${point.createdAt}`);
     lines.push(`- Coordinates: ${point.gps.lat}, ${point.gps.lon}`);
     lines.push(`- Weather: ${point.observedWeather || 'n/a'}`);
+    lines.push(`- Soundscape AI: ${point.soundscapeClassification?.summary || 'n/a'}`);
     lines.push(`- Habitat: ${point.habitat || 'n/a'}`);
     lines.push(`- Zoom reference: ${point.zoomTakeReference || 'n/a'}`);
     lines.push(`- Linked takes: ${linkedTakes.length > 0 ? linkedTakes.map((take) => take.fileName).join(', ') : 'none'}`);
@@ -351,4 +460,19 @@ export async function exportFieldSessionPackage(session: FieldSession): Promise<
 
   const archiveBlob = await zip.generateAsync({ type: 'blob' });
   downloadBlob(archiveBlob, `${sessionFolder}.zip`);
+}
+
+export function exportSessionPointCsv(session: FieldSession, point: SessionPoint): void {
+  const fileName = `${slugifyForFile(session.name)}-${slugifyForFile(point.placeName || point.id)}.csv`;
+  downloadBlob(new Blob([buildPointCsv(session, point)], { type: 'text/csv;charset=utf-8' }), fileName);
+}
+
+export function exportSessionPointKml(session: FieldSession, point: SessionPoint): void {
+  const fileName = `${slugifyForFile(session.name)}-${slugifyForFile(point.placeName || point.id)}.kml`;
+  downloadBlob(
+    new Blob([buildPointKml(session, point)], {
+      type: 'application/vnd.google-earth.kml+xml;charset=utf-8',
+    }),
+    fileName,
+  );
 }

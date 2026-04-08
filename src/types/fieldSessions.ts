@@ -17,6 +17,15 @@ export interface DetectedPlaceSummary {
   fetchedAt: string;
 }
 
+export interface SoundscapeClassification {
+  summary: string;
+  details: string;
+  tags: string[];
+  detectedAt: string;
+  durationSeconds: number;
+  engine: 'local-passive-v1';
+}
+
 export interface SessionPhoto {
   id: string;
   fileName: string;
@@ -66,6 +75,7 @@ export interface SessionPoint {
   observedWeather: string;
   automaticWeather?: AutomaticWeatherSummary | null;
   detectedPlace?: DetectedPlaceSummary | null;
+  soundscapeClassification?: SoundscapeClassification | null;
   tags: string[];
   notes: string;
   zoomTakeReference: string;
