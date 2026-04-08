@@ -15,12 +15,15 @@ import {
   MapPin,
   MapPinned,
   Mic,
+  MoonStar,
   RefreshCw,
   Search,
   Sparkles,
+  SunMedium,
   Trash2,
   Upload,
   Waves,
+  WifiOff,
   Wind,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -51,7 +54,11 @@ import {
   reconcileSessionAudioTakes,
 } from './lib/zoomImport';
 import { syncSessionToCloud } from './lib/cloudSync';
-import { syncSessionToCatalog } from './lib/catalogSync';
+import {
+  CATALOG_API_UNAVAILABLE_MESSAGE,
+  isCatalogApiUnavailableError,
+  syncSessionToCatalog,
+} from './lib/catalogSync';
 import type {
   AutomaticWeatherSummary,
   DetectedPlaceSummary,
@@ -64,6 +71,9 @@ import type {
 } from './types/fieldSessions';
 
 type View = 'session' | 'point' | 'export';
+type DisplayMode = 'night' | 'sun';
+
+const DISPLAY_MODE_STORAGE_KEY = 'fieldnotes-display-mode';
 
 interface SessionDraft {
   name: string;
@@ -632,6 +642,18 @@ export default function App() {
   const [sessions, setSessions] = useState<UiFieldSession[]>([]);
   const [selectedArchiveProjectKey, setSelectedArchiveProjectKey] = useState<'all' | string>('all');
   const [captureWorkspace, setCaptureWorkspace] = useState<'map' | 'points'>('map');
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(() => {
+    if (typeof window === 'undefined') {
+      return 'night';
+    }
+
+    try {
+      const storedValue = window.localStorage.getItem(DISPLAY_MODE_STORAGE_KEY);
+      return storedValue === 'sun' || storedValue === 'night' ? storedValue : 'night';
+    } catch {
+      return 'night';
+    }
+  });
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
   const [recordSessionId, setRecordSessionId] = useState<string | null>(null);
@@ -661,6 +683,7 @@ export default function App() {
   const [isSyncingPendingMetadata, setIsSyncingPendingMetadata] = useState(false);
   const [isSyncingCloudSessionId, setIsSyncingCloudSessionId] = useState<string | null>(null);
   const [isSyncingCatalogSessionId, setIsSyncingCatalogSessionId] = useState<string | null>(null);
+  const [catalogApiStatus, setCatalogApiStatus] = useState<'unknown' | 'available' | 'unavailable'>('unknown');
   const [zoomImportTargetSessionId, setZoomImportTargetSessionId] = useState<string | null>(null);
 
   const currentGpsRef = useRef<GpsCoordinates | null>(null);
@@ -734,6 +757,21 @@ export default function App() {
   useEffect(() => {
     draftPhotosRef.current = draftPhotos;
   }, [draftPhotos]);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.dataset.displayMode = displayMode;
+      document.body.dataset.displayMode = displayMode;
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(DISPLAY_MODE_STORAGE_KEY, displayMode);
+      } catch {
+        // Ignore storage failures and keep the current in-memory preference.
+      }
+    }
+  }, [displayMode]);
 
   useEffect(() => {
     if (selectedArchiveProjectKey === 'all') {
@@ -1726,6 +1764,11 @@ export default function App() {
       return;
     }
 
+    if (isCatalogApiUnavailable) {
+      setAppError(CATALOG_API_UNAVAILABLE_MESSAGE);
+      return;
+    }
+
     if (!isOnline) {
       setAppError('Necesitas conexión para sincronizar la sesión con el catálogo remoto.');
       return;
@@ -1749,6 +1792,7 @@ export default function App() {
 
     try {
       const catalogResult = await syncSessionToCatalog(dehydrateSession(syncingSession));
+      setCatalogApiStatus('available');
       const nextUiSession: UiFieldSession = {
         ...syncingSession,
         catalogSyncStatus: 'synced',
@@ -1760,6 +1804,10 @@ export default function App() {
     } catch (error) {
       console.error('Catalog sync failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'No se pudo sincronizar el catálogo remoto.';
+      if (isCatalogApiUnavailableError(error)) {
+        setCatalogApiStatus('unavailable');
+        setStatusNote('Catálogo remoto desactivado en este entorno. La sesión sigue disponible en local y en exportación.');
+      }
       const nextUiSession: UiFieldSession = {
         ...session,
         catalogSyncStatus: 'error',
@@ -2124,6 +2172,7 @@ export default function App() {
       : storageMode === 'loading'
         ? 'Preparando almacenamiento'
         : 'Sólo memoria';
+  const isSunMode = displayMode === 'sun';
   const currentViewLabel = view === 'session' ? 'Dashboard' : view === 'point' ? 'Nuevo registro' : 'Registro completado';
   const currentViewTitle =
     view === 'session'
@@ -2140,6 +2189,32 @@ export default function App() {
         ? 'Data-first, audio-context: la pantalla captura automáticamente fecha, hora, GPS y clima; después añades fotos y clasificación sonora.'
         : 'Revisa el registro final con su galería, metadatos estructurados, etiquetas IA y exportación directa.';
   const currentLocationLabel = currentGps ? 'Ubicación actual' : 'Sin ubicación activa';
+  const captureReadinessItems = [
+    {
+      label: 'Lugar',
+      value: pointDraft.placeName.trim() || detectedPlace?.placeName || 'Pendiente',
+      ready: Boolean(pointDraft.placeName.trim() || detectedPlace?.placeName),
+    },
+    {
+      label: 'Notas',
+      value: pointDraft.notes.trim() ? 'Anotadas' : 'Vacías',
+      ready: Boolean(pointDraft.notes.trim()),
+    },
+    {
+      label: 'Fotos',
+      value: draftPhotos.length > 0 ? `${draftPhotos.length} adjuntas` : 'Sin fotos',
+      ready: draftPhotos.length > 0,
+    },
+    {
+      label: 'IA',
+      value: draftSoundscapeClassification?.summary || 'Sin escucha',
+      ready: Boolean(draftSoundscapeClassification),
+    },
+  ];
+  const captureReadinessLabel = `${captureReadinessItems.filter((item) => item.ready).length}/${captureReadinessItems.length} capas listas`;
+  const canRefreshDetectedPlace = isOnline && Boolean(draftPointCoordinates);
+  const canRefreshWeather = isOnline && Boolean(draftPointCoordinates);
+  const isCatalogApiUnavailable = catalogApiStatus === 'unavailable';
   const recordBadge = recordPoint ? resolveSoundscapeBadge(recordPoint) : null;
 
   useEffect(() => {
@@ -2173,7 +2248,7 @@ export default function App() {
   }, [autoSyncCloudSessionCount, isOnline, storageMode]);
 
   useEffect(() => {
-    if (!isOnline || storageMode !== 'ready' || autoSyncCatalogSessionCount === 0) {
+    if (!isOnline || storageMode !== 'ready' || autoSyncCatalogSessionCount === 0 || isCatalogApiUnavailable) {
       return;
     }
 
@@ -2188,7 +2263,7 @@ export default function App() {
     return () => {
       window.clearTimeout(timerId);
     };
-  }, [autoSyncCatalogSessionCount, isOnline, storageMode, syncedCloudSessionCount]);
+  }, [autoSyncCatalogSessionCount, isCatalogApiUnavailable, isOnline, storageMode, syncedCloudSessionCount]);
 
   function renderArchiveSessionCard(session: UiFieldSession) {
     return (
@@ -2266,11 +2341,15 @@ export default function App() {
             </button>
             <button
               onClick={() => void syncSessionToCatalogStore(session.id)}
-              disabled={!isOnline || isSyncingCatalogSessionId === session.id}
+              disabled={!isOnline || isCatalogApiUnavailable || isSyncingCatalogSessionId === session.id}
               className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
             >
               <Upload className="h-4 w-4" />
-              {isSyncingCatalogSessionId === session.id ? 'Catalogando' : 'Sincronizar catálogo'}
+              {isCatalogApiUnavailable
+                ? 'Catálogo no disponible'
+                : isSyncingCatalogSessionId === session.id
+                  ? 'Catalogando'
+                  : 'Sincronizar catálogo'}
             </button>
             <button
               onClick={() => openZoomImportPicker(session.id)}
@@ -2636,7 +2715,9 @@ export default function App() {
             </p>
             <div className="sidebar-session-card__stats">
               <span className="telemetry-chip">{activeSession ? `${activeSession.points.length} registros` : '0 registros'}</span>
-              <span className="telemetry-chip">{isOnline ? 'En línea' : 'Offline'}</span>
+              <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
+                {isOnline ? 'En línea' : 'Offline'}
+              </span>
             </div>
           </div>
 
@@ -2660,6 +2741,21 @@ export default function App() {
               <p className="eyebrow">{greetingLabel} · {currentViewLabel}</p>
               <h2 className="display-heading text-4xl md:text-5xl">{currentViewTitle}</h2>
               <p className="module-copy text-sm md:text-base">{currentViewDescription}</p>
+              <div className="hero-panel__controls">
+                <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
+                  {isOnline ? 'En línea' : 'Offline'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
+                  className={`mode-toggle ${isSunMode ? 'is-sun' : ''}`}
+                >
+                  <span className="mode-toggle__icon">
+                    {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
+                  </span>
+                  {isSunMode ? 'Modo noche' : 'Modo sol'}
+                </button>
+              </div>
             </div>
 
             <div className="hero-panel__metrics">
@@ -2693,6 +2789,30 @@ export default function App() {
               <p className="eyebrow">Estado operativo</p>
               <p className="module-copy text-sm">{statusNote}</p>
             </div>
+            {!isOnline ? (
+              <div className="panel status-banner status-banner--warning">
+                <p className="eyebrow">Conectividad</p>
+                <p className="module-copy text-sm">
+                  Estás sin red. GPS, notas, fotos y guardado siguen activos; clima y lugar se completarán cuando vuelva la conexión.
+                </p>
+              </div>
+            ) : null}
+            {isCatalogApiUnavailable ? (
+              <div className="panel status-banner status-banner--warning">
+                <p className="eyebrow">Catálogo remoto</p>
+                <p className="module-copy text-sm">
+                  Las rutas `/api/catalog` no están disponibles aquí. El guardado local y las exportaciones siguen funcionando, pero la sincronización remota queda desactivada.
+                </p>
+              </div>
+            ) : null}
+            {storageMode === 'memory-only' ? (
+              <div className="panel status-banner status-banner--warning">
+                <p className="eyebrow">Almacenamiento</p>
+                <p className="module-copy text-sm">
+                  No hay acceso al archivo local. La sesión funciona, pero conviene exportar o reiniciar el almacenamiento antes de cerrar la app.
+                </p>
+              </div>
+            ) : null}
             {appError ? (
               <div className="panel status-banner status-banner--error">
                 <p className="eyebrow">Aviso</p>
@@ -2740,7 +2860,7 @@ export default function App() {
                 <div className="panel panel-primary dashboard-session-panel">
                   <div className="panel-heading panel-heading--inverse">
                     <p className="eyebrow eyebrow-inverse">{greetingLabel}</p>
-                    <h3 className="display-heading text-3xl text-white/95">
+                    <h3 className="display-heading text-3xl panel-primary-title">
                       {activeSession ? activeSession.name : 'Prepara la próxima salida'}
                     </h3>
                     <p className="module-copy text-sm">
@@ -2793,7 +2913,7 @@ export default function App() {
                     </>
                   ) : (
                     <div className="grid gap-4">
-                      <label className="grid gap-2 text-sm text-white/82">
+                      <label className="grid gap-2 text-sm panel-primary-label">
                         <span>Nombre de la sesión</span>
                         <input
                           value={sessionDraft.name}
@@ -2802,7 +2922,7 @@ export default function App() {
                         />
                       </label>
                       <div className="grid gap-4 md:grid-cols-2">
-                        <label className="grid gap-2 text-sm text-white/82">
+                        <label className="grid gap-2 text-sm panel-primary-label">
                           <span>Proyecto</span>
                           <input
                             value={sessionDraft.projectName}
@@ -2814,7 +2934,7 @@ export default function App() {
                             list="project-name-options"
                           />
                         </label>
-                        <label className="grid gap-2 text-sm text-white/82">
+                        <label className="grid gap-2 text-sm panel-primary-label">
                           <span>Zona / región</span>
                           <input
                             value={sessionDraft.region}
@@ -2824,7 +2944,7 @@ export default function App() {
                           />
                         </label>
                       </div>
-                      <label className="grid gap-2 text-sm text-white/82">
+                      <label className="grid gap-2 text-sm panel-primary-label">
                         <span>Preset de equipo</span>
                         <input
                           value={sessionDraft.equipmentPreset}
@@ -2835,7 +2955,7 @@ export default function App() {
                           placeholder="Zoom H6 · XY"
                         />
                       </label>
-                      <label className="grid gap-2 text-sm text-white/82">
+                      <label className="grid gap-2 text-sm panel-primary-label">
                         <span>Notas</span>
                         <textarea
                           value={sessionDraft.notes}
@@ -3006,11 +3126,29 @@ export default function App() {
                     <div className="panel panel-primary log-summary-card">
                       <div className="panel-heading panel-heading--inverse">
                         <p className="eyebrow eyebrow-inverse">Registro activo</p>
-                        <h3 className="display-heading text-3xl text-white/95">{activeSessionProjectName}</h3>
+                        <h3 className="display-heading text-3xl panel-primary-title">{activeSessionProjectName}</h3>
                         <p className="module-copy text-sm">
                           {activeSession.name} · {activeSession.region || 'zona sin definir'}
                         </p>
                       </div>
+
+                      {!isOnline ? (
+                        <div className="capture-alert capture-alert--offline">
+                          <WifiOff className="h-4 w-4" />
+                          <div>
+                            <strong>Modo offline activo.</strong> Guarda puntos ahora y la app resolverá lugar y clima cuando vuelva la conexión.
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {storageMode === 'memory-only' ? (
+                        <div className="capture-alert capture-alert--warning">
+                          <RefreshCw className="h-4 w-4" />
+                          <div>
+                            <strong>Archivo local no disponible.</strong> Puedes seguir trabajando, pero esta jornada sólo queda en memoria hasta recuperar almacenamiento.
+                          </div>
+                        </div>
+                      ) : null}
 
                       <div className="auto-meta-grid">
                         <div className="soft-card">
@@ -3035,19 +3173,72 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="action-row">
-                        <button type="button" onClick={() => void addQuickPointToSession()} className="ui-button ui-button-primary" disabled={isQuickCapturing}>
+                      <div className="capture-readiness-card">
+                        <div className="capture-readiness-card__header">
+                          <p className="eyebrow eyebrow-inverse">Preparación rápida</p>
+                          <span className="capture-readiness-card__count">{captureReadinessLabel}</span>
+                        </div>
+                        <div className="capture-readiness-grid">
+                          {captureReadinessItems.map((item) => (
+                            <div key={item.label} className={`capture-readiness-pill ${item.ready ? 'is-ready' : ''}`}>
+                              <span>{item.label}</span>
+                              <strong>{item.value}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="capture-quick-tools">
+                        <button
+                          type="button"
+                          onClick={() => void addQuickPointToSession()}
+                          className="ui-button ui-button-primary"
+                          disabled={isQuickCapturing}
+                        >
                           <Mic className="h-4 w-4" />
                           {isQuickCapturing ? 'Guardando...' : 'Guardar registro rápido'}
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => void listenAndClassifySoundscape()}
+                          disabled={soundscapeStatus === 'listening'}
+                          className="listen-button capture-quick-tool"
+                        >
+                          <Sparkles className="h-5 w-5" />
+                          {soundscapeStatus === 'listening' ? 'Escuchando 15 s...' : 'LISTEN & CLASSIFY'}
+                        </button>
+                        <label className="ui-button ui-button-secondary ui-button-upload">
+                          <Camera className="h-4 w-4" />
+                          Añadir foto
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            multiple
+                            className="hidden"
+                            onChange={handleDraftPhotosInput}
+                          />
+                        </label>
+                      </div>
+
+                      <div className="action-row action-row--support">
                         <button type="button" onClick={() => void activateGpsAndApplyToDraft()} className="ui-button ui-button-secondary">
                           <LocateFixed className="h-4 w-4" />
                           Activar GPS
                         </button>
                         <button
                           type="button"
+                          onClick={refreshDetectedPlace}
+                          disabled={!canRefreshDetectedPlace}
+                          className="ui-button ui-button-secondary"
+                        >
+                          <MapPin className="h-4 w-4" />
+                          Releer ubicación
+                        </button>
+                        <button
+                          type="button"
                           onClick={refreshAutomaticWeather}
-                          disabled={weatherStatus === 'loading'}
+                          disabled={!canRefreshWeather || weatherStatus === 'loading'}
                           className="ui-button ui-button-secondary"
                         >
                           <CloudRain className={`h-4 w-4 ${weatherStatus === 'loading' ? 'animate-spin' : ''}`} />
@@ -3058,11 +3249,14 @@ export default function App() {
 
                     <div className="panel log-form-card">
                       <div className="panel-heading">
-                        <p className="eyebrow">Formulario de campo</p>
-                        <h3 className="display-heading text-3xl">Contexto manual y observaciones</h3>
+                        <p className="eyebrow">Datos esenciales</p>
+                        <h3 className="display-heading text-3xl">Lo mínimo para cerrar un buen registro</h3>
+                        <p className="module-copy text-sm">
+                          Ajusta sólo lo que la app no haya resuelto sola. Los campos técnicos viven en avanzado para que la pantalla siga limpia bajo presión.
+                        </p>
                       </div>
 
-                      <div className="grid gap-4 md:grid-cols-2">
+                      <div className="quick-form-grid">
                         <label className="grid gap-2 text-sm text-[color:var(--muted)]">
                           <span>Nombre del lugar</span>
                           <input
@@ -3082,35 +3276,14 @@ export default function App() {
                           />
                         </label>
                         <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Clima observado</span>
+                          <span>ID / referencia Zoom H6</span>
                           <input
-                            value={pointDraft.observedWeather}
+                            value={pointDraft.zoomTakeReference}
                             onChange={(event) =>
-                              setPointDraft((previous) => ({ ...previous, observedWeather: event.target.value }))
+                              setPointDraft((previous) => ({ ...previous, zoomTakeReference: event.target.value }))
                             }
                             className="field-input"
-                            placeholder="Bruma ligera, 14 ºC, viento suave"
-                          />
-                        </label>
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Etiquetas manuales</span>
-                          <input
-                            value={pointDraft.tagsText}
-                            onChange={(event) => setPointDraft((previous) => ({ ...previous, tagsText: event.target.value }))}
-                            className="field-input"
-                            placeholder="agua, costa, amanecer"
-                          />
-                        </label>
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
-                          <span>Características del paisaje</span>
-                          <textarea
-                            value={pointDraft.characteristics}
-                            onChange={(event) =>
-                              setPointDraft((previous) => ({ ...previous, characteristics: event.target.value }))
-                            }
-                            rows={4}
-                            className="field-input min-h-28"
-                            placeholder="Distancia a la fuente, relieve, reverberación, presencia humana..."
+                            placeholder="H6-032"
                           />
                         </label>
                         <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
@@ -3123,69 +3296,101 @@ export default function App() {
                             placeholder="Incidencias, decisiones de microfonía, acceso, observaciones..."
                           />
                         </label>
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Latitud</span>
-                          <input
-                            value={pointDraft.latitude}
-                            onChange={(event) =>
-                              setPointDraft((previous) => ({
-                                ...previous,
-                                latitude: event.target.value,
-                                coordinateSource: 'manual',
-                              }))
-                            }
-                            className="field-input telemetry-text"
-                            placeholder="42.240598"
-                          />
-                        </label>
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Longitud</span>
-                          <input
-                            value={pointDraft.longitude}
-                            onChange={(event) =>
-                              setPointDraft((previous) => ({
-                                ...previous,
-                                longitude: event.target.value,
-                                coordinateSource: 'manual',
-                              }))
-                            }
-                            className="field-input telemetry-text"
-                            placeholder="-8.720727"
-                          />
-                        </label>
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>ID / referencia Zoom H6</span>
-                          <input
-                            value={pointDraft.zoomTakeReference}
-                            onChange={(event) =>
-                              setPointDraft((previous) => ({ ...previous, zoomTakeReference: event.target.value }))
-                            }
-                            className="field-input"
-                            placeholder="H6-032"
-                          />
-                        </label>
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Setup de micros</span>
-                          <input
-                            value={pointDraft.microphoneSetup}
-                            onChange={(event) =>
-                              setPointDraft((previous) => ({ ...previous, microphoneSetup: event.target.value }))
-                            }
-                            className="field-input"
-                            placeholder="Zoom H6 · XY 90º"
-                          />
-                        </label>
                       </div>
 
                       <div className="action-row">
                         <button type="button" onClick={() => void addPointToSession()} className="ui-button ui-button-primary">
                           Guardar registro completo
                         </button>
-                        <button type="button" onClick={refreshDetectedPlace} className="ui-button ui-button-secondary">
-                          <MapPin className="h-4 w-4" />
-                          Releer ubicación
-                        </button>
                       </div>
+
+                      <details className="manual-details">
+                        <summary className="manual-details__summary">
+                          <div>
+                            <p className="eyebrow">Campos avanzados</p>
+                            <p className="module-copy text-sm">
+                              Coordenadas manuales, clima observado, etiquetas y setup técnico cuando necesites más precisión.
+                            </p>
+                          </div>
+                          <span className="manual-details__hint">Abrir</span>
+                        </summary>
+
+                        <div className="manual-details__body grid gap-4 md:grid-cols-2">
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Clima observado</span>
+                            <input
+                              value={pointDraft.observedWeather}
+                              onChange={(event) =>
+                                setPointDraft((previous) => ({ ...previous, observedWeather: event.target.value }))
+                              }
+                              className="field-input"
+                              placeholder="Bruma ligera, 14 ºC, viento suave"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Etiquetas manuales</span>
+                            <input
+                              value={pointDraft.tagsText}
+                              onChange={(event) => setPointDraft((previous) => ({ ...previous, tagsText: event.target.value }))}
+                              className="field-input"
+                              placeholder="agua, costa, amanecer"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
+                            <span>Características del paisaje</span>
+                            <textarea
+                              value={pointDraft.characteristics}
+                              onChange={(event) =>
+                                setPointDraft((previous) => ({ ...previous, characteristics: event.target.value }))
+                              }
+                              rows={4}
+                              className="field-input min-h-28"
+                              placeholder="Distancia a la fuente, relieve, reverberación, presencia humana..."
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Latitud</span>
+                            <input
+                              value={pointDraft.latitude}
+                              onChange={(event) =>
+                                setPointDraft((previous) => ({
+                                  ...previous,
+                                  latitude: event.target.value,
+                                  coordinateSource: 'manual',
+                                }))
+                              }
+                              className="field-input telemetry-text"
+                              placeholder="42.240598"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Longitud</span>
+                            <input
+                              value={pointDraft.longitude}
+                              onChange={(event) =>
+                                setPointDraft((previous) => ({
+                                  ...previous,
+                                  longitude: event.target.value,
+                                  coordinateSource: 'manual',
+                                }))
+                              }
+                              className="field-input telemetry-text"
+                              placeholder="-8.720727"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
+                            <span>Setup de micros</span>
+                            <input
+                              value={pointDraft.microphoneSetup}
+                              onChange={(event) =>
+                                setPointDraft((previous) => ({ ...previous, microphoneSetup: event.target.value }))
+                              }
+                              className="field-input"
+                              placeholder="Zoom H6 · XY 90º"
+                            />
+                          </label>
+                        </div>
+                      </details>
                     </div>
 
                     <div className="panel listen-panel">
@@ -3196,16 +3401,6 @@ export default function App() {
                           La app escucha 15 segundos con el micro del dispositivo, infiere etiquetas del paisaje sonoro y no guarda el audio.
                         </p>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => void listenAndClassifySoundscape()}
-                        disabled={soundscapeStatus === 'listening'}
-                        className="listen-button"
-                      >
-                        <Sparkles className="h-5 w-5" />
-                        {soundscapeStatus === 'listening' ? 'Escuchando 15 s...' : 'LISTEN & CLASSIFY'}
-                      </button>
 
                       <div className="classification-card">
                         <p className="eyebrow">Resultado</p>
@@ -3222,6 +3417,18 @@ export default function App() {
                             ))}
                           </div>
                         ) : null}
+                      </div>
+
+                      <div className="action-row">
+                        <button
+                          type="button"
+                          onClick={() => void listenAndClassifySoundscape()}
+                          disabled={soundscapeStatus === 'listening'}
+                          className="ui-button ui-button-secondary"
+                        >
+                          <Sparkles className="h-4 w-4" />
+                          {soundscapeStatus === 'listening' ? 'Escuchando...' : 'Repetir escucha'}
+                        </button>
                       </div>
                     </div>
 
@@ -3580,11 +3787,15 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => void syncSessionToCatalogStore(recordSession.id)}
-                            disabled={!isOnline || isSyncingCatalogSessionId === recordSession.id}
+                            disabled={!isOnline || isCatalogApiUnavailable || isSyncingCatalogSessionId === recordSession.id}
                             className="ui-button ui-button-secondary"
                           >
                             <Upload className="h-4 w-4" />
-                            {isSyncingCatalogSessionId === recordSession.id ? 'Sincronizando...' : 'Enviar a catálogo'}
+                            {isCatalogApiUnavailable
+                              ? 'Catálogo no disponible'
+                              : isSyncingCatalogSessionId === recordSession.id
+                                ? 'Sincronizando...'
+                                : 'Enviar a catálogo'}
                           </button>
                           <button
                             type="button"
@@ -3615,13 +3826,6 @@ export default function App() {
         </main>
       </div>
 
-      <button
-        type="button"
-        onClick={() => setView(activeSession ? 'point' : 'session')}
-        className="fab-record-button"
-      >
-        + Nuevo registro
-      </button>
     </div>
   );
 }

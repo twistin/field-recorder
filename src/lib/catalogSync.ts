@@ -6,6 +6,20 @@ import {
 } from './catalogPayload';
 import type { FieldSession } from '../types/fieldSessions';
 
+export const CATALOG_API_UNAVAILABLE_MESSAGE =
+  'La API del catálogo no está disponible en este entorno. Usa `vercel dev` o despliega la app con las rutas /api/catalog activas.';
+
+export class CatalogApiUnavailableError extends Error {
+  constructor(message = CATALOG_API_UNAVAILABLE_MESSAGE) {
+    super(message);
+    this.name = 'CatalogApiUnavailableError';
+  }
+}
+
+export function isCatalogApiUnavailableError(error: unknown): error is CatalogApiUnavailableError {
+  return error instanceof CatalogApiUnavailableError;
+}
+
 async function parseApiError(response: Response, fallbackMessage: string): Promise<Error> {
   try {
     const payload = (await response.json()) as { error?: string };
@@ -31,6 +45,9 @@ export async function syncSessionToCatalog(session: FieldSession): Promise<Catal
   });
 
   if (!response.ok) {
+    if (response.status === 404) {
+      throw new CatalogApiUnavailableError();
+    }
     throw await parseApiError(response, 'Catalog sync failed.');
   }
 
@@ -40,6 +57,9 @@ export async function syncSessionToCatalog(session: FieldSession): Promise<Catal
 export async function listCatalogSessionsRemote(): Promise<CatalogSessionSummary[]> {
   const response = await fetch('/api/catalog/sessions');
   if (!response.ok) {
+    if (response.status === 404) {
+      throw new CatalogApiUnavailableError();
+    }
     throw await parseApiError(response, 'Catalog listing failed.');
   }
 
