@@ -178,7 +178,6 @@ audio {
 .field-map .leaflet-popup-tip,
 .session-map-marker,
 .fieldnotes-shell button,
-.fieldnotes-shell img,
 .listen-button,
 .recent-entry-card {
   border-radius: var(--radius-lg) !important;
@@ -1115,6 +1114,15 @@ details > summary::-webkit-details-marker {
   filter: grayscale(1) saturate(0.3) brightness(0.55) contrast(1.05);
 }
 
+.field-map .leaflet-pane img,
+.field-map .leaflet-tile,
+.field-map .leaflet-marker-pane img,
+.field-map .leaflet-shadow-pane img {
+  border-radius: 0 !important;
+  clip-path: none !important;
+  mask-image: none !important;
+}
+
 :root[data-display-mode="sun"] .field-map .leaflet-container {
   background: #e9dfcb;
 }
@@ -1217,6 +1225,12 @@ details > summary::-webkit-details-marker {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--signal-strong);
+}
+
+.point-card__image,
+.photo-grid img,
+.record-gallery-grid__image {
+  border-radius: var(--radius-lg) !important;
 }
 
 .record-header-card__meta {
