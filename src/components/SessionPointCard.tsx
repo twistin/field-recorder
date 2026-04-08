@@ -24,24 +24,29 @@ export function SessionPointCard({
 }) {
   return (
     <button
+      type="button"
       onClick={onSelect}
-      className={`panel flex w-full flex-col gap-4 p-5 text-left transition ${
-        active ? 'border-[color:var(--signal-strong)]' : ''
+      aria-pressed={active}
+      className={`panel point-card flex w-full flex-col gap-4 p-5 text-left transition ${
+        active ? 'is-active' : ''
       }`}
     >
       {point.photoPreviewUrl ? (
         <img
           src={point.photoPreviewUrl}
           alt={`Foto de ${point.placeName}`}
-          className="h-44 w-full border border-[color:var(--line)] object-cover"
+          className="point-card__image h-44 w-full object-cover"
         />
       ) : null}
 
-      <div>
-        <p className="display-heading text-2xl text-[color:var(--ink)]">{point.placeName}</p>
-        <p className="mt-2 text-sm text-[color:var(--muted)]">
-          {format(new Date(point.createdAt), 'd MMM yyyy · HH:mm:ss', { locale: es })}
-        </p>
+      <div className="point-card__header">
+        <div>
+          <p className="display-heading text-2xl text-[color:var(--ink)]">{point.placeName}</p>
+          <p className="mt-2 text-sm text-[color:var(--muted)]">
+            {format(new Date(point.createdAt), 'd MMM yyyy · HH:mm:ss', { locale: es })}
+          </p>
+        </div>
+        <span className="point-card__status">{active ? 'Ficha abierta' : 'Abrir'}</span>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
