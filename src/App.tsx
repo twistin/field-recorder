@@ -2281,8 +2281,7 @@ export default function App() {
     {
       eyebrow: 'Panel',
       title: 'Preparar la jornada',
-      description:
-        'Configura sesión, revisa actividad y busca lugares o proyectos antes de salir al terreno.',
+      description: 'Sesión, mapa y búsqueda antes de salir al terreno.',
       status: activeSession ? `${activeSession.points.length} registros en ${activeSession.name}` : 'Sin jornada activa',
       cta: activeSession ? 'Abrir panel' : 'Crear jornada',
       icon: MapPinned,
@@ -2291,9 +2290,8 @@ export default function App() {
     },
     {
       eyebrow: 'Captura',
-      title: 'Registrar contexto',
-      description:
-        'Una pantalla enfocada en GPS, clima, fotos, notas y escucha IA para no tomar decisiones entre módulos.',
+      title: 'Capturar contexto',
+      description: 'GPS, clima, fotos, notas e IA en una sola pantalla.',
       status: activeSession ? `${gpsStatusLabel} · ${activeSession.name}` : 'Necesita una jornada activa',
       cta: captureEntryLabel,
       icon: Mic,
@@ -2303,8 +2301,7 @@ export default function App() {
     {
       eyebrow: 'Registro',
       title: 'Revisar y exportar',
-      description:
-        'Consulta la ficha final, abre galería, inspecciona metadatos y saca CSV o KML cuando el punto ya existe.',
+      description: 'Ficha final, galería y exportación CSV/KML.',
       status: latestRecordLabel,
       cta: recordPoint ? 'Abrir ficha' : 'Ir al archivo',
       icon: History,
@@ -2312,6 +2309,15 @@ export default function App() {
       onClick: () => setView('export'),
     },
   ];
+  const showSidebar = view !== 'home';
+  const showMobileDock = view !== 'home';
+  const shouldShowOperationalBanner = view !== 'home';
+  const shouldShowStatusStack =
+    shouldShowOperationalBanner ||
+    !isOnline ||
+    isCatalogApiUnavailable ||
+    storageMode === 'memory-only' ||
+    Boolean(appError);
   const currentLocationLabel = currentGps ? 'Ubicación actual' : 'Sin ubicación activa';
   const captureReadinessItems = [
     {
@@ -2793,93 +2799,68 @@ export default function App() {
         ))}
       </datalist>
 
-      <div className="fieldnotes-app">
-        <aside className="fieldnotes-sidebar">
-          <div className="panel brand-card">
-            <p className="eyebrow eyebrow-inverse">FieldNotes AI</p>
-            <h1 className="display-heading brand-card__title">Menos ruido, más contexto.</h1>
-            <p className="module-copy brand-card__copy">
-              Portada hero separada y tres destinos claros: panel, captura y registro final.
-            </p>
-          </div>
-
-          <nav className="sidebar-nav">
-            {navigationItems.map((item) => (
-              <ViewButton
-                key={item.view}
-                active={view === item.view}
-                label={item.label}
-                description={item.description}
-                icon={item.icon}
-                onClick={item.onClick}
-              />
-            ))}
-          </nav>
-
-          <div className="panel sidebar-session-card">
-            <p className="eyebrow">Jornada actual</p>
-            <p className="sidebar-session-card__title">
-              {activeSession ? activeSession.name : 'No hay salida activa'}
-            </p>
-            <p className="module-copy text-sm">
-              {activeSession
-                ? `${activeSessionProjectName} · ${activeSession.region || 'zona sin definir'}`
-                : 'Crea una sesión para poder lanzar nuevos registros desde el terreno.'}
-            </p>
-            <div className="sidebar-session-card__stats">
-              <span className="telemetry-chip">{activeSession ? `${activeSession.points.length} registros` : '0 registros'}</span>
-              <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
-                {isOnline ? 'En línea' : 'Offline'}
-              </span>
+      <div className={`fieldnotes-app ${view === 'home' ? 'fieldnotes-app--home' : ''}`}>
+        {showSidebar ? (
+          <aside className="fieldnotes-sidebar">
+            <div className="panel sidebar-nav-panel">
+              <p className="eyebrow">FieldNotes AI</p>
+              <nav className="sidebar-nav">
+                {navigationItems.map((item) => (
+                  <ViewButton
+                    key={item.view}
+                    active={view === item.view}
+                    label={item.label}
+                    description={item.description}
+                    icon={item.icon}
+                    onClick={item.onClick}
+                  />
+                ))}
+              </nav>
             </div>
-          </div>
 
-          <button
-            type="button"
-            onClick={() => setView(activeSession ? 'point' : 'session')}
-            className="cta-launcher"
-          >
-            <span>{activeSession ? '+ Ir a captura' : '+ Abrir panel'}</span>
-            <small>{activeSession ? 'Capturar contexto ahora' : 'Crear o activar una jornada'}</small>
-          </button>
-        </aside>
+            <div className="panel sidebar-session-card sidebar-session-card--compact">
+              <p className="eyebrow">Jornada actual</p>
+              <p className="sidebar-session-card__title">
+                {activeSession ? activeSession.name : 'No hay salida activa'}
+              </p>
+              <p className="module-copy text-sm">
+                {activeSession
+                  ? `${activeSessionProjectName} · ${activeSession.region || 'zona sin definir'}`
+                  : 'Crea una sesión para poder lanzar nuevos registros desde el terreno.'}
+              </p>
+              <div className="sidebar-session-card__stats">
+                <span className="telemetry-chip">
+                  {activeSession ? `${activeSession.points.length} registros` : '0 registros'}
+                </span>
+                <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
+                  {isOnline ? 'En línea' : 'Offline'}
+                </span>
+              </div>
+            </div>
+          </aside>
+        ) : null}
 
         <main className="fieldnotes-main">
           {view === 'home' ? (
-            <motion.header
-              key="home-hero"
+            <motion.section
+              key="home-topbar"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="panel panel-primary home-hero-panel"
+              className="panel home-topbar"
             >
-              <div className="home-hero-panel__copy">
-                <p className="eyebrow eyebrow-inverse">{greetingLabel} · Hero</p>
-                <h2 className="display-heading text-4xl md:text-6xl panel-primary-title">
-                  Menos carga visual, más decisiones claras de campo.
-                </h2>
-                <p className="module-copy text-sm md:text-base">
-                  La portada ya no mezcla panel, captura y archivo. Primero eliges el flujo; después entras en una
-                  pantalla dedicada para esa tarea.
-                </p>
-                <div className="hero-panel__controls">
+              <div className="home-topbar__brand">
+                <p className="eyebrow">FieldNotes AI</p>
+                <p className="display-heading home-topbar__title">{greetingLabel}</p>
+              </div>
+              <div className="home-topbar__controls">
+                <div className="status-inline-group">
                   <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
                     {isOnline ? 'En línea' : 'Offline'}
                   </span>
-                  <span className="telemetry-chip">{storageSummary}</span>
-                  <button
-                    type="button"
-                    onClick={() => setView('session')}
-                    className="ui-button ui-button-secondary"
-                  >
-                    Abrir panel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setView(activeSession ? 'point' : 'session')}
-                    className="ui-button ui-button-primary"
-                  >
-                    {captureEntryLabel}
-                  </button>
+                  <span className="telemetry-chip telemetry-chip--muted">{storageSummary}</span>
+                </div>
+                <div className="utility-inline-group">
+                  <span className="eyebrow home-topbar__utility-label">Preferencias</span>
                   <button
                     type="button"
                     onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
@@ -2892,30 +2873,7 @@ export default function App() {
                   </button>
                 </div>
               </div>
-
-              <div className="home-hero-panel__metrics">
-                <div className="soft-card">
-                  <p className="eyebrow eyebrow-inverse">Hora</p>
-                  <p className="summary-value panel-primary-title">{captureTimeLabel}</p>
-                  <p className="module-copy text-sm">{captureDateLabel}</p>
-                </div>
-                <div className="soft-card">
-                  <p className="eyebrow eyebrow-inverse">GPS</p>
-                  <p className="summary-value panel-primary-title">{currentGps ? gpsAccuracyLabel : 'Sin señal'}</p>
-                  <p className="module-copy text-sm">{gpsLabel}</p>
-                </div>
-                <div className="soft-card">
-                  <p className="eyebrow eyebrow-inverse">Sesión</p>
-                  <p className="summary-value panel-primary-title">{activeSession ? 'Activa' : 'Pendiente'}</p>
-                  <p className="module-copy text-sm">{activeSession ? activeSession.name : 'Abre el panel para crearla.'}</p>
-                </div>
-                <div className="soft-card">
-                  <p className="eyebrow eyebrow-inverse">Pendientes</p>
-                  <p className="summary-value panel-primary-title">{pendingEnrichmentCount + pendingCloudSessionCount}</p>
-                  <p className="module-copy text-sm">Metadatos, nube o catálogo por resolver.</p>
-                </div>
-              </div>
-            </motion.header>
+            </motion.section>
           ) : (
             <motion.header
               key={`section-${view}`}
@@ -2929,78 +2887,89 @@ export default function App() {
                 <p className="module-copy text-sm md:text-base">{currentViewDescription}</p>
               </div>
 
-              <div className="section-header__actions">
-                <button type="button" onClick={() => setView('home')} className="ui-button ui-button-secondary">
-                  Inicio
-                </button>
-                <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
-                  {isOnline ? 'En línea' : 'Offline'}
-                </span>
-                <span className="telemetry-chip">{storageSummary}</span>
-                <button
-                  type="button"
-                  onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
-                  className={`mode-toggle ${isSunMode ? 'is-sun' : ''}`}
-                >
-                  <span className="mode-toggle__icon">
-                    {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
+              <div className="section-header__rail">
+                <div className="section-header__meta">
+                  <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
+                    {isOnline ? 'En línea' : 'Offline'}
                   </span>
-                  {isSunMode ? 'Modo noche' : 'Modo sol'}
-                </button>
+                  <span className="telemetry-chip telemetry-chip--muted">{storageSummary}</span>
+                </div>
+                <div className="section-header__utility">
+                  <button type="button" onClick={() => setView('home')} className="ui-button ui-button-ghost">
+                    <House className="h-4 w-4" />
+                    Inicio
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
+                    className={`mode-toggle ${isSunMode ? 'is-sun' : ''}`}
+                  >
+                    <span className="mode-toggle__icon">
+                      {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
+                    </span>
+                    {isSunMode ? 'Modo noche' : 'Modo sol'}
+                  </button>
+                </div>
               </div>
             </motion.header>
           )}
 
-          <div className="status-stack">
-            <div className="panel status-banner">
-              <p className="eyebrow">Estado operativo</p>
-              <p className="module-copy text-sm">{statusNote}</p>
+          {shouldShowStatusStack ? (
+            <div className="status-stack">
+              {shouldShowOperationalBanner ? (
+                <div className="panel status-banner">
+                  <p className="eyebrow">Estado operativo</p>
+                  <p className="module-copy text-sm">{statusNote}</p>
+                </div>
+              ) : null}
+              {!isOnline ? (
+                <div className="panel status-banner status-banner--warning">
+                  <p className="eyebrow">Conectividad</p>
+                  <p className="module-copy text-sm">
+                    Estás sin red. GPS, notas, fotos y guardado siguen activos; clima y lugar se completarán cuando vuelva la conexión.
+                  </p>
+                </div>
+              ) : null}
+              {isCatalogApiUnavailable ? (
+                <div className="panel status-banner status-banner--warning">
+                  <p className="eyebrow">Catálogo remoto</p>
+                  <p className="module-copy text-sm">
+                    Las rutas `/api/catalog` no están disponibles aquí. El guardado local y las exportaciones siguen funcionando, pero la sincronización remota queda desactivada.
+                  </p>
+                </div>
+              ) : null}
+              {storageMode === 'memory-only' ? (
+                <div className="panel status-banner status-banner--warning">
+                  <p className="eyebrow">Almacenamiento</p>
+                  <p className="module-copy text-sm">
+                    No hay acceso al archivo local. La sesión funciona, pero conviene exportar o reiniciar el almacenamiento antes de cerrar la app.
+                  </p>
+                </div>
+              ) : null}
+              {appError ? (
+                <div className="panel status-banner status-banner--error">
+                  <p className="eyebrow">Aviso</p>
+                  <p className="module-copy text-sm">{appError}</p>
+                </div>
+              ) : null}
             </div>
-            {!isOnline ? (
-              <div className="panel status-banner status-banner--warning">
-                <p className="eyebrow">Conectividad</p>
-                <p className="module-copy text-sm">
-                  Estás sin red. GPS, notas, fotos y guardado siguen activos; clima y lugar se completarán cuando vuelva la conexión.
-                </p>
-              </div>
-            ) : null}
-            {isCatalogApiUnavailable ? (
-              <div className="panel status-banner status-banner--warning">
-                <p className="eyebrow">Catálogo remoto</p>
-                <p className="module-copy text-sm">
-                  Las rutas `/api/catalog` no están disponibles aquí. El guardado local y las exportaciones siguen funcionando, pero la sincronización remota queda desactivada.
-                </p>
-              </div>
-            ) : null}
-            {storageMode === 'memory-only' ? (
-              <div className="panel status-banner status-banner--warning">
-                <p className="eyebrow">Almacenamiento</p>
-                <p className="module-copy text-sm">
-                  No hay acceso al archivo local. La sesión funciona, pero conviene exportar o reiniciar el almacenamiento antes de cerrar la app.
-                </p>
-              </div>
-            ) : null}
-            {appError ? (
-              <div className="panel status-banner status-banner--error">
-                <p className="eyebrow">Aviso</p>
-                <p className="module-copy text-sm">{appError}</p>
-              </div>
-            ) : null}
-          </div>
+          ) : null}
 
-          <nav className="menu-shell mobile-dock">
-            {navigationItems.map((item) => (
-              <ViewButton
-                key={item.view}
-                active={view === item.view}
-                label={item.label}
-                description={item.description}
-                icon={item.icon}
-                compact
-                onClick={item.onClick}
-              />
-            ))}
-          </nav>
+          {showMobileDock ? (
+            <nav className="menu-shell mobile-dock">
+              {navigationItems.map((item) => (
+                <ViewButton
+                  key={item.view}
+                  active={view === item.view}
+                  label={item.label}
+                  description={item.description}
+                  icon={item.icon}
+                  compact
+                  onClick={item.onClick}
+                />
+              ))}
+            </nav>
+          ) : null}
 
           <AnimatePresence mode="wait">
             {view === 'home' ? (
@@ -3011,6 +2980,29 @@ export default function App() {
                 exit={{ opacity: 0, y: -18 }}
                 className="layout-home"
               >
+                <div className="home-metrics-grid">
+                  <div className="soft-card">
+                    <p className="eyebrow">Hora</p>
+                    <p className="summary-value">{captureTimeLabel}</p>
+                    <p className="module-copy text-sm">{captureDateLabel}</p>
+                  </div>
+                  <div className="soft-card">
+                    <p className="eyebrow">GPS</p>
+                    <p className="summary-value">{currentGps ? gpsAccuracyLabel : 'Sin señal'}</p>
+                    <p className="module-copy text-sm">{gpsLabel}</p>
+                  </div>
+                  <div className="soft-card">
+                    <p className="eyebrow">Sesión</p>
+                    <p className="summary-value">{activeSession ? 'Activa' : 'Pendiente'}</p>
+                    <p className="module-copy text-sm">{activeSession ? activeSession.name : 'Abre el panel para crearla.'}</p>
+                  </div>
+                  <div className="soft-card">
+                    <p className="eyebrow">Pendientes</p>
+                    <p className="summary-value">{pendingEnrichmentCount + pendingCloudSessionCount}</p>
+                    <p className="module-copy text-sm">Metadatos, nube o catálogo por resolver.</p>
+                  </div>
+                </div>
+
                 <div className="home-workflow-grid">
                   {homeWorkflowCards.map((card) => (
                     <WorkflowCard
@@ -3025,43 +3017,6 @@ export default function App() {
                       onClick={card.onClick}
                     />
                   ))}
-                </div>
-
-                <div className="panel home-context-panel">
-                  <div className="panel-heading">
-                    <p className="eyebrow">Pulso rápido</p>
-                    <h3 className="display-heading text-3xl">Estado sin entrar en cada módulo</h3>
-                    <p className="module-copy text-sm">
-                      La portada sólo orienta: qué jornada está viva, cuál fue la última ficha y cuánto archivo tienes acumulado.
-                    </p>
-                  </div>
-
-                  <div className="home-context-grid">
-                    <div className="soft-card">
-                      <p className="eyebrow">Jornada actual</p>
-                      <p className="summary-value">{activeSession ? activeSession.name : 'Pendiente'}</p>
-                      <p className="module-copy text-sm">
-                        {activeSession ? activeSessionMeta : 'Abre el panel para crear o reactivar una salida.'}
-                      </p>
-                    </div>
-                    <div className="soft-card">
-                      <p className="eyebrow">Último registro</p>
-                      <p className="summary-value">{latestRecordLabel}</p>
-                      <p className="module-copy text-sm">{latestRecordSummary}</p>
-                    </div>
-                    <div className="soft-card">
-                      <p className="eyebrow">Actividad</p>
-                      <p className="summary-value">{allRecords.length}</p>
-                      <p className="module-copy text-sm">
-                        {sessions.length} sesiones · {projectCount} proyectos · {syncedCloudSessionCount} respaldos en nube.
-                      </p>
-                    </div>
-                    <div className="soft-card">
-                      <p className="eyebrow">Ambiente</p>
-                      <p className="summary-value">{liveClimateLabel}</p>
-                      <p className="module-copy text-sm">{weatherSnapshot?.details || weatherStatusLabel}</p>
-                    </div>
-                  </div>
                 </div>
               </motion.section>
             ) : null}

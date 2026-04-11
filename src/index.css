@@ -326,38 +326,81 @@ audio {
   color: #ffd8a6;
 }
 
+.telemetry-chip--muted {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+}
+
 :root[data-display-mode="sun"] .telemetry-chip--offline {
   color: #8a4c00;
 }
 
-.home-hero-panel,
+:root[data-display-mode="sun"] .telemetry-chip--muted {
+  background: rgba(255, 255, 255, 0.52);
+  color: rgba(23, 33, 43, 0.66);
+}
+
+.home-topbar,
 .section-header {
   display: grid;
   gap: 1rem;
   padding: 1.3rem;
 }
 
-.home-hero-panel__copy,
+.home-topbar__brand,
 .section-header__copy {
   display: grid;
   gap: 0.8rem;
 }
 
-.hero-panel__controls,
-.section-header__actions {
+.home-topbar__controls,
+.section-header__rail,
+.status-inline-group,
+.utility-inline-group,
+.section-header__meta,
+.section-header__utility {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
   align-items: center;
 }
 
-.home-hero-panel__metrics {
-  display: grid;
-  gap: 0.8rem;
+.home-topbar__title {
+  font-size: clamp(1.75rem, 4vw, 2.8rem);
 }
 
-.section-header__actions {
-  justify-content: flex-start;
+.home-topbar__controls {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.section-header__rail {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.home-topbar__utility-label {
+  margin: 0;
+  color: var(--muted);
+}
+
+.status-inline-group,
+.section-header__meta {
+  gap: 0.6rem;
+}
+
+.utility-inline-group,
+.section-header__utility {
+  justify-content: flex-end;
+}
+
+.sidebar-nav-panel .sidebar-nav {
+  margin-top: 0.85rem;
+}
+
+.sidebar-session-card--compact .sidebar-session-card__title {
+  font-size: 1.3rem;
 }
 
 .mode-toggle {
@@ -432,6 +475,7 @@ audio {
 }
 
 .brand-card,
+.sidebar-nav-panel,
 .sidebar-session-card {
   padding: 1.2rem;
 }
@@ -639,6 +683,16 @@ audio {
   background: rgba(15, 29, 46, 0.72);
 }
 
+.ui-button-ghost {
+  background: transparent;
+  color: var(--muted);
+}
+
+.ui-button-ghost:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .ui-button-danger {
   border-color: rgba(255, 142, 115, 0.22);
   background: var(--danger-soft);
@@ -685,7 +739,6 @@ audio {
 .dashboard-search-panel,
 .dashboard-map-panel,
 .dashboard-insights-panel,
-.home-context-panel,
 .log-summary-card,
 .log-form-card,
 .listen-panel,
@@ -700,8 +753,8 @@ audio {
   padding: 1.2rem;
 }
 
+.home-metrics-grid,
 .stats-grid,
-.home-context-grid,
 .auto-meta-grid,
 .record-meta-grid {
   display: grid;
@@ -735,6 +788,7 @@ audio {
 :root[data-display-mode="sun"] .point-card,
 :root[data-display-mode="sun"] .dock-button,
 :root[data-display-mode="sun"] .ui-button-secondary,
+:root[data-display-mode="sun"] .ui-button-ghost,
 :root[data-display-mode="sun"] .icon-button {
   background: rgba(255, 255, 255, 0.78);
 }
@@ -850,7 +904,7 @@ audio {
   color: var(--signal-strong);
 }
 
-.home-context-grid .summary-value {
+.home-metrics-grid .summary-value {
   font-size: clamp(1.2rem, 2.8vw, 1.9rem);
 }
 
@@ -1400,8 +1454,7 @@ select:focus-visible {
 }
 
 @media (max-width: 759px) {
-  .home-hero-panel__metrics,
-  .home-context-grid,
+  .home-metrics-grid,
   .stats-grid,
   .auto-meta-grid,
   .record-meta-grid,
@@ -1409,10 +1462,15 @@ select:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .hero-panel__controls,
-  .section-header__actions {
+  .home-topbar__controls,
+  .section-header__rail {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .utility-inline-group,
+  .section-header__utility {
+    justify-content: flex-start;
   }
 
   .recent-entry-card {
@@ -1431,8 +1489,7 @@ select:focus-visible {
 }
 
 @media (min-width: 760px) {
-  .home-hero-panel__metrics,
-  .home-context-grid,
+  .home-metrics-grid,
   .stats-grid,
   .auto-meta-grid,
   .record-meta-grid,
@@ -1455,17 +1512,9 @@ select:focus-visible {
 }
 
 @media (min-width: 980px) {
-  .home-hero-panel {
-    grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
-    align-items: start;
-  }
-
-  .layout-home {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .home-context-panel {
-    grid-column: 1 / -1;
+  .home-topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
   }
 
   .layout-dashboard {
@@ -1484,6 +1533,10 @@ select:focus-visible {
     grid-template-columns: 320px minmax(0, 1fr);
     gap: 1.15rem;
     padding: 1.15rem;
+  }
+
+  .fieldnotes-app--home {
+    display: block;
   }
 
   .fieldnotes-sidebar {
@@ -1509,6 +1562,10 @@ select:focus-visible {
 
   .layout-log {
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  }
+
+  .home-metrics-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .home-workflow-grid {
