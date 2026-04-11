@@ -2309,6 +2309,7 @@ export default function App() {
       onClick: () => setView('export'),
     },
   ];
+  const isCatalogApiUnavailable = catalogApiStatus === 'unavailable';
   const showSidebar = view !== 'home';
   const showMobileDock = view !== 'home';
   const shouldShowOperationalBanner = view !== 'home';
@@ -2344,7 +2345,6 @@ export default function App() {
   const captureReadinessLabel = `${captureReadinessItems.filter((item) => item.ready).length}/${captureReadinessItems.length} capas listas`;
   const canRefreshDetectedPlace = isOnline && Boolean(draftPointCoordinates);
   const canRefreshWeather = isOnline && Boolean(draftPointCoordinates);
-  const isCatalogApiUnavailable = catalogApiStatus === 'unavailable';
   const recordBadge = recordPoint ? resolveSoundscapeBadge(recordPoint) : null;
 
   useEffect(() => {
