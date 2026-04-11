@@ -559,13 +559,22 @@ function resolveSoundscapeBadge(point: UiSessionPoint): SoundscapeBadge {
   const tags = point.soundscapeClassification?.tags ?? point.tags;
   const normalized = tags.map((tag) => tag.toLowerCase());
 
-  if (normalized.some((tag) => tag.includes('aves') || tag.includes('bird'))) {
-    return { label: 'Aves', icon: Bird };
+  if (normalized.some((tag) => tag.includes('pájar') || tag.includes('pajar') || tag.includes('aves') || tag.includes('bird'))) {
+    return { label: 'Pájaros', icon: Bird };
+  }
+  if (normalized.some((tag) => tag.includes('persona') || tag.includes('voz') || tag.includes('hablando'))) {
+    return { label: 'Voces', icon: Mic };
+  }
+  if (normalized.some((tag) => tag.includes('música') || tag.includes('musica'))) {
+    return { label: 'Música', icon: AudioWaveform };
+  }
+  if (normalized.some((tag) => tag.includes('paso') || tag.includes('pisada'))) {
+    return { label: 'Pasos', icon: AudioWaveform };
   }
   if (normalized.some((tag) => tag.includes('lluvia'))) {
     return { label: 'Lluvia', icon: CloudRain };
   }
-  if (normalized.some((tag) => tag.includes('agua'))) {
+  if (normalized.some((tag) => tag.includes('río') || tag.includes('rio') || tag.includes('arroyo') || tag.includes('mar') || tag.includes('oleaje') || tag.includes('agua'))) {
     return { label: 'Agua', icon: Waves };
   }
   if (normalized.some((tag) => tag.includes('tráfico') || tag.includes('trafico'))) {
@@ -676,6 +685,53 @@ function WorkflowCard({
   );
 }
 
+function HomeHeroVisual() {
+  return (
+    <div className="home-topbar__visual" aria-hidden="true">
+      <div className="hero-emblem">
+        <div className="hero-emblem__halo hero-emblem__halo--outer" />
+        <div className="hero-emblem__halo hero-emblem__halo--inner" />
+        <div className="hero-emblem__core">
+          <div className="hero-emblem__glyph">
+            <MapPinned className="h-8 w-8" />
+          </div>
+          <div className="hero-emblem__pulse">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+      </div>
+
+      <div className="hero-schematic">
+        <div className="hero-schematic__card hero-schematic__card--primary">
+          <p className="eyebrow">Field Mark</p>
+          <p className="display-heading hero-schematic__title">Contexto + posición + escucha</p>
+          <div className="hero-schematic__icons">
+            <span><LocateFixed className="h-4 w-4" /> GPS</span>
+            <span><AudioWaveform className="h-4 w-4" /> Audio</span>
+            <span><Sparkles className="h-4 w-4" /> IA</span>
+          </div>
+        </div>
+
+        <div className="hero-schematic__card hero-schematic__card--micro">
+          <span className="hero-schematic__mini-label">Rastro</span>
+          <div className="hero-schematic__wave">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [view, setView] = useState<View>('home');
   const [sessionDraft, setSessionDraft] = useState<SessionDraft>(buildSessionDraft());
@@ -720,7 +776,7 @@ export default function App() {
   const [draftSoundscapeClassification, setDraftSoundscapeClassification] = useState<SoundscapeClassification | null>(null);
   const [soundscapeStatus, setSoundscapeStatus] = useState<'idle' | 'listening' | 'ready' | 'error'>('idle');
   const [soundscapeMessage, setSoundscapeMessage] = useState(
-    'La clasificación sonora escuchará 15 segundos sin guardar el audio.',
+    'Escucha local de 15 segundos para detectar aves, voces, música, pasos o agua. No se guarda el audio.',
   );
   const [isImportingSessionId, setIsImportingSessionId] = useState<string | null>(null);
   const [isSyncingPendingMetadata, setIsSyncingPendingMetadata] = useState(false);
@@ -1412,14 +1468,14 @@ export default function App() {
   async function listenAndClassifySoundscape() {
     setAppError(null);
     setSoundscapeStatus('listening');
-    setSoundscapeMessage('Escuchando el entorno durante 15 segundos. No se guardará el audio.');
+    setSoundscapeMessage('Escuchando 15 segundos para detectar elementos del ambiente. No se guardará el audio.');
 
     try {
       const classification = await captureSoundscapeClassification({ durationMs: 15_000 });
       setDraftSoundscapeClassification(classification);
       setSoundscapeStatus('ready');
       setSoundscapeMessage(classification.details);
-      setStatusNote(`Clasificación IA lista: ${classification.summary}.`);
+      setStatusNote(`Detección acústica lista: ${classification.summary}.`);
     } catch (error) {
       console.error('Soundscape classification failed:', error);
       const errorMessage =
@@ -1500,7 +1556,7 @@ export default function App() {
     });
     setDraftSoundscapeClassification(null);
     setSoundscapeStatus('idle');
-    setSoundscapeMessage('La clasificación sonora escuchará 15 segundos sin guardar el audio.');
+    setSoundscapeMessage('Escucha local de 15 segundos para detectar aves, voces, música, pasos o agua. No se guarda el audio.');
     locationAbortRef.current?.abort();
     setDetectedPlace(null);
     setLocationStatus('idle');
@@ -2806,14 +2862,15 @@ export default function App() {
               <p className="eyebrow">FieldNotes AI</p>
               <nav className="sidebar-nav">
                 {navigationItems.map((item) => (
-                  <ViewButton
-                    key={item.view}
-                    active={view === item.view}
-                    label={item.label}
-                    description={item.description}
-                    icon={item.icon}
-                    onClick={item.onClick}
-                  />
+                  <React.Fragment key={item.view}>
+                    <ViewButton
+                      active={view === item.view}
+                      label={item.label}
+                      description={item.description}
+                      icon={item.icon}
+                      onClick={item.onClick}
+                    />
+                  </React.Fragment>
                 ))}
               </nav>
             </div>
@@ -2852,6 +2909,7 @@ export default function App() {
                 <p className="eyebrow">FieldNotes AI</p>
                 <p className="display-heading home-topbar__title">{greetingLabel}</p>
               </div>
+              <HomeHeroVisual />
               <div className="home-topbar__controls">
                 <div className="status-inline-group">
                   <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
@@ -2958,15 +3016,16 @@ export default function App() {
           {showMobileDock ? (
             <nav className="menu-shell mobile-dock">
               {navigationItems.map((item) => (
-                <ViewButton
-                  key={item.view}
-                  active={view === item.view}
-                  label={item.label}
-                  description={item.description}
-                  icon={item.icon}
-                  compact
-                  onClick={item.onClick}
-                />
+                <React.Fragment key={item.view}>
+                  <ViewButton
+                    active={view === item.view}
+                    label={item.label}
+                    description={item.description}
+                    icon={item.icon}
+                    compact
+                    onClick={item.onClick}
+                  />
+                </React.Fragment>
               ))}
             </nav>
           ) : null}
@@ -3005,17 +3064,18 @@ export default function App() {
 
                 <div className="home-workflow-grid">
                   {homeWorkflowCards.map((card) => (
-                    <WorkflowCard
-                      key={card.eyebrow}
-                      eyebrow={card.eyebrow}
-                      title={card.title}
-                      description={card.description}
-                      status={card.status}
-                      cta={card.cta}
-                      icon={card.icon}
-                      featured={card.featured}
-                      onClick={card.onClick}
-                    />
+                    <React.Fragment key={card.eyebrow}>
+                      <WorkflowCard
+                        eyebrow={card.eyebrow}
+                        title={card.title}
+                        description={card.description}
+                        status={card.status}
+                        cta={card.cta}
+                        icon={card.icon}
+                        featured={card.featured}
+                        onClick={card.onClick}
+                      />
+                    </React.Fragment>
                   ))}
                 </div>
               </motion.section>
@@ -3377,7 +3437,7 @@ export default function App() {
                           className="listen-button capture-quick-tool"
                         >
                           <Sparkles className="h-5 w-5" />
-                          {soundscapeStatus === 'listening' ? 'Escuchando 15 s...' : 'LISTEN & CLASSIFY'}
+                          {soundscapeStatus === 'listening' ? 'Analizando 15 s...' : 'DETECTAR AMBIENTE'}
                         </button>
                         <label className="ui-button ui-button-secondary ui-button-upload">
                           <Camera className="h-4 w-4" />
@@ -3568,16 +3628,16 @@ export default function App() {
                     <div className="panel listen-panel">
                       <div className="panel-heading">
                         <p className="eyebrow">Sección IA</p>
-                        <h3 className="display-heading text-3xl">LISTEN &amp; CLASSIFY</h3>
+                        <h3 className="display-heading text-3xl">Detectar Elementos Del Ambiente</h3>
                         <p className="module-copy text-sm">
-                          La app escucha 15 segundos con el micro del dispositivo, infiere etiquetas del paisaje sonoro y no guarda el audio.
+                          Escucha 15 segundos con el micro del dispositivo para estimar pájaros, personas hablando, música, pasos, río, mar, lluvia o tráfico. No guarda el audio y la detección es local y aproximada.
                         </p>
                       </div>
 
                       <div className="classification-card">
                         <p className="eyebrow">Resultado</p>
                         <p className="summary-value">
-                          {draftSoundscapeClassification?.summary || 'Sin clasificación todavía'}
+                          {draftSoundscapeClassification?.summary || 'Sin detección todavía'}
                         </p>
                         <p className="module-copy text-sm">{soundscapeMessage}</p>
                         {draftSoundscapeClassification ? (
@@ -3599,7 +3659,7 @@ export default function App() {
                           className="ui-button ui-button-secondary"
                         >
                           <Sparkles className="h-4 w-4" />
-                          {soundscapeStatus === 'listening' ? 'Escuchando...' : 'Repetir escucha'}
+                          {soundscapeStatus === 'listening' ? 'Analizando...' : 'Volver a detectar'}
                         </button>
                       </div>
                     </div>

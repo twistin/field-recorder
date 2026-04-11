@@ -23,7 +23,7 @@ export interface SoundscapeClassification {
   tags: string[];
   detectedAt: string;
   durationSeconds: number;
-  engine: 'local-passive-v1';
+  engine: 'local-passive-v1' | 'local-passive-v2' | 'yamnet-mediapipe-v1';
 }
 
 export interface SessionPhoto {
