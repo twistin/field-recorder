@@ -70,7 +70,7 @@ import type {
   SoundscapeClassification,
 } from './types/fieldSessions';
 
-type View = 'session' | 'point' | 'export';
+type View = 'home' | 'session' | 'point' | 'export';
 type DisplayMode = 'night' | 'sun';
 
 const DISPLAY_MODE_STORAGE_KEY = 'fieldnotes-display-mode';
@@ -633,8 +633,51 @@ function ViewButton({
   );
 }
 
+function WorkflowCard({
+  eyebrow,
+  title,
+  description,
+  status,
+  cta,
+  icon: Icon,
+  featured = false,
+  onClick,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  status: string;
+  cta: string;
+  icon: React.ComponentType<{ className?: string }>;
+  featured?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      type="button"
+      whileHover={{ y: -4 }}
+      whileTap={{ scale: 0.995 }}
+      onClick={onClick}
+      className={`workflow-card ${featured ? 'is-featured' : ''}`}
+    >
+      <span className="workflow-card__icon">
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="workflow-card__body">
+        <span className="eyebrow">{eyebrow}</span>
+        <span className="display-heading workflow-card__title">{title}</span>
+        <span className="module-copy text-sm">{description}</span>
+      </span>
+      <span className="workflow-card__footer">
+        <strong>{status}</strong>
+        <span className="workflow-card__cta">{cta}</span>
+      </span>
+    </motion.button>
+  );
+}
+
 export default function App() {
-  const [view, setView] = useState<View>('session');
+  const [view, setView] = useState<View>('home');
   const [sessionDraft, setSessionDraft] = useState<SessionDraft>(buildSessionDraft());
   const [pointDraft, setPointDraft] = useState<PointDraft>(buildPointDraft());
   const [draftPhotos, setDraftPhotos] = useState<DraftPhoto[]>([]);
@@ -2173,21 +2216,102 @@ export default function App() {
         ? 'Preparando almacenamiento'
         : 'Sólo memoria';
   const isSunMode = displayMode === 'sun';
-  const currentViewLabel = view === 'session' ? 'Dashboard' : view === 'point' ? 'Nuevo registro' : 'Registro completado';
+  const currentViewLabel =
+    view === 'home' ? 'Inicio' : view === 'session' ? 'Panel' : view === 'point' ? 'Captura' : 'Registro';
   const currentViewTitle =
-    view === 'session'
-      ? 'Panel principal de grabaciones'
-      : view === 'point'
-        ? activeSession
-          ? 'Registro activo con clima automática e IA'
-          : 'Activa una sesión antes de capturar'
-        : 'Visualización del registro completado';
+    view === 'home'
+      ? 'Hero de entrada y flujos separados'
+      : view === 'session'
+        ? 'Panel de jornadas y actividad'
+        : view === 'point'
+          ? activeSession
+            ? 'Captura de contexto en una pantalla dedicada'
+            : 'Prepara una jornada antes de capturar'
+          : 'Ficha final del registro y exportación';
   const currentViewDescription =
-    view === 'session'
-      ? 'Mapa de actividad, búsqueda rápida y últimas entradas para moverte por el trabajo de campo sin fricción.'
-      : view === 'point'
-        ? 'Data-first, audio-context: la pantalla captura automáticamente fecha, hora, GPS y clima; después añades fotos y clasificación sonora.'
-        : 'Revisa el registro final con su galería, metadatos estructurados, etiquetas IA y exportación directa.';
+    view === 'home'
+      ? 'Primero eliges qué quieres hacer. Después entras en un espacio limpio para panel, captura o revisión final.'
+      : view === 'session'
+        ? 'Sesiones, mapa y búsqueda viven aquí para que la preparación y el seguimiento no compitan con la captura.'
+        : view === 'point'
+          ? 'La captura queda aislada: GPS, clima, notas, fotos e IA en el mismo flujo, sin mezclar archivo ni navegación pesada.'
+          : 'El archivo final reúne galería, metadatos y exportación en una vista separada del trabajo operativo.';
+  const captureEntryLabel = activeSession ? 'Ir a captura' : 'Preparar jornada';
+  const latestRecordLabel = recordPoint ? recordPoint.placeName : 'Sin ficha final todavía';
+  const latestRecordSummary = recordPoint
+    ? `${formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm")} · ${resolveProjectName(recordSession?.projectName ?? '')}`
+    : 'El archivo final aparecerá en cuanto guardes el primer punto.';
+  const navigationItems: Array<{
+    view: View;
+    label: string;
+    description: string;
+    icon: React.ComponentType<{ className?: string }>;
+    onClick: () => void;
+  }> = [
+    {
+      view: 'home',
+      label: 'Inicio',
+      description: 'Hero y accesos',
+      icon: House,
+      onClick: () => setView('home'),
+    },
+    {
+      view: 'session',
+      label: 'Panel',
+      description: 'Sesiones, mapa y búsqueda',
+      icon: MapPinned,
+      onClick: () => setView('session'),
+    },
+    {
+      view: 'point',
+      label: 'Captura',
+      description: activeSession ? 'Registro activo con GPS e IA' : 'Primero crea una jornada',
+      icon: Mic,
+      onClick: () => setView(activeSession ? 'point' : 'session'),
+    },
+    {
+      view: 'export',
+      label: 'Registro',
+      description: 'Ficha final y exportación',
+      icon: History,
+      onClick: () => setView('export'),
+    },
+  ];
+  const homeWorkflowCards = [
+    {
+      eyebrow: 'Panel',
+      title: 'Preparar la jornada',
+      description:
+        'Configura sesión, revisa actividad y busca lugares o proyectos antes de salir al terreno.',
+      status: activeSession ? `${activeSession.points.length} registros en ${activeSession.name}` : 'Sin jornada activa',
+      cta: activeSession ? 'Abrir panel' : 'Crear jornada',
+      icon: MapPinned,
+      featured: !activeSession,
+      onClick: () => setView('session'),
+    },
+    {
+      eyebrow: 'Captura',
+      title: 'Registrar contexto',
+      description:
+        'Una pantalla enfocada en GPS, clima, fotos, notas y escucha IA para no tomar decisiones entre módulos.',
+      status: activeSession ? `${gpsStatusLabel} · ${activeSession.name}` : 'Necesita una jornada activa',
+      cta: captureEntryLabel,
+      icon: Mic,
+      featured: Boolean(activeSession),
+      onClick: () => setView(activeSession ? 'point' : 'session'),
+    },
+    {
+      eyebrow: 'Registro',
+      title: 'Revisar y exportar',
+      description:
+        'Consulta la ficha final, abre galería, inspecciona metadatos y saca CSV o KML cuando el punto ya existe.',
+      status: latestRecordLabel,
+      cta: recordPoint ? 'Abrir ficha' : 'Ir al archivo',
+      icon: History,
+      featured: view === 'export',
+      onClick: () => setView('export'),
+    },
+  ];
   const currentLocationLabel = currentGps ? 'Ubicación actual' : 'Sin ubicación activa';
   const captureReadinessItems = [
     {
@@ -2673,34 +2797,23 @@ export default function App() {
         <aside className="fieldnotes-sidebar">
           <div className="panel brand-card">
             <p className="eyebrow eyebrow-inverse">FieldNotes AI</p>
-            <h1 className="display-heading brand-card__title">Data-first, Audio-context</h1>
+            <h1 className="display-heading brand-card__title">Menos ruido, más contexto.</h1>
             <p className="module-copy brand-card__copy">
-              Registro rápido de contexto de campo con GPS, clima automática, fotos y clasificación sonora local.
+              Portada hero separada y tres destinos claros: panel, captura y registro final.
             </p>
           </div>
 
           <nav className="sidebar-nav">
-            <ViewButton
-              active={view === 'session'}
-              label="Dashboard"
-              description="Mapa de actividad y registros recientes"
-              icon={House}
-              onClick={() => setView('session')}
-            />
-            <ViewButton
-              active={view === 'point'}
-              label="Nuevo registro"
-              description="Captura activa con clima e IA"
-              icon={Mic}
-              onClick={() => setView('point')}
-            />
-            <ViewButton
-              active={view === 'export'}
-              label="Registro"
-              description="Ficha final con exportación CSV/KML"
-              icon={History}
-              onClick={() => setView('export')}
-            />
+            {navigationItems.map((item) => (
+              <ViewButton
+                key={item.view}
+                active={view === item.view}
+                label={item.label}
+                description={item.description}
+                icon={item.icon}
+                onClick={item.onClick}
+              />
+            ))}
           </nav>
 
           <div className="panel sidebar-session-card">
@@ -2726,25 +2839,104 @@ export default function App() {
             onClick={() => setView(activeSession ? 'point' : 'session')}
             className="cta-launcher"
           >
-            <span>+ Nuevo registro</span>
-            <small>{activeSession ? 'Capturar contexto ahora' : 'Primero prepara una jornada'}</small>
+            <span>{activeSession ? '+ Ir a captura' : '+ Abrir panel'}</span>
+            <small>{activeSession ? 'Capturar contexto ahora' : 'Crear o activar una jornada'}</small>
           </button>
         </aside>
 
         <main className="fieldnotes-main">
-          <motion.header
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="panel hero-panel"
-          >
-            <div className="hero-panel__copy">
-              <p className="eyebrow">{greetingLabel} · {currentViewLabel}</p>
-              <h2 className="display-heading text-4xl md:text-5xl">{currentViewTitle}</h2>
-              <p className="module-copy text-sm md:text-base">{currentViewDescription}</p>
-              <div className="hero-panel__controls">
+          {view === 'home' ? (
+            <motion.header
+              key="home-hero"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="panel panel-primary home-hero-panel"
+            >
+              <div className="home-hero-panel__copy">
+                <p className="eyebrow eyebrow-inverse">{greetingLabel} · Hero</p>
+                <h2 className="display-heading text-4xl md:text-6xl panel-primary-title">
+                  Menos carga visual, más decisiones claras de campo.
+                </h2>
+                <p className="module-copy text-sm md:text-base">
+                  La portada ya no mezcla panel, captura y archivo. Primero eliges el flujo; después entras en una
+                  pantalla dedicada para esa tarea.
+                </p>
+                <div className="hero-panel__controls">
+                  <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
+                    {isOnline ? 'En línea' : 'Offline'}
+                  </span>
+                  <span className="telemetry-chip">{storageSummary}</span>
+                  <button
+                    type="button"
+                    onClick={() => setView('session')}
+                    className="ui-button ui-button-secondary"
+                  >
+                    Abrir panel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView(activeSession ? 'point' : 'session')}
+                    className="ui-button ui-button-primary"
+                  >
+                    {captureEntryLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
+                    className={`mode-toggle ${isSunMode ? 'is-sun' : ''}`}
+                  >
+                    <span className="mode-toggle__icon">
+                      {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
+                    </span>
+                    {isSunMode ? 'Modo noche' : 'Modo sol'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="home-hero-panel__metrics">
+                <div className="soft-card">
+                  <p className="eyebrow eyebrow-inverse">Hora</p>
+                  <p className="summary-value panel-primary-title">{captureTimeLabel}</p>
+                  <p className="module-copy text-sm">{captureDateLabel}</p>
+                </div>
+                <div className="soft-card">
+                  <p className="eyebrow eyebrow-inverse">GPS</p>
+                  <p className="summary-value panel-primary-title">{currentGps ? gpsAccuracyLabel : 'Sin señal'}</p>
+                  <p className="module-copy text-sm">{gpsLabel}</p>
+                </div>
+                <div className="soft-card">
+                  <p className="eyebrow eyebrow-inverse">Sesión</p>
+                  <p className="summary-value panel-primary-title">{activeSession ? 'Activa' : 'Pendiente'}</p>
+                  <p className="module-copy text-sm">{activeSession ? activeSession.name : 'Abre el panel para crearla.'}</p>
+                </div>
+                <div className="soft-card">
+                  <p className="eyebrow eyebrow-inverse">Pendientes</p>
+                  <p className="summary-value panel-primary-title">{pendingEnrichmentCount + pendingCloudSessionCount}</p>
+                  <p className="module-copy text-sm">Metadatos, nube o catálogo por resolver.</p>
+                </div>
+              </div>
+            </motion.header>
+          ) : (
+            <motion.header
+              key={`section-${view}`}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="panel section-header"
+            >
+              <div className="section-header__copy">
+                <p className="eyebrow">{currentViewLabel}</p>
+                <h2 className="display-heading text-3xl md:text-5xl">{currentViewTitle}</h2>
+                <p className="module-copy text-sm md:text-base">{currentViewDescription}</p>
+              </div>
+
+              <div className="section-header__actions">
+                <button type="button" onClick={() => setView('home')} className="ui-button ui-button-secondary">
+                  Inicio
+                </button>
                 <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
                   {isOnline ? 'En línea' : 'Offline'}
                 </span>
+                <span className="telemetry-chip">{storageSummary}</span>
                 <button
                   type="button"
                   onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
@@ -2756,33 +2948,8 @@ export default function App() {
                   {isSunMode ? 'Modo noche' : 'Modo sol'}
                 </button>
               </div>
-            </div>
-
-            <div className="hero-panel__metrics">
-              <div className="soft-card">
-                <p className="eyebrow">Hora</p>
-                <p className="summary-value">{captureTimeLabel}</p>
-                <p className="module-copy text-sm">{captureDateLabel}</p>
-              </div>
-              <div className="soft-card">
-                <p className="eyebrow">GPS</p>
-                <p className="summary-value">{currentGps ? gpsAccuracyLabel : 'Sin señal'}</p>
-                <p className="module-copy text-sm">{gpsLabel}</p>
-              </div>
-              <div className="soft-card">
-                <p className="eyebrow">Clima</p>
-                <p className="summary-value">{liveClimateLabel}</p>
-                <p className="module-copy text-sm">{weatherSnapshot?.details || weatherStatusLabel}</p>
-              </div>
-              <div className="soft-card">
-                <p className="eyebrow">Sesión</p>
-                <p className="summary-value">{activeSession ? 'Activa' : 'Pendiente'}</p>
-                <p className="module-copy text-sm">
-                  {activeSession ? activeSession.name : 'Prepara una salida en el dashboard.'}
-                </p>
-              </div>
-            </div>
-          </motion.header>
+            </motion.header>
+          )}
 
           <div className="status-stack">
             <div className="panel status-banner">
@@ -2822,36 +2989,86 @@ export default function App() {
           </div>
 
           <nav className="menu-shell mobile-dock">
-            <ViewButton
-              active={view === 'session'}
-              label="Dashboard"
-              description="Mapa de actividad y registros recientes"
-              icon={House}
-              compact
-              onClick={() => setView('session')}
-            />
-            <ViewButton
-              active={view === 'point'}
-              label="Nuevo"
-              description="Captura activa con clima e IA"
-              icon={Mic}
-              compact
-              onClick={() => setView('point')}
-            />
-            <ViewButton
-              active={view === 'export'}
-              label="Registro"
-              description="Ficha final con exportación CSV/KML"
-              icon={History}
-              compact
-              onClick={() => setView('export')}
-            />
+            {navigationItems.map((item) => (
+              <ViewButton
+                key={item.view}
+                active={view === item.view}
+                label={item.label}
+                description={item.description}
+                icon={item.icon}
+                compact
+                onClick={item.onClick}
+              />
+            ))}
           </nav>
 
           <AnimatePresence mode="wait">
+            {view === 'home' ? (
+              <motion.section
+                key="home"
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -18 }}
+                className="layout-home"
+              >
+                <div className="home-workflow-grid">
+                  {homeWorkflowCards.map((card) => (
+                    <WorkflowCard
+                      key={card.eyebrow}
+                      eyebrow={card.eyebrow}
+                      title={card.title}
+                      description={card.description}
+                      status={card.status}
+                      cta={card.cta}
+                      icon={card.icon}
+                      featured={card.featured}
+                      onClick={card.onClick}
+                    />
+                  ))}
+                </div>
+
+                <div className="panel home-context-panel">
+                  <div className="panel-heading">
+                    <p className="eyebrow">Pulso rápido</p>
+                    <h3 className="display-heading text-3xl">Estado sin entrar en cada módulo</h3>
+                    <p className="module-copy text-sm">
+                      La portada sólo orienta: qué jornada está viva, cuál fue la última ficha y cuánto archivo tienes acumulado.
+                    </p>
+                  </div>
+
+                  <div className="home-context-grid">
+                    <div className="soft-card">
+                      <p className="eyebrow">Jornada actual</p>
+                      <p className="summary-value">{activeSession ? activeSession.name : 'Pendiente'}</p>
+                      <p className="module-copy text-sm">
+                        {activeSession ? activeSessionMeta : 'Abre el panel para crear o reactivar una salida.'}
+                      </p>
+                    </div>
+                    <div className="soft-card">
+                      <p className="eyebrow">Último registro</p>
+                      <p className="summary-value">{latestRecordLabel}</p>
+                      <p className="module-copy text-sm">{latestRecordSummary}</p>
+                    </div>
+                    <div className="soft-card">
+                      <p className="eyebrow">Actividad</p>
+                      <p className="summary-value">{allRecords.length}</p>
+                      <p className="module-copy text-sm">
+                        {sessions.length} sesiones · {projectCount} proyectos · {syncedCloudSessionCount} respaldos en nube.
+                      </p>
+                    </div>
+                    <div className="soft-card">
+                      <p className="eyebrow">Ambiente</p>
+                      <p className="summary-value">{liveClimateLabel}</p>
+                      <p className="module-copy text-sm">{weatherSnapshot?.details || weatherStatusLabel}</p>
+                    </div>
+                  </div>
+                </div>
+              </motion.section>
+            ) : null}
+
             {view === 'session' ? (
               <motion.section
-                key="dashboard"
+                key="panel"
                 initial={{ opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -18 }}
@@ -3115,10 +3332,10 @@ export default function App() {
                   <div className="panel empty-state-card">
                     <p className="display-heading text-3xl">No hay una jornada activa</p>
                     <p className="module-copy text-sm">
-                      Abre el dashboard, crea una salida y vuelve aquí para lanzar registros con GPS, clima automática y clasificación sonora.
+                      Abre el panel, crea una salida y vuelve aquí para lanzar registros con GPS, clima automática y clasificación sonora.
                     </p>
                     <button type="button" onClick={() => setView('session')} className="ui-button ui-button-primary">
-                      Volver al dashboard
+                      Volver al panel
                     </button>
                   </div>
                 ) : (
@@ -3599,7 +3816,7 @@ export default function App() {
                   <div className="panel empty-state-card">
                     <p className="display-heading text-3xl">Todavía no hay registros completos</p>
                     <p className="module-copy text-sm">
-                      Crea o selecciona un registro desde el dashboard o desde la captura activa para revisar su ficha final.
+                      Crea o selecciona un registro desde el panel o desde la captura activa para revisar su ficha final.
                     </p>
                   </div>
                 ) : (
