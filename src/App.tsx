@@ -54,9 +54,12 @@ import {
   reconcileSessionAudioTakes,
 } from './lib/zoomImport';
 import { syncSessionToCloud } from './lib/cloudSync';
+import type { CatalogSessionPayload, CatalogSessionSummary } from './lib/catalogPayload';
 import {
   CATALOG_API_UNAVAILABLE_MESSAGE,
+  fetchCatalogSessionRemote,
   isCatalogApiUnavailableError,
+  listCatalogSessionsRemote,
   syncSessionToCatalog,
 } from './lib/catalogSync';
 import type {
@@ -74,6 +77,8 @@ type View = 'home' | 'session' | 'point' | 'export';
 type DisplayMode = 'night' | 'sun';
 
 const DISPLAY_MODE_STORAGE_KEY = 'fieldnotes-display-mode';
+const REMOTE_CATALOG_REFRESH_INTERVAL_MS = 45_000;
+const REMOTE_CATALOG_REFRESH_MIN_GAP_MS = 12_000;
 
 interface SessionDraft {
   name: string;
@@ -106,7 +111,7 @@ interface DraftPhoto {
 }
 
 interface UiSessionPhoto extends SessionPhoto {
-  previewUrl: string;
+  previewUrl: string | null;
 }
 
 interface UiSessionPoint extends Omit<SessionPoint, 'photos'> {
@@ -338,6 +343,103 @@ function normalizeFieldSession(session: FieldSession): FieldSession {
   };
 }
 
+function buildPhotoPreviewUrl(photo: Pick<SessionPhoto, 'blob' | 'cloudUrl'>): string | null {
+  if (photo.blob.size > 0) {
+    return URL.createObjectURL(photo.blob);
+  }
+
+  return photo.cloudUrl ?? null;
+}
+
+function buildPlaceholderPhotoBlob(mimeType: string): Blob {
+  return new Blob([], { type: mimeType || 'application/octet-stream' });
+}
+
+function shouldReusePhotoPreview(existingPhoto: UiSessionPhoto, nextPhoto: SessionPhoto): boolean {
+  if (!existingPhoto.previewUrl) {
+    return false;
+  }
+
+  if (existingPhoto.blob.size > 0) {
+    return true;
+  }
+
+  return Boolean(existingPhoto.cloudUrl && existingPhoto.cloudUrl === nextPhoto.cloudUrl);
+}
+
+function buildCatalogSessionForUi(
+  session: CatalogSessionPayload,
+  summary: CatalogSessionSummary,
+  existingSession?: UiFieldSession | null,
+): UiFieldSession {
+  const existingPoints = new Map((existingSession?.points ?? []).map((point) => [point.id, point]));
+
+  const normalizedSession = normalizeFieldSession({
+    ...session,
+    catalogSyncStatus: 'synced',
+    catalogSyncedAt: summary.updatedAt,
+    catalogError: null,
+    points: session.points.map((point) => {
+      const existingPoint = existingPoints.get(point.id);
+      const existingPhotos = new Map((existingPoint?.photos ?? []).map((photo) => [photo.id, photo]));
+
+      return {
+        ...point,
+        photos: point.photos.map((photo) => {
+          const existingPhoto = existingPhotos.get(photo.id);
+
+          return {
+            ...photo,
+            blob:
+              existingPhoto?.blob && existingPhoto.blob.size > 0
+                ? existingPhoto.blob
+                : buildPlaceholderPhotoBlob(photo.mimeType),
+          };
+        }),
+      };
+    }),
+  });
+
+  return {
+    ...normalizedSession,
+    points: normalizedSession.points.map((point) => {
+      const existingPoint = existingPoints.get(point.id);
+      const existingPhotos = new Map((existingPoint?.photos ?? []).map((photo) => [photo.id, photo]));
+
+      return {
+        ...point,
+        photos: point.photos.map((photo) => {
+          const existingPhoto = existingPhotos.get(photo.id);
+
+          return {
+            ...photo,
+            previewUrl:
+              existingPhoto && shouldReusePhotoPreview(existingPhoto, photo)
+                ? existingPhoto.previewUrl
+                : buildPhotoPreviewUrl(photo),
+          };
+        }),
+      };
+    }),
+  };
+}
+
+function canReplaceSessionFromRemoteCatalog(session: UiFieldSession): boolean {
+  if (
+    session.catalogSyncStatus === 'pending' ||
+    session.catalogSyncStatus === 'syncing' ||
+    session.catalogSyncStatus === 'error'
+  ) {
+    return false;
+  }
+
+  if (session.catalogSyncStatus === 'local-only' && !session.catalogSyncedAt) {
+    return false;
+  }
+
+  return true;
+}
+
 function hydrateSession(session: FieldSession): UiFieldSession {
   const normalizedSession = normalizeFieldSession(session);
   return {
@@ -346,7 +448,7 @@ function hydrateSession(session: FieldSession): UiFieldSession {
       ...point,
       photos: point.photos.map((photo) => ({
         ...photo,
-        previewUrl: URL.createObjectURL(photo.blob),
+        previewUrl: buildPhotoPreviewUrl(photo),
       })),
     })),
   };
@@ -402,7 +504,9 @@ function mergeCloudSyncedSessionIntoUi(
 function revokeSessionUrls(session: UiFieldSession) {
   session.points.forEach((point) => {
     point.photos.forEach((photo) => {
-      URL.revokeObjectURL(photo.previewUrl);
+      if (photo.previewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(photo.previewUrl);
+      }
     });
   });
 }
@@ -792,7 +896,9 @@ export default function App() {
   const isSyncingPendingMetadataRef = useRef(false);
   const isSyncingCloudSessionIdRef = useRef<string | null>(null);
   const isSyncingCatalogSessionIdRef = useRef<string | null>(null);
+  const isRefreshingRemoteCatalogRef = useRef(false);
   const locationAbortRef = useRef<AbortController | null>(null);
+  const lastRemoteCatalogRefreshAtRef = useRef(0);
   const lastLocationKeyRef = useRef<string | null>(null);
   const lastAutomaticPlaceValueRef = useRef<string>('');
   const weatherAbortRef = useRef<AbortController | null>(null);
@@ -1962,6 +2068,84 @@ export default function App() {
     }
   }
 
+  async function refreshSessionsFromRemoteCatalog(options?: { force?: boolean }) {
+    if (!isOnline || storageMode !== 'ready' || catalogApiStatus === 'unavailable') {
+      return;
+    }
+
+    const nowMs = Date.now();
+    if (!options?.force && nowMs - lastRemoteCatalogRefreshAtRef.current < REMOTE_CATALOG_REFRESH_MIN_GAP_MS) {
+      return;
+    }
+
+    if (isRefreshingRemoteCatalogRef.current) {
+      return;
+    }
+
+    isRefreshingRemoteCatalogRef.current = true;
+    lastRemoteCatalogRefreshAtRef.current = nowMs;
+
+    try {
+      const summaries = await listCatalogSessionsRemote();
+      setCatalogApiStatus('available');
+
+      const summariesToImport = summaries.filter((summary) => {
+        const localSession = sessionsRef.current.find((entry) => entry.id === summary.id);
+        if (!localSession) {
+          return true;
+        }
+
+        if (!canReplaceSessionFromRemoteCatalog(localSession)) {
+          return false;
+        }
+
+        const localCatalogUpdatedAt = localSession.catalogSyncedAt
+          ? new Date(localSession.catalogSyncedAt).getTime()
+          : 0;
+        const remoteCatalogUpdatedAt = new Date(summary.updatedAt).getTime();
+
+        return remoteCatalogUpdatedAt > localCatalogUpdatedAt;
+      });
+
+      if (summariesToImport.length === 0) {
+        return;
+      }
+
+      const importedNames: string[] = [];
+
+      for (const summary of summariesToImport) {
+        const currentSession = sessionsRef.current.find((entry) => entry.id === summary.id) ?? null;
+        if (currentSession && !canReplaceSessionFromRemoteCatalog(currentSession)) {
+          continue;
+        }
+
+        const remoteSession = await fetchCatalogSessionRemote(summary.id);
+        const nextSession = buildCatalogSessionForUi(remoteSession, summary, currentSession);
+        await persistSession(nextSession, { markCloudPending: false, markCatalogPending: false });
+        importedNames.push(nextSession.name);
+
+        if (!sessionsRef.current.some((entry) => entry.status === 'active') && nextSession.status === 'active') {
+          setActiveSessionId(nextSession.id);
+        }
+      }
+
+      if (importedNames.length === 1) {
+        setStatusNote(`Sesión "${importedNames[0]}" actualizada desde el catálogo remoto.`);
+      } else if (importedNames.length > 1) {
+        setStatusNote(`${importedNames.length} sesiones actualizadas desde el catálogo remoto.`);
+      }
+    } catch (error) {
+      console.error('Remote catalog refresh failed:', error);
+
+      if (isCatalogApiUnavailableError(error)) {
+        setCatalogApiStatus('unavailable');
+        return;
+      }
+    } finally {
+      isRefreshingRemoteCatalogRef.current = false;
+    }
+  }
+
   async function enrichPointForArchive(point: UiSessionPoint): Promise<{ point: UiSessionPoint; changed: boolean }> {
     let changed = false;
     let nextPoint = point;
@@ -2450,6 +2634,53 @@ export default function App() {
       window.clearTimeout(timerId);
     };
   }, [autoSyncCatalogSessionCount, isCatalogApiUnavailable, isOnline, storageMode, syncedCloudSessionCount]);
+
+  useEffect(() => {
+    if (!isOnline || storageMode !== 'ready' || catalogApiStatus === 'unavailable') {
+      return;
+    }
+
+    void refreshSessionsFromRemoteCatalog({ force: catalogApiStatus === 'unknown' });
+  }, [catalogApiStatus, isOnline, storageMode]);
+
+  useEffect(() => {
+    if (!isOnline || storageMode !== 'ready' || catalogApiStatus === 'unavailable') {
+      return;
+    }
+
+    const handleWindowFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+      }
+
+      void refreshSessionsFromRemoteCatalog();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+
+      void refreshSessionsFromRemoteCatalog();
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+
+      void refreshSessionsFromRemoteCatalog();
+    }, REMOTE_CATALOG_REFRESH_INTERVAL_MS);
+
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.clearInterval(intervalId);
+    };
+  }, [catalogApiStatus, isOnline, storageMode]);
 
   function renderArchiveSessionCard(session: UiFieldSession) {
     return (
@@ -3760,7 +3991,7 @@ export default function App() {
                                   zoomTakeReference: point.zoomTakeReference,
                                   microphoneSetup: point.microphoneSetup,
                                   tags: point.tags,
-                                  photoPreviewUrl: point.photos[0]?.previewUrl,
+                                  photoPreviewUrl: point.photos[0]?.previewUrl ?? undefined,
                                 }}
                                 active={point.id === selectedPoint?.id}
                                 onSelect={() => {
@@ -3892,11 +4123,18 @@ export default function App() {
                         <h3 className="display-heading text-3xl">Galería del lugar</h3>
                       </div>
 
-                      {recordPoint.photos.length > 0 ? (
+                      {recordPoint.photos.some((photo) => photo.previewUrl) ? (
                         <div className="record-gallery-grid">
-                          {recordPoint.photos.map((photo) => (
-                            <img key={photo.id} src={photo.previewUrl} alt={photo.fileName} className="record-gallery-grid__image" />
-                          ))}
+                          {recordPoint.photos.map((photo) =>
+                            photo.previewUrl ? (
+                              <img
+                                key={photo.id}
+                                src={photo.previewUrl}
+                                alt={photo.fileName}
+                                className="record-gallery-grid__image"
+                              />
+                            ) : null,
+                          )}
                         </div>
                       ) : (
                         <p className="module-copy text-sm">Este registro no tiene imágenes asociadas.</p>
