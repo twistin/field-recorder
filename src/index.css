@@ -393,17 +393,35 @@ audio {
 }
 
 .home-topbar__controls {
-  justify-content: space-between;
+  display: grid;
   gap: 1rem;
+  align-content: start;
 }
 
 .home-topbar__actions {
-  flex: 1 1 28rem;
-  justify-content: flex-start;
+  display: grid;
+  gap: 0.75rem;
 }
 
 .home-topbar__actions .ui-button {
-  flex: 1 1 12rem;
+  width: 100%;
+}
+
+.home-summary-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.home-primary-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.home-session-overview {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
 }
 
 .hero-emblem,
@@ -1954,7 +1972,9 @@ select:focus-visible {
   .home-library-grid,
   .record-header-card__meta,
   .dashboard-browser-grid,
-  .archive-media-grid {
+  .archive-media-grid,
+  .home-summary-grid,
+  .home-primary-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2014,8 +2034,8 @@ select:focus-visible {
 
 @media (min-width: 760px) {
   .home-topbar {
-    grid-template-columns: minmax(0, 0.9fr) minmax(280px, 0.8fr);
-    align-items: center;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
   }
 
   .home-topbar__controls {
@@ -2036,6 +2056,10 @@ select:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .home-primary-grid {
+    grid-template-columns: 1fr;
+  }
+
   .home-library-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
@@ -2053,14 +2077,17 @@ select:focus-visible {
 
 @media (min-width: 980px) {
   .home-topbar {
-    grid-template-columns: minmax(0, 0.82fr) minmax(300px, 0.88fr) auto;
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr) minmax(280px, 0.72fr);
     align-items: stretch;
   }
 
   .home-topbar__controls {
     grid-column: auto;
-    align-content: space-between;
-    justify-content: flex-end;
+    align-content: start;
+  }
+
+  .home-primary-grid {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   }
 
   .layout-dashboard {
@@ -2115,6 +2142,11 @@ select:focus-visible {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .home-primary-grid {
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+    align-items: start;
+  }
+
   .home-library-grid {
     grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
     align-items: start;
@@ -2150,6 +2182,10 @@ select:focus-visible {
 }
 
 @media (min-width: 1440px) {
+  .home-primary-grid {
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  }
+
   .layout-dashboard {
     grid-template-columns: minmax(0, 0.88fr) minmax(0, 0.88fr) minmax(0, 1.04fr);
     align-items: start;
