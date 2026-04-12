@@ -1002,12 +1002,20 @@ audio {
 .home-library-card {
   display: grid;
   gap: 1rem;
+  align-content: start;
+}
+
+.home-library-stack {
+  display: grid;
+  gap: 0.8rem;
+  align-content: start;
 }
 
 .home-browser-list,
 .home-audio-list {
   display: grid;
   gap: 0.7rem;
+  align-content: start;
 }
 
 .library-entry-card {
@@ -1024,6 +1032,7 @@ audio {
     transform 160ms ease,
     border-color 160ms ease,
     background 160ms ease;
+  align-self: start;
 }
 
 .library-entry-card:hover {
@@ -1924,6 +1933,7 @@ select:focus-visible {
 
   .home-library-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
   }
 
   .capture-readiness-grid,
@@ -2004,7 +2014,8 @@ select:focus-visible {
   }
 
   .home-library-grid {
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 1.2fr);
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    align-items: start;
   }
 
   .log-summary-card,

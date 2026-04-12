@@ -1,6 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { SessionAudioTake, SessionPoint } from '../types/fieldSessions';
 
+const SUPPORTED_AUDIO_EXTENSIONS = ['.wav', '.bwf', '.mp3', '.m4a', '.flac'];
+
+export function isSupportedImportedAudioFileName(fileName: string): boolean {
+  const lowerName = fileName.toLowerCase();
+  return SUPPORTED_AUDIO_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
+}
+
 function normalizeReference(value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
@@ -195,7 +202,7 @@ export async function buildImportedAudioTakes(
 ): Promise<SessionAudioTake[]> {
   return await Promise.all(
     files
-      .filter((file) => file.size > 0)
+      .filter((file) => file.size > 0 && isSupportedImportedAudioFileName(file.name))
       .map(async (file) => {
         const technicalMetadata = await readAudioFileMetadata(file);
         const inferredRecordedAt = new Date(file.lastModified || Date.now()).toISOString();

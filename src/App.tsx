@@ -50,6 +50,7 @@ import { fetchAutomaticWeather } from './lib/weather';
 import {
   autoMatchAudioTake,
   buildImportedAudioTakes,
+  isSupportedImportedAudioFileName,
   mergeSessionAudioTakes,
   reconcileSessionAudioTakes,
 } from './lib/zoomImport';
@@ -327,7 +328,9 @@ function prepareSessionForLocalMutation(
 function normalizeFieldSession(session: FieldSession): FieldSession {
   return {
     ...session,
-    audioTakes: (session.audioTakes ?? []).map(normalizeAudioTake),
+    audioTakes: (session.audioTakes ?? [])
+      .filter((take) => isSupportedImportedAudioFileName(take.fileName))
+      .map(normalizeAudioTake),
     points: (session.points ?? []).map((point) => ({
       ...point,
       soundscapeClassification: point.soundscapeClassification ?? null,
@@ -2328,6 +2331,7 @@ export default function App() {
 
   async function handleZoomImportInput(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []) as File[];
+    const audioCandidateCount = files.filter((file) => isSupportedImportedAudioFileName(file.name)).length;
     const sessionId = zoomImportTargetSessionId;
     event.target.value = '';
 
@@ -2347,6 +2351,11 @@ export default function App() {
     setAppError(null);
 
     try {
+      if (audioCandidateCount === 0) {
+        setAppError('No encontré archivos de audio compatibles en esa carpeta de Zoom H6.');
+        return;
+      }
+
       const importedTakes = await buildImportedAudioTakes(files, session.points);
       const nextAudioTakes = reconcileSessionAudioTakes(
         session.points,
@@ -2361,8 +2370,9 @@ export default function App() {
 
       const linkedCount = importedTakes.filter((take) => take.associatedPointId).length;
       const unmatchedCount = importedTakes.length - linkedCount;
+      const ignoredCount = files.length - audioCandidateCount;
       setStatusNote(
-        `Importadas ${importedTakes.length} tomas de Zoom H6. ${linkedCount} asociadas, ${unmatchedCount} pendientes.`,
+        `Importadas ${importedTakes.length} tomas de Zoom H6. ${linkedCount} asociadas, ${unmatchedCount} pendientes.${ignoredCount > 0 ? ` ${ignoredCount} archivos auxiliares ignorados.` : ''}`,
       );
       setView('export');
     } catch (error) {
@@ -3401,74 +3411,76 @@ export default function App() {
                 </div>
 
                 <div className="home-library-grid">
-                  <div className="panel home-library-card">
-                    <div className="panel-heading">
-                      <p className="eyebrow">Proyectos</p>
-                      <h3 className="display-heading text-3xl">Abrir trabajo existente</h3>
-                      <p className="module-copy text-sm">
-                        Los proyectos recientes quedan visibles aquí con acceso directo a su última sesión.
-                      </p>
+                  <div className="home-library-stack">
+                    <div className="panel home-library-card">
+                      <div className="panel-heading">
+                        <p className="eyebrow">Proyectos</p>
+                        <h3 className="display-heading text-3xl">Abrir trabajo existente</h3>
+                        <p className="module-copy text-sm">
+                          Los proyectos recientes quedan visibles aquí con acceso directo a su última sesión.
+                        </p>
+                      </div>
+
+                      {recentProjectGroups.length > 0 ? (
+                        <div className="home-browser-list">
+                          {recentProjectGroups.map((group) => (
+                            <button
+                              key={group.key}
+                              type="button"
+                              onClick={() => openProjectArchiveFromHome(group.key)}
+                              className="library-entry-card"
+                            >
+                              <span className="library-entry-card__copy">
+                                <span className="library-entry-card__eyebrow">Proyecto</span>
+                                <strong className="library-entry-card__title">{group.name}</strong>
+                                <span className="library-entry-card__meta">
+                                  {group.sessionCount} sesiones · {group.pointCount} registros · {group.audioTakeCount} tomas H6
+                                </span>
+                              </span>
+                              <span className="library-entry-card__cta">Abrir</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="module-copy text-sm">Todavía no hay proyectos archivados.</p>
+                      )}
                     </div>
 
-                    {recentProjectGroups.length > 0 ? (
-                      <div className="home-browser-list">
-                        {recentProjectGroups.map((group) => (
-                          <button
-                            key={group.key}
-                            type="button"
-                            onClick={() => openProjectArchiveFromHome(group.key)}
-                            className="library-entry-card"
-                          >
-                            <span className="library-entry-card__copy">
-                              <span className="library-entry-card__eyebrow">Proyecto</span>
-                              <strong className="library-entry-card__title">{group.name}</strong>
-                              <span className="library-entry-card__meta">
-                                {group.sessionCount} sesiones · {group.pointCount} registros · {group.audioTakeCount} tomas H6
-                              </span>
-                            </span>
-                            <span className="library-entry-card__cta">Abrir</span>
-                          </button>
-                        ))}
+                    <div className="panel home-library-card">
+                      <div className="panel-heading">
+                        <p className="eyebrow">Sesiones</p>
+                        <h3 className="display-heading text-3xl">Sesiones recientes</h3>
+                        <p className="module-copy text-sm">
+                          Cada sesión abre directamente su archivo para revisar puntos, fotos y tomas.
+                        </p>
                       </div>
-                    ) : (
-                      <p className="module-copy text-sm">Todavía no hay proyectos archivados.</p>
-                    )}
-                  </div>
 
-                  <div className="panel home-library-card">
-                    <div className="panel-heading">
-                      <p className="eyebrow">Sesiones</p>
-                      <h3 className="display-heading text-3xl">Sesiones recientes</h3>
-                      <p className="module-copy text-sm">
-                        Cada sesión abre directamente su archivo para revisar puntos, fotos y tomas.
-                      </p>
+                      {recentSessions.length > 0 ? (
+                        <div className="home-browser-list">
+                          {recentSessions.map((session) => (
+                            <button
+                              key={session.id}
+                              type="button"
+                              onClick={() => openSessionArchiveFromHome(session.id)}
+                              className="library-entry-card"
+                            >
+                              <span className="library-entry-card__copy">
+                                <span className="library-entry-card__eyebrow">
+                                  {session.status === 'active' ? 'Sesión activa' : 'Sesión cerrada'}
+                                </span>
+                                <strong className="library-entry-card__title">{session.name}</strong>
+                                <span className="library-entry-card__meta">
+                                  {resolveProjectName(session.projectName)} · {session.points.length} registros · {session.audioTakes.length} tomas H6
+                                </span>
+                              </span>
+                              <span className="library-entry-card__cta">Abrir archivo</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="module-copy text-sm">No hay sesiones guardadas todavía.</p>
+                      )}
                     </div>
-
-                    {recentSessions.length > 0 ? (
-                      <div className="home-browser-list">
-                        {recentSessions.map((session) => (
-                          <button
-                            key={session.id}
-                            type="button"
-                            onClick={() => openSessionArchiveFromHome(session.id)}
-                            className="library-entry-card"
-                          >
-                            <span className="library-entry-card__copy">
-                              <span className="library-entry-card__eyebrow">
-                                {session.status === 'active' ? 'Sesión activa' : 'Sesión cerrada'}
-                              </span>
-                              <strong className="library-entry-card__title">{session.name}</strong>
-                              <span className="library-entry-card__meta">
-                                {resolveProjectName(session.projectName)} · {session.points.length} registros · {session.audioTakes.length} tomas H6
-                              </span>
-                            </span>
-                            <span className="library-entry-card__cta">Abrir archivo</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="module-copy text-sm">No hay sesiones guardadas todavía.</p>
-                    )}
                   </div>
 
                   <div className="panel home-library-card home-library-card--media">
