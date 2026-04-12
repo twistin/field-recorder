@@ -48,7 +48,6 @@ import { reverseGeocodePlace } from './lib/locationLookup';
 import { captureSoundscapeClassification } from './lib/soundscapeClassification';
 import { fetchAutomaticWeather } from './lib/weather';
 import {
-  autoMatchAudioTake,
   buildImportedAudioTakes,
   isSupportedImportedAudioFileName,
   mergeSessionAudioTakes,
@@ -446,8 +445,10 @@ function canReplaceSessionFromRemoteCatalog(session: UiFieldSession): boolean {
 
 function hydrateSession(session: FieldSession): UiFieldSession {
   const normalizedSession = normalizeFieldSession(session);
+  const reconciledAudioTakes = reconcileSessionAudioTakes(normalizedSession.points, normalizedSession.audioTakes);
   return {
     ...normalizedSession,
+    audioTakes: reconciledAudioTakes,
     points: normalizedSession.points.map((point) => ({
       ...point,
       photos: point.photos.map((photo) => ({
@@ -2363,17 +2364,30 @@ export default function App() {
   }
 
   async function autoAssignAudioTake(sessionId: string, takeId: string) {
-    await updateSessionAudioTake(sessionId, takeId, (take, session) =>
-      autoMatchAudioTake(
-        {
-          ...take,
-          matchedBy: 'unmatched',
-          associatedPointId: null,
-          matchedPointDeltaMinutes: null,
-        },
-        session.points,
+    const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+    if (!session) {
+      return;
+    }
+
+    const nextAudioTakes = reconcileSessionAudioTakes(
+      session.points,
+      session.audioTakes.map((take) =>
+        take.id === takeId
+          ? {
+              ...take,
+              matchedBy: 'unmatched',
+              associatedPointId: null,
+              confidence: 'low',
+              matchedPointDeltaMinutes: null,
+            }
+          : take,
       ),
     );
+
+    await persistSession({
+      ...session,
+      audioTakes: nextAudioTakes,
+    });
   }
 
   function openZoomImportPicker(sessionId: string) {
@@ -3058,7 +3072,7 @@ export default function App() {
               <p className="eyebrow text-[color:var(--signal-strong)]">Índice de tomas Zoom H6</p>
               <p className="text-sm text-[color:var(--muted)]">
                 {session.audioTakes.filter((take) => take.associatedPointId).length} asociadas ·{' '}
-                {session.audioTakes.filter((take) => !take.associatedPointId).length} pendientes
+                {session.audioTakes.filter((take) => !take.associatedPointId).length} sin asociar
               </p>
             </div>
 
@@ -3069,10 +3083,12 @@ export default function App() {
                   take.matchedBy === 'reference'
                     ? 'Referencia'
                     : take.matchedBy === 'time'
-                      ? 'Tiempo'
+                      ? 'Hora'
+                      : take.matchedBy === 'sequence'
+                        ? 'Orden'
                       : take.matchedBy === 'manual'
                         ? 'Manual'
-                        : 'Pendiente';
+                        : 'Sin asociar';
 
                 return (
                   <details key={take.id} className="soft-card">
@@ -3088,11 +3104,13 @@ export default function App() {
                             ? `${linkedPoint.placeName} · ${
                                 take.matchedBy === 'reference'
                                   ? 'asociada por referencia'
+                                  : take.matchedBy === 'sequence'
+                                    ? 'asociada por orden de captura'
                                   : take.matchedBy === 'manual'
                                     ? 'asignación manual'
                                     : `a ${take.matchedPointDeltaMinutes ?? '?'} min del punto`
                               }`
-                            : 'Sin asociación todavía'}
+                            : 'No se pudo asociar automáticamente'}
                         </p>
                       </div>
 
@@ -4902,10 +4920,12 @@ export default function App() {
                                 take.matchedBy === 'reference'
                                   ? 'Referencia'
                                   : take.matchedBy === 'time'
-                                    ? 'Tiempo'
+                                    ? 'Hora'
+                                    : take.matchedBy === 'sequence'
+                                      ? 'Orden'
                                     : take.matchedBy === 'manual'
                                       ? 'Manual'
-                                      : 'Pendiente';
+                                      : 'Sin asociar';
 
                               return (
                                 <button

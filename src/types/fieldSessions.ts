@@ -36,7 +36,7 @@ export interface SessionPhoto {
   cloudSyncedAt?: string | null;
 }
 
-export type AudioTakeMatchMethod = 'reference' | 'time' | 'manual' | 'unmatched';
+export type AudioTakeMatchMethod = 'reference' | 'time' | 'sequence' | 'manual' | 'unmatched';
 export type AudioTakeMatchConfidence = 'high' | 'medium' | 'low';
 
 export interface SessionAudioTake {

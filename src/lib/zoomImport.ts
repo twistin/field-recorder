@@ -20,6 +20,22 @@ function getTakeIdentity(take: Pick<SessionAudioTake, 'relativePath' | 'fileName
   return [take.relativePath || take.fileName, take.sizeBytes, take.lastModified].join('::');
 }
 
+function compareIsoDateStrings(left: string, right: string): number {
+  return new Date(left).getTime() - new Date(right).getTime();
+}
+
+function compareTakesChronologically(
+  left: Pick<SessionAudioTake, 'inferredRecordedAt' | 'fileName'>,
+  right: Pick<SessionAudioTake, 'inferredRecordedAt' | 'fileName'>,
+): number {
+  const timeDelta = compareIsoDateStrings(left.inferredRecordedAt, right.inferredRecordedAt);
+  if (timeDelta !== 0) {
+    return timeDelta;
+  }
+
+  return left.fileName.localeCompare(right.fileName, undefined, { numeric: true, sensitivity: 'base' });
+}
+
 async function readAudioFileMetadata(file: File): Promise<{
   durationSeconds: number | null;
   sampleRateHz: number | null;
@@ -195,15 +211,67 @@ function matchTakeToPoint(
   };
 }
 
+function applySequenceFallback(
+  takes: SessionAudioTake[],
+  points: SessionPoint[],
+): SessionAudioTake[] {
+  const unmatchedTakes = [...takes]
+    .filter((take) => !take.associatedPointId || take.matchedBy === 'unmatched')
+    .sort(compareTakesChronologically);
+
+  if (unmatchedTakes.length === 0) {
+    return takes;
+  }
+
+  const usedPointIds = new Set(
+    takes
+      .filter((take) => take.associatedPointId)
+      .map((take) => take.associatedPointId)
+      .filter((pointId): pointId is string => Boolean(pointId)),
+  );
+  const availablePoints = [...points]
+    .filter((point) => !usedPointIds.has(point.id))
+    .sort((left, right) => compareIsoDateStrings(left.createdAt, right.createdAt));
+
+  // Conservative fallback: only pair by order when the remaining sequence is unambiguous.
+  if (availablePoints.length === 0 || availablePoints.length !== unmatchedTakes.length) {
+    return takes;
+  }
+
+  const sequenceMatches = new Map<
+    string,
+    Pick<SessionAudioTake, 'associatedPointId' | 'matchedBy' | 'confidence' | 'matchedPointDeltaMinutes'>
+  >();
+
+  unmatchedTakes.forEach((take, index) => {
+    const point = availablePoints[index];
+    const deltaMinutes = Math.round(
+      Math.abs(new Date(take.inferredRecordedAt).getTime() - new Date(point.createdAt).getTime()) / 60_000,
+    );
+
+    sequenceMatches.set(take.id, {
+      associatedPointId: point.id,
+      matchedBy: 'sequence',
+      confidence: deltaMinutes <= 15 ? 'medium' : 'low',
+      matchedPointDeltaMinutes: deltaMinutes,
+    });
+  });
+
+  return takes.map((take) => {
+    const sequenceMatch = sequenceMatches.get(take.id);
+    return sequenceMatch ? { ...take, ...sequenceMatch } : take;
+  });
+}
+
 export async function buildImportedAudioTakes(
   files: File[],
   points: SessionPoint[],
   importedAt = new Date().toISOString(),
 ): Promise<SessionAudioTake[]> {
-  return await Promise.all(
+  const importedTakes: SessionAudioTake[] = await Promise.all(
     files
       .filter((file) => file.size > 0 && isSupportedImportedAudioFileName(file.name))
-      .map(async (file) => {
+      .map(async (file): Promise<SessionAudioTake> => {
         const technicalMetadata = await readAudioFileMetadata(file);
         const inferredRecordedAt = new Date(file.lastModified || Date.now()).toISOString();
         const detectedReference = getFileStem(file.name);
@@ -238,6 +306,8 @@ export async function buildImportedAudioTakes(
         };
       }),
   );
+
+  return applySequenceFallback(importedTakes, points);
 }
 
 export function autoMatchAudioTake(
@@ -254,7 +324,7 @@ export function reconcileSessionAudioTakes(
   points: SessionPoint[],
   takes: SessionAudioTake[],
 ): SessionAudioTake[] {
-  return takes.map((take) => {
+  const reconciledTakes: SessionAudioTake[] = takes.map((take): SessionAudioTake => {
     if (take.matchedBy === 'manual' && take.associatedPointId) {
       const linkedPoint = points.find((point) => point.id === take.associatedPointId);
       if (linkedPoint) {
@@ -271,6 +341,8 @@ export function reconcileSessionAudioTakes(
 
     return autoMatchAudioTake(take, points);
   });
+
+  return applySequenceFallback(reconciledTakes, points);
 }
 
 export function mergeSessionAudioTakes(
