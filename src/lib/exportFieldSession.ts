@@ -238,8 +238,8 @@ function buildPointCsv(session: FieldSession, point: SessionPoint): string {
 
 function buildPointKml(session: FieldSession, point: SessionPoint): string {
   const descriptionParts = [
-    `<strong>Sesión:</strong> ${escapeXmlValue(session.name)}`,
-    `<strong>Proyecto:</strong> ${escapeXmlValue(session.projectName || 'Sin proyecto')}`,
+    `<strong>Salida:</strong> ${escapeXmlValue(session.name)}`,
+    `<strong>Trabajo:</strong> ${escapeXmlValue(session.projectName || 'Sin trabajo')}`,
     `<strong>Región:</strong> ${escapeXmlValue(session.region || 'Sin región')}`,
     `<strong>Clima:</strong> ${escapeXmlValue(point.observedWeather || 'Sin dato')}`,
     `<strong>IA sonora:</strong> ${escapeXmlValue(point.soundscapeClassification?.summary || 'Sin clasificar')}`,

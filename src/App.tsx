@@ -154,7 +154,7 @@ function formatDateTime(value: Date | string, pattern: string) {
 }
 
 function resolveProjectName(projectName: string): string {
-  return projectName.trim() || 'Sin proyecto';
+  return projectName.trim() || 'Sin trabajo';
 }
 
 function buildProjectKey(projectName: string): string {
@@ -164,7 +164,7 @@ function buildProjectKey(projectName: string): string {
     .replace(/[^\w\s-]/g, '')
     .trim()
     .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'sin-proyecto';
+    .replace(/^-+|-+$/g, '') || 'sin-trabajo';
 }
 
 function normalizeTags(value: string): string[] {
@@ -878,7 +878,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
   const [now, setNow] = useState(() => Date.now());
   const [storageMode, setStorageMode] = useState<'loading' | 'ready' | 'memory-only'>('loading');
-  const [statusNote, setStatusNote] = useState('Inicia una sesión y ve registrando puntos con GPS, clima, notas y fotos.');
+  const [statusNote, setStatusNote] = useState('Inicia una salida y ve registrando puntos con GPS, clima, notas y fotos.');
   const [appError, setAppError] = useState<string | null>(null);
   const [isExportingSessionId, setIsExportingSessionId] = useState<string | null>(null);
   const [isQuickCapturing, setIsQuickCapturing] = useState(false);
@@ -1084,7 +1084,7 @@ export default function App() {
 
         console.error('Loading sessions failed:', error);
         setStorageMode('memory-only');
-        setStatusNote('No se pudo abrir el archivo local. La sesión actual quedará sólo en memoria.');
+        setStatusNote('No se pudo abrir el archivo local. La salida actual quedará sólo en memoria.');
       }
     }
 
@@ -1407,7 +1407,7 @@ export default function App() {
     } catch (error) {
       console.error('Saving session failed:', error);
       setStorageMode('memory-only');
-      setStatusNote('Falló la escritura local. La sesión seguirá en memoria hasta recargar.');
+      setStatusNote('Falló la escritura local. La salida seguirá en memoria hasta recargar.');
     }
   }
 
@@ -1703,7 +1703,7 @@ export default function App() {
     void persistSession(nextSession);
     setPointDraft(buildPointDraft(nextSession.equipmentPreset, currentGpsRef.current));
     setSessionDraft(buildSessionDraft());
-    setStatusNote('Sesión iniciada. Empieza a registrar puntos de escucha.');
+    setStatusNote('Salida iniciada. Empieza a registrar puntos de escucha.');
     setView('point');
   }
 
@@ -1734,13 +1734,13 @@ export default function App() {
     await persistSession(nextSession);
     setActiveSessionId(null);
     resetPointDraft(nextSession.equipmentPreset);
-    setStatusNote(`Sesión "${nextSession.name}" cerrada y lista para exportación.`);
+    setStatusNote(`Salida "${nextSession.name}" cerrada y lista para exportación.`);
     setView('export');
   }
 
   async function addPointToSession() {
     if (!activeSession || activeSession.status !== 'active') {
-      setAppError('Necesitas una sesión activa antes de registrar puntos.');
+      setAppError('Necesitas una salida activa antes de registrar puntos.');
       return;
     }
 
@@ -1782,13 +1782,13 @@ export default function App() {
     setRecordSessionId(activeSession.id);
     setRecordPointId(point.id);
     setAppError(null);
-    setStatusNote(`Punto "${point.placeName}" guardado dentro de la sesión.`);
+    setStatusNote(`Punto "${point.placeName}" guardado dentro de la salida.`);
     resetPointDraft(activeSession.equipmentPreset);
   }
 
   async function addQuickPointToSession() {
     if (!activeSession || activeSession.status !== 'active') {
-      setAppError('Necesitas una sesión activa antes de registrar un punto rápido.');
+      setAppError('Necesitas una salida activa antes de registrar un punto rápido.');
       return;
     }
 
@@ -1874,7 +1874,7 @@ export default function App() {
         setRecordSessionId(null);
       }
     }
-    setStatusNote('Punto eliminado de la sesión activa.');
+    setStatusNote('Punto eliminado de la salida activa.');
   }
 
   async function removeSession(sessionId: string) {
@@ -1901,7 +1901,7 @@ export default function App() {
         await deleteFieldSession(sessionId);
       } catch (error) {
         console.error('Deleting session failed:', error);
-      setAppError('La sesión desapareció de la vista, pero no se pudo borrar del archivo.');
+      setAppError('La salida desapareció de la vista, pero no se pudo borrar del archivo.');
       }
     }
   }
@@ -1927,7 +1927,7 @@ export default function App() {
       setStatusNote(statusMessage);
     } catch (error) {
       console.error('Updating project failed:', error);
-      setAppError('No se pudo actualizar el proyecto en todas sus sesiones.');
+      setAppError('No se pudo actualizar el trabajo en todas sus salidas.');
     } finally {
       setIsUpdatingProjectKey(null);
     }
@@ -1936,23 +1936,23 @@ export default function App() {
   async function renameProject(projectKey: string) {
     const nextProjectName = projectDraftName.trim();
     if (!nextProjectName) {
-      setAppError('El proyecto necesita un nombre. Si quieres quitarlo, usa "Quitar proyecto".');
+      setAppError('El trabajo necesita un nombre. Si quieres quitarlo, usa "Quitar trabajo".');
       return;
     }
 
     if (buildProjectKey(nextProjectName) === projectKey) {
-      setStatusNote('El proyecto ya tiene ese nombre.');
+      setStatusNote('El trabajo ya tiene ese nombre.');
       return;
     }
 
-    await applyProjectNameToSessions(projectKey, nextProjectName, `Proyecto renombrado a "${nextProjectName}".`);
+    await applyProjectNameToSessions(projectKey, nextProjectName, `Trabajo renombrado a "${nextProjectName}".`);
   }
 
   async function clearProject(projectKey: string) {
     await applyProjectNameToSessions(
       projectKey,
       '',
-      'Proyecto eliminado como agrupación. Las sesiones siguen existiendo en "Sin proyecto".',
+      'Trabajo eliminado como agrupación. Las salidas siguen existiendo en "Sin trabajo".',
     );
   }
 
@@ -1962,10 +1962,10 @@ export default function App() {
 
     try {
       await exportFieldSessionPackage(dehydrateSession(session));
-      setStatusNote(`Sesión "${session.name}" exportada.`);
+      setStatusNote(`Salida "${session.name}" exportada.`);
     } catch (error) {
       console.error('Export session failed:', error);
-      setAppError('No se pudo exportar la sesión.');
+      setAppError('No se pudo exportar la salida.');
     } finally {
       setIsExportingSessionId(null);
     }
@@ -1978,7 +1978,7 @@ export default function App() {
     }
 
     if (!isOnline) {
-      setAppError('Necesitas conexión para respaldar la sesión en Vercel Blob.');
+      setAppError('Necesitas conexión para respaldar la salida en Vercel Blob.');
       return;
     }
 
@@ -2002,7 +2002,7 @@ export default function App() {
       const cloudSession = await syncSessionToCloud(dehydrateSession(syncingSession));
       const nextUiSession = mergeCloudSyncedSessionIntoUi(cloudSession, syncingSession);
       await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
-      setStatusNote(`Sesión "${nextUiSession.name}" respaldada en la nube.`);
+      setStatusNote(`Salida "${nextUiSession.name}" respaldada en la nube.`);
     } catch (error) {
       console.error('Cloud backup failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'No se pudo respaldar en la nube.';
@@ -2031,7 +2031,7 @@ export default function App() {
     }
 
     if (!isOnline) {
-      setAppError('Necesitas conexión para sincronizar la sesión con el catálogo remoto.');
+      setAppError('Necesitas conexión para sincronizar la salida con el catálogo remoto.');
       return;
     }
 
@@ -2061,13 +2061,13 @@ export default function App() {
         catalogError: null,
       };
       await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
-      setStatusNote(`Sesión "${nextUiSession.name}" sincronizada con el catálogo remoto.`);
+      setStatusNote(`Salida "${nextUiSession.name}" sincronizada con el catálogo remoto.`);
     } catch (error) {
       console.error('Catalog sync failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'No se pudo sincronizar el catálogo remoto.';
       if (isCatalogApiUnavailableError(error)) {
         setCatalogApiStatus('unavailable');
-        setStatusNote('Catálogo remoto desactivado en este entorno. La sesión sigue disponible en local y en exportación.');
+        setStatusNote('Catálogo remoto desactivado en este entorno. La salida sigue disponible en local y en exportación.');
       }
       const nextUiSession: UiFieldSession = {
         ...session,
@@ -2094,7 +2094,7 @@ export default function App() {
     );
 
     if (pendingSessions.length === 0) {
-      setStatusNote('No hay sesiones pendientes de respaldo.');
+      setStatusNote('No hay salidas pendientes de respaldo.');
       return;
     }
 
@@ -2115,7 +2115,7 @@ export default function App() {
     );
 
     if (pendingSessions.length === 0) {
-      setStatusNote('No hay sesiones pendientes de catálogo remoto.');
+      setStatusNote('No hay salidas pendientes de catálogo remoto.');
       return;
     }
 
@@ -2186,9 +2186,9 @@ export default function App() {
       }
 
       if (importedNames.length === 1) {
-        setStatusNote(`Sesión "${importedNames[0]}" actualizada desde el catálogo remoto.`);
+        setStatusNote(`Salida "${importedNames[0]}" actualizada desde el catálogo remoto.`);
       } else if (importedNames.length > 1) {
-        setStatusNote(`${importedNames.length} sesiones actualizadas desde el catálogo remoto.`);
+        setStatusNote(`${importedNames.length} salidas actualizadas desde el catálogo remoto.`);
       }
     } catch (error) {
       console.error('Remote catalog refresh failed:', error);
@@ -2299,7 +2299,7 @@ export default function App() {
 
       if (updatedPoints > 0) {
         setStatusNote(
-          `Sincronizados ${updatedPoints} puntos pendientes en ${updatedSessions} sesión${updatedSessions === 1 ? '' : 'es'}.`,
+          `Sincronizados ${updatedPoints} puntos pendientes en ${updatedSessions} salida${updatedSessions === 1 ? '' : 's'}.`,
         );
       } else if (options?.force) {
         setStatusNote('No pude enriquecer los puntos pendientes en este momento.');
@@ -2395,7 +2395,7 @@ export default function App() {
     const session = sessionsRef.current.find((entry) => entry.id === sessionId);
     if (!session) {
       setZoomImportTargetSessionId(null);
-      setAppError('No encontré la sesión destino para importar las tomas.');
+      setAppError('No encontré la salida destino para importar las tomas.');
       return;
     }
 
@@ -2566,15 +2566,15 @@ export default function App() {
   const totalOperationalPendingCount =
     pendingEnrichmentCount + pendingCloudSessionCount + pendingCatalogSessionCount;
   const activeSessionMeta = activeSession
-    ? `${activeSession.projectName || 'sin proyecto'} · ${activeSession.region || 'sin zona'}`
-    : 'Crea una sesión para empezar a registrar puntos.';
+    ? `${activeSession.projectName || 'sin trabajo'} · ${activeSession.region || 'sin zona'}`
+    : 'Crea una salida para empezar a registrar puntos.';
   const syncPendingCount = pendingCloudSessionCount + pendingCatalogSessionCount;
   const syncPendingParts = [
     pendingCloudSessionCount > 0 ? `${pendingCloudSessionCount} sin subir` : null,
     pendingCatalogSessionCount > 0 ? `${pendingCatalogSessionCount} sin catálogo` : null,
   ].filter((part): part is string => Boolean(part));
   const syncPendingSummary =
-    syncPendingParts.length > 0 ? syncPendingParts.join(' · ') : 'Todas las sesiones están respaldadas y visibles.';
+    syncPendingParts.length > 0 ? syncPendingParts.join(' · ') : 'Todas las salidas están respaldadas y visibles.';
   const metadataReviewSummary =
     pendingEnrichmentCount > 0
       ? pendingEnrichmentCount === 1
@@ -2583,14 +2583,14 @@ export default function App() {
       : 'Lugar y clima al día en todos los registros.';
   const operationalPendingParts = [
     pendingEnrichmentCount > 0 ? `${pendingEnrichmentCount} registros por completar` : null,
-    pendingCloudSessionCount > 0 ? `${pendingCloudSessionCount} sesiones sin subir` : null,
+    pendingCloudSessionCount > 0 ? `${pendingCloudSessionCount} salidas sin subir` : null,
     pendingCatalogSessionCount > 0 ? `${pendingCatalogSessionCount} sin catálogo` : null,
   ].filter((part): part is string => Boolean(part));
   const operationalPendingSummary =
     operationalPendingParts.length > 0
       ? operationalPendingParts.join(' · ')
       : 'Sin tareas pendientes en metadatos, nube o catálogo.';
-  const activeSessionProjectName = activeSession ? resolveProjectName(activeSession.projectName) : 'Sin proyecto';
+  const activeSessionProjectName = activeSession ? resolveProjectName(activeSession.projectName) : 'Sin trabajo';
   const totalPhotoCount = sessions.reduce(
     (count, session) => count + session.points.reduce((sessionCount, point) => sessionCount + point.photos.length, 0),
     0,
@@ -2641,7 +2641,7 @@ export default function App() {
     selectedArchiveProjectKey === 'all'
       ? null
       : archiveProjectGroups.find((group) => group.key === selectedArchiveProjectKey) ?? null;
-  const canManageSelectedProject = Boolean(currentArchiveProject) && currentArchiveProject.key !== 'sin-proyecto';
+  const canManageSelectedProject = Boolean(currentArchiveProject) && currentArchiveProject.key !== 'sin-trabajo';
 
   useEffect(() => {
     setProjectDraftName(currentArchiveProject?.name ?? '');
@@ -2671,12 +2671,12 @@ export default function App() {
   const livePlaceLabel = detectedPlace?.placeName || 'Lugar pendiente';
   const liveClimateLabel = weatherSnapshot?.summary || 'Clima pendiente';
   const greetingLabel = getGreetingLabel(now);
-  const homeLauncherTitle = activeSession ? 'Seguir jornada' : 'Preparar salida';
+  const homeLauncherTitle = activeSession ? 'Seguir salida' : 'Preparar salida';
   const homeLauncherCopy = activeSession
-    ? `${activeSession.name} sigue abierta. Usa estas acciones como punto de entrada y consulta el estado real en la tarjeta “Jornada actual”.`
-    : 'Empieza creando o abriendo una jornada. Captura y archivo se activan desde este mismo punto de entrada.';
+    ? `${activeSession.name} sigue abierta. Usa estas acciones como punto de entrada y consulta el estado real en la tarjeta “Salida actual”.`
+    : 'Empieza creando o abriendo una salida. Captura y archivo se activan desde este mismo punto de entrada.';
   const homeGpsValue = currentGps ? gpsAccuracyLabel : 'Sin señal';
-  const homeGpsCopy = currentGps ? `${gpsLabel} · ${gpsStatusLabel}` : 'Activa el GPS para situar la jornada.';
+  const homeGpsCopy = currentGps ? `${gpsLabel} · ${gpsStatusLabel}` : 'Activa el GPS para situar la salida.';
   const homePlaceValue = detectedPlace ? 'Listo' : currentGps ? 'Buscando' : 'Pendiente';
   const homePlaceCopy = detectedPlace?.placeName || 'El lugar aparecerá cuando haya fijación GPS y red.';
   const homeSyncValue = syncPendingCount === 0 ? 'Al día' : String(syncPendingCount);
@@ -2689,26 +2689,26 @@ export default function App() {
         : 'Sólo memoria';
   const isSunMode = displayMode === 'sun';
   const currentViewLabel =
-    view === 'home' ? 'Resumen' : view === 'session' ? 'Sesiones' : view === 'point' ? 'Captura' : 'Archivo';
+    view === 'home' ? 'Resumen' : view === 'session' ? 'Salidas' : view === 'point' ? 'Captura' : 'Archivo';
   const currentViewTitle =
     view === 'home'
       ? 'Resumen operativo del trabajo de campo'
       : view === 'session'
-        ? 'Proyectos, sesiones y actividad de campo'
+        ? 'Trabajos, salidas y actividad de campo'
         : view === 'point'
           ? activeSession
             ? 'Nuevo registro con GPS, fotos, clima e IA'
-            : 'Prepara una sesión antes de registrar'
+            : 'Prepara una salida antes de registrar'
           : 'Archivo visible de fotos, audio y exportación';
   const currentViewDescription =
     view === 'home'
-      ? 'Desde aquí ves el estado de la jornada, los proyectos existentes y la biblioteca reciente sin navegar a ciegas.'
+      ? 'Desde aquí ves el estado de la salida, los trabajos existentes y la biblioteca reciente sin navegar a ciegas.'
       : view === 'session'
-        ? 'La preparación y la búsqueda viven juntas: crear jornada, abrir proyectos existentes, localizar sesiones y revisar el mapa.'
+        ? 'La preparación y la búsqueda viven juntas: crear una salida, abrir trabajos existentes, localizar salidas y revisar el mapa.'
         : view === 'point'
           ? 'La captura queda aislada para trabajar rápido en el terreno: ubicación, escucha, fotos y notas en una sola pantalla.'
-          : 'El archivo deja visibles sesiones, registros, fotos y tomas H6 para revisar y exportar sin esconder acciones.';
-  const captureEntryLabel = activeSession ? 'Ir a captura' : 'Preparar jornada';
+          : 'El archivo deja visibles salidas, registros, fotos y tomas H6 para revisar y exportar sin esconder acciones.';
+  const captureEntryLabel = activeSession ? 'Ir a captura' : 'Preparar salida';
   const latestRecordLabel = recordPoint ? recordPoint.placeName : 'Sin ficha final todavía';
   const latestRecordSummary = recordPoint
     ? `${formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm")} · ${resolveProjectName(recordSession?.projectName ?? '')}`
@@ -2723,13 +2723,13 @@ export default function App() {
     {
       view: 'home',
       label: 'Resumen',
-      description: 'Estado, proyectos y media',
+      description: 'Estado, trabajos y media',
       icon: House,
       onClick: () => setView('home'),
     },
     {
       view: 'session',
-      label: 'Sesiones',
+      label: 'Salidas',
       description: 'Crear, abrir y localizar',
       icon: MapPinned,
       onClick: () => setView('session'),
@@ -2737,7 +2737,7 @@ export default function App() {
     {
       view: 'point',
       label: 'Captura',
-      description: activeSession ? 'Nuevo registro en la jornada activa' : 'Necesita una jornada activa',
+      description: activeSession ? 'Nuevo registro en la salida activa' : 'Necesita una salida activa',
       icon: Mic,
       onClick: () => setView(activeSession ? 'point' : 'session'),
     },
@@ -2752,10 +2752,10 @@ export default function App() {
   const homeWorkflowCards = [
     {
       eyebrow: 'Panel',
-      title: 'Proyectos y sesiones',
-      description: 'Abre lo que ya existe o prepara una jornada nueva sin perder la jerarquía.',
-      status: activeSession ? `${activeSession.points.length} registros en ${activeSession.name}` : `${projectCount} proyectos visibles`,
-      cta: activeSession ? 'Abrir sesiones' : 'Crear jornada',
+      title: 'Trabajos y salidas',
+      description: 'Abre lo que ya existe o prepara una salida nueva sin perder la jerarquía.',
+      status: activeSession ? `${activeSession.points.length} registros en ${activeSession.name}` : `${projectCount} trabajos visibles`,
+      cta: activeSession ? 'Abrir salidas' : 'Crear salida',
       icon: MapPinned,
       featured: !activeSession,
       onClick: () => setView('session'),
@@ -2764,7 +2764,7 @@ export default function App() {
       eyebrow: 'Captura',
       title: 'Nuevo registro',
       description: 'GPS, clima, fotos, notas e IA en el flujo de captura.',
-      status: activeSession ? `${gpsStatusLabel} · ${activeSession.name}` : 'Necesita una jornada activa',
+      status: activeSession ? `${gpsStatusLabel} · ${activeSession.name}` : 'Necesita una salida activa',
       cta: captureEntryLabel,
       icon: Mic,
       featured: Boolean(activeSession),
@@ -3014,7 +3014,7 @@ export default function App() {
               className="ui-button ui-button-primary disabled:cursor-wait disabled:opacity-60"
             >
               <Download className="h-4 w-4" />
-              {isExportingSessionId === session.id ? 'Exportando' : 'Exportar sesión'}
+              {isExportingSessionId === session.id ? 'Exportando' : 'Exportar salida'}
             </button>
             <button
               onClick={() => void removeSession(session.id)}
@@ -3340,14 +3340,14 @@ export default function App() {
 
             {view !== 'home' ? (
               <div className="panel sidebar-session-card sidebar-session-card--compact">
-                <p className="eyebrow">Jornada actual</p>
+                <p className="eyebrow">Salida actual</p>
                 <p className="sidebar-session-card__title">
                   {activeSession ? activeSession.name : 'No hay salida activa'}
                 </p>
                 {activeSession ? (
                   <div className="session-meta-list session-meta-list--compact">
                     <div className="session-meta-row">
-                      <span className="session-meta-label">Proyecto</span>
+                      <span className="session-meta-label">Trabajo</span>
                       <span>{activeSessionProjectName}</span>
                     </div>
                     <div className="session-meta-row">
@@ -3357,7 +3357,7 @@ export default function App() {
                   </div>
                 ) : (
                   <p className="module-copy text-sm">
-                    Crea una sesión para poder lanzar nuevos registros desde el terreno.
+                    Crea una salida para poder lanzar nuevos registros desde el terreno.
                   </p>
                 )}
                 <div className="sidebar-session-card__stats">
@@ -3406,7 +3406,7 @@ export default function App() {
                 <div className="action-row home-topbar__actions">
                   <button type="button" onClick={() => setView('session')} className="ui-button ui-button-secondary">
                     <MapPinned className="h-4 w-4" />
-                    Abrir sesiones
+                    Abrir salidas
                   </button>
                   <button
                     type="button"
@@ -3414,7 +3414,7 @@ export default function App() {
                     className="ui-button ui-button-primary"
                   >
                     <Mic className="h-4 w-4" />
-                    {activeSession ? 'Nuevo registro' : 'Preparar jornada'}
+                    {activeSession ? 'Nuevo registro' : 'Preparar salida'}
                   </button>
                   <button
                     type="button"
@@ -3457,7 +3457,7 @@ export default function App() {
                   </span>
                   <span className="telemetry-chip telemetry-chip--muted">{storageSummary}</span>
                   <span className="telemetry-chip telemetry-chip--muted">
-                    {activeSession ? `${activeSession.points.length} registros activos` : 'Sin sesión activa'}
+                    {activeSession ? `${activeSession.points.length} registros activos` : 'Sin salida activa'}
                   </span>
                 </div>
                 <div className="utility-inline-group">
@@ -3552,7 +3552,7 @@ export default function App() {
                 <div className="panel status-banner status-banner--warning">
                   <p className="eyebrow">Almacenamiento</p>
                   <p className="module-copy text-sm">
-                    No hay acceso al archivo local. La sesión funciona, pero conviene exportar o reiniciar el almacenamiento antes de cerrar la app.
+                    No hay acceso al archivo local. La salida funciona, pero conviene exportar o reiniciar el almacenamiento antes de cerrar la app.
                   </p>
                 </div>
               ) : null}
@@ -3594,14 +3594,14 @@ export default function App() {
                 <div className="home-primary-grid">
                   <div className="panel home-session-overview">
                     <div className="panel-heading">
-                      <p className="eyebrow">Jornada actual</p>
+                      <p className="eyebrow">Salida actual</p>
                       <h3 className="display-heading text-3xl">
                         {activeSession ? activeSession.name : 'Prepara la próxima salida'}
                       </h3>
                       <p className="module-copy text-sm">
                         {activeSession
                           ? `${activeSessionProjectName} · ${activeSession.region || 'sin zona'} · ${captureDateLabel}`
-                          : 'Empieza por crear o abrir una sesión. Después la captura y el archivo quedan conectados.'}
+                          : 'Empieza por crear o abrir una salida. Después la captura y el archivo quedan conectados.'}
                       </p>
                     </div>
 
@@ -3614,17 +3614,17 @@ export default function App() {
                       <div className="soft-card">
                         <p className="eyebrow">Registros</p>
                         <p className="summary-value">{activeSession ? activeSession.points.length : 0}</p>
-                        <p className="module-copy text-sm">Puntos guardados en la sesión activa.</p>
+                        <p className="module-copy text-sm">Puntos guardados en la salida activa.</p>
                       </div>
                       <div className="soft-card">
                         <p className="eyebrow">Fotos</p>
                         <p className="summary-value">{activeSessionPhotoCount}</p>
-                        <p className="module-copy text-sm">Fotos asociadas a la jornada actual.</p>
+                        <p className="module-copy text-sm">Fotos asociadas a la salida actual.</p>
                       </div>
                       <div className="soft-card">
                         <p className="eyebrow">Tomas H6</p>
                         <p className="summary-value">{activeSession ? activeSession.audioTakes.length : 0}</p>
-                        <p className="module-copy text-sm">Tomas importadas en esta sesión.</p>
+                        <p className="module-copy text-sm">Tomas importadas en esta salida.</p>
                       </div>
                     </div>
 
@@ -3655,15 +3655,15 @@ export default function App() {
                     <div className="panel home-library-card">
                       <div className="panel-heading">
                         <p className="eyebrow">Trabajo existente</p>
-                        <h3 className="display-heading text-3xl">Proyectos y sesiones</h3>
+                        <h3 className="display-heading text-3xl">Trabajos y salidas</h3>
                         <p className="module-copy text-sm">
-                          Los proyectos recientes quedan siempre a la vista con acceso directo a su archivo.
+                          Los trabajos recientes quedan siempre a la vista con acceso directo a su archivo.
                         </p>
                       </div>
 
                       <div className="dashboard-browser-grid">
                         <div className="dashboard-subsection">
-                          <p className="eyebrow">Proyectos</p>
+                          <p className="eyebrow">Trabajos</p>
                           {recentProjectGroups.length > 0 ? (
                             <div className="home-browser-list">
                               {recentProjectGroups.map((group) => (
@@ -3674,10 +3674,10 @@ export default function App() {
                                   className="library-entry-card"
                                 >
                                   <span className="library-entry-card__copy">
-                                    <span className="library-entry-card__eyebrow">Proyecto</span>
+                                    <span className="library-entry-card__eyebrow">Trabajo</span>
                                     <strong className="library-entry-card__title">{group.name}</strong>
                                     <span className="library-entry-card__meta">
-                                      {group.sessionCount} sesiones · {group.pointCount} registros · {group.audioTakeCount} tomas H6
+                                      {group.sessionCount} salidas · {group.pointCount} registros · {group.audioTakeCount} tomas H6
                                     </span>
                                   </span>
                                   <span className="library-entry-card__cta">Abrir</span>
@@ -3685,12 +3685,12 @@ export default function App() {
                               ))}
                             </div>
                           ) : (
-                            <p className="module-copy text-sm">Todavía no hay proyectos archivados.</p>
+                            <p className="module-copy text-sm">Todavía no hay trabajos archivados.</p>
                           )}
                         </div>
 
                         <div className="dashboard-subsection">
-                          <p className="eyebrow">Sesiones</p>
+                          <p className="eyebrow">Salidas</p>
                           {recentSessions.length > 0 ? (
                             <div className="home-browser-list">
                               {recentSessions.map((session) => (
@@ -3702,7 +3702,7 @@ export default function App() {
                                 >
                                   <span className="library-entry-card__copy">
                                     <span className="library-entry-card__eyebrow">
-                                      {session.status === 'active' ? 'Sesión activa' : 'Sesión cerrada'}
+                                      {session.status === 'active' ? 'Salida activa' : 'Salida cerrada'}
                                     </span>
                                     <strong className="library-entry-card__title">{session.name}</strong>
                                     <span className="library-entry-card__meta">
@@ -3714,7 +3714,7 @@ export default function App() {
                               ))}
                             </div>
                           ) : (
-                            <p className="module-copy text-sm">No hay sesiones guardadas todavía.</p>
+                            <p className="module-copy text-sm">No hay salidas guardadas todavía.</p>
                           )}
                         </div>
                       </div>
@@ -3781,7 +3781,7 @@ export default function App() {
                                     {take.pointName || 'Sin punto asociado'} · {take.projectName} · {formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}
                                   </span>
                                 </span>
-                                <span className="library-entry-card__cta">Abrir sesión</span>
+                                <span className="library-entry-card__cta">Abrir salida</span>
                               </button>
                             ))}
                           </div>
@@ -3805,14 +3805,14 @@ export default function App() {
               >
                 <div className="panel panel-primary dashboard-session-panel">
                   <div className="panel-heading panel-heading--inverse">
-                    <p className="eyebrow eyebrow-inverse">{activeSession ? 'Sesión activa' : 'Preparar jornada'}</p>
+                    <p className="eyebrow eyebrow-inverse">{activeSession ? 'Salida activa' : 'Preparar salida'}</p>
                     <h3 className="display-heading text-3xl panel-primary-title">
                       {activeSession ? activeSession.name : 'Prepara la próxima salida'}
                     </h3>
                     {activeSession ? (
                       <div className="session-meta-list">
                         <div className="session-meta-row">
-                          <span className="session-meta-label">Proyecto</span>
+                          <span className="session-meta-label">Trabajo</span>
                           <span>{activeSessionProjectName}</span>
                         </div>
                         <div className="session-meta-row">
@@ -3826,7 +3826,7 @@ export default function App() {
                       </div>
                     ) : (
                       <p className="module-copy text-sm">
-                        Define una jornada, activa el GPS y deja listo el contexto antes de salir al terreno.
+                        Define una salida, activa el GPS y deja listo el contexto antes de salir al terreno.
                       </p>
                     )}
                   </div>
@@ -3877,14 +3877,14 @@ export default function App() {
                           </button>
                         ) : null}
                         <button type="button" onClick={() => void closeActiveSession()} className="ui-button ui-button-danger">
-                          Cerrar sesión
+                          Cerrar salida
                         </button>
                       </div>
                     </>
                   ) : (
                     <div className="grid gap-4">
                       <label className="grid gap-2 text-sm panel-primary-label">
-                        <span>Nombre de la sesión</span>
+                        <span>Nombre de la salida</span>
                         <input
                           value={sessionDraft.name}
                           onChange={(event) => setSessionDraft((previous) => ({ ...previous, name: event.target.value }))}
@@ -3893,7 +3893,7 @@ export default function App() {
                       </label>
                       <div className="grid gap-4 md:grid-cols-2">
                         <label className="grid gap-2 text-sm panel-primary-label">
-                          <span>Proyecto</span>
+                          <span>Trabajo</span>
                           <input
                             value={sessionDraft.projectName}
                             onChange={(event) =>
@@ -3937,7 +3937,7 @@ export default function App() {
                       </label>
                       <div className="action-row">
                         <button type="button" onClick={createSession} className="ui-button ui-button-primary">
-                          Iniciar jornada
+                          Iniciar salida
                         </button>
                       </div>
                     </div>
@@ -3947,7 +3947,7 @@ export default function App() {
                 <div className="panel dashboard-browser-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Archivo de trabajo</p>
-                    <h3 className="display-heading text-3xl">Proyectos y sesiones visibles</h3>
+                    <h3 className="display-heading text-3xl">Trabajos y salidas visibles</h3>
                     <p className="module-copy text-sm">
                       Todo lo que ya existe queda aquí con acceso directo. No hace falta recordar nombres ni volver atrás.
                     </p>
@@ -3956,7 +3956,7 @@ export default function App() {
                   <div className="dashboard-browser-grid">
                     <div className="dashboard-browser-column">
                       <div className="dashboard-subsection">
-                        <p className="eyebrow">Proyectos</p>
+                        <p className="eyebrow">Trabajos</p>
                         {recentProjectGroups.length > 0 ? (
                           <div className="home-browser-list">
                             {recentProjectGroups.map((group) => (
@@ -3968,11 +3968,11 @@ export default function App() {
                               >
                                 <span className="library-entry-card__copy">
                                   <span className="library-entry-card__eyebrow">
-                                    {group.activeSessionCount > 0 ? 'Con jornada activa' : 'Archivo'}
+                                    {group.activeSessionCount > 0 ? 'Con salida activa' : 'Archivo'}
                                   </span>
                                   <strong className="library-entry-card__title">{group.name}</strong>
                                   <span className="library-entry-card__meta">
-                                    {group.sessionCount} sesiones · {group.pointCount} registros · {group.audioTakeCount} tomas H6
+                                    {group.sessionCount} salidas · {group.pointCount} registros · {group.audioTakeCount} tomas H6
                                   </span>
                                 </span>
                                 <span className="library-entry-card__cta">Abrir archivo</span>
@@ -3980,14 +3980,14 @@ export default function App() {
                             ))}
                           </div>
                         ) : (
-                          <p className="module-copy text-sm">Todavía no hay proyectos archivados.</p>
+                          <p className="module-copy text-sm">Todavía no hay trabajos archivados.</p>
                         )}
                       </div>
                     </div>
 
                     <div className="dashboard-browser-column">
                       <div className="dashboard-subsection">
-                        <p className="eyebrow">Sesiones</p>
+                        <p className="eyebrow">Salidas</p>
                         {sessions.length > 0 ? (
                           <div className="home-browser-list">
                             {sessions.slice(0, 6).map((session) => (
@@ -3999,7 +3999,7 @@ export default function App() {
                               >
                                 <span className="library-entry-card__copy">
                                   <span className="library-entry-card__eyebrow">
-                                    {session.status === 'active' ? 'Activa ahora' : 'Sesión cerrada'}
+                                    {session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
                                   </span>
                                   <strong className="library-entry-card__title">{session.name}</strong>
                                   <span className="library-entry-card__meta">
@@ -4013,7 +4013,7 @@ export default function App() {
                             ))}
                           </div>
                         ) : (
-                          <p className="module-copy text-sm">No hay sesiones creadas todavía.</p>
+                          <p className="module-copy text-sm">No hay salidas creadas todavía.</p>
                         )}
                       </div>
                     </div>
@@ -4023,7 +4023,7 @@ export default function App() {
                 <div className="panel dashboard-search-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Buscar registros</p>
-                    <h3 className="display-heading text-3xl">Lugar, proyecto o referencia H6</h3>
+                    <h3 className="display-heading text-3xl">Lugar, trabajo o referencia H6</h3>
                     <p className="module-copy text-sm">
                       El buscador sirve para saltar directamente al registro correcto cuando ya sabes qué quieres abrir.
                     </p>
@@ -4112,17 +4112,17 @@ export default function App() {
                     <p className="eyebrow">Volumen y pendientes</p>
                     <h3 className="display-heading text-3xl">Estado del archivo y la sincronización</h3>
                     <p className="module-copy text-sm">
-                      Aquí ves cuánto material hay y qué queda por resolver antes de cerrar la jornada.
+                      Aquí ves cuánto material hay y qué queda por resolver antes de cerrar la salida.
                     </p>
                   </div>
 
                   <div className="stats-grid">
                     <div className="soft-card">
-                      <p className="eyebrow">Proyectos</p>
+                      <p className="eyebrow">Trabajos</p>
                       <p className="summary-value">{projectCount}</p>
                     </div>
                     <div className="soft-card">
-                      <p className="eyebrow">Sesiones</p>
+                      <p className="eyebrow">Salidas</p>
                       <p className="summary-value">{sessions.length}</p>
                     </div>
                     <div className="soft-card">
@@ -4139,12 +4139,12 @@ export default function App() {
                     <div className="soft-card">
                       <p className="eyebrow">Pendiente nube</p>
                       <p className="summary-value">{pendingCloudSessionCount}</p>
-                      <p className="module-copy text-sm">Sesiones sin respaldo completo.</p>
+                      <p className="module-copy text-sm">Salidas sin respaldo completo.</p>
                     </div>
                     <div className="soft-card">
                       <p className="eyebrow">Pendiente catálogo</p>
                       <p className="summary-value">{pendingCatalogSessionCount}</p>
-                      <p className="module-copy text-sm">Sesiones que aún no aparecen en otros dispositivos.</p>
+                      <p className="module-copy text-sm">Salidas que aún no aparecen en otros dispositivos.</p>
                     </div>
                     <div className="soft-card">
                       <p className="eyebrow">Metadatos</p>
@@ -4169,7 +4169,7 @@ export default function App() {
                         >
                           <p className="eyebrow">{group.name}</p>
                           <p className="module-copy text-sm">
-                            {group.sessionCount} sesiones · {group.pointCount} puntos · última salida {formatDateTime(group.latestStartedAt, "d MMM")}
+                            {group.sessionCount} salidas · {group.pointCount} puntos · última salida {formatDateTime(group.latestStartedAt, "d MMM")}
                           </p>
                         </button>
                       ))}
@@ -4193,7 +4193,7 @@ export default function App() {
               >
                 {!activeSession ? (
                   <div className="panel empty-state-card">
-                    <p className="display-heading text-3xl">No hay una jornada activa</p>
+                    <p className="display-heading text-3xl">No hay una salida activa</p>
                     <p className="module-copy text-sm">
                       Abre el panel, crea una salida y vuelve aquí para lanzar registros con GPS, clima automática y clasificación sonora.
                     </p>
@@ -4225,7 +4225,7 @@ export default function App() {
                         <div className="capture-alert capture-alert--warning">
                           <RefreshCw className="h-4 w-4" />
                           <div>
-                            <strong>Archivo local no disponible.</strong> Puedes seguir trabajando, pero esta jornada sólo queda en memoria hasta recuperar almacenamiento.
+                            <strong>Archivo local no disponible.</strong> Puedes seguir trabajando, pero esta salida sólo queda en memoria hasta recuperar almacenamiento.
                           </div>
                         </div>
                       ) : null}
@@ -4622,7 +4622,7 @@ export default function App() {
                         </div>
                       ) : (
                         <p className="module-copy text-sm">
-                          Todavía no hay registros guardados en esta jornada.
+                          Todavía no hay registros guardados en esta salida.
                         </p>
                       )}
                     </div>
@@ -4687,9 +4687,9 @@ export default function App() {
                     <div className="panel archive-browser-panel">
                       <div className="panel-heading">
                         <p className="eyebrow">Archivo visible</p>
-                        <h3 className="display-heading text-3xl">Proyectos y sesiones archivadas</h3>
+                        <h3 className="display-heading text-3xl">Trabajos y salidas archivadas</h3>
                         <p className="module-copy text-sm">
-                          Filtra por proyecto y abre cualquier sesión sin adivinar dónde quedó guardada.
+                          Filtra por trabajo y abre cualquier salida sin adivinar dónde quedó guardada.
                         </p>
                       </div>
 
@@ -4715,20 +4715,20 @@ export default function App() {
 
                       <p className="module-copy text-sm">
                         {currentArchiveProject
-                          ? `${currentArchiveProject.sessionCount} sesiones · ${currentArchiveProject.pointCount} registros · ${currentArchiveProject.audioTakeCount} tomas H6`
-                          : `${visibleArchiveSessions.length} sesiones visibles en total`}
+                          ? `${currentArchiveProject.sessionCount} salidas · ${currentArchiveProject.pointCount} registros · ${currentArchiveProject.audioTakeCount} tomas H6`
+                          : `${visibleArchiveSessions.length} salidas visibles en total`}
                       </p>
 
                       {currentArchiveProject ? (
                         <div className="soft-card project-admin-card">
-                          <p className="eyebrow">Gestionar proyecto</p>
+                          <p className="eyebrow">Gestionar trabajo</p>
                           {canManageSelectedProject ? (
                             <>
                               <p className="module-copy text-sm">
-                                Un proyecto agrupa varias sesiones. Si lo quitas, no borras registros: esas sesiones pasan a <strong>Sin proyecto</strong>.
+                                Un trabajo agrupa varias salidas. Si lo quitas, no borras registros: esas salidas pasan a <strong>Sin trabajo</strong>.
                               </p>
                               <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                <span>Nombre del proyecto</span>
+                                <span>Nombre del trabajo</span>
                                 <input
                                   value={projectDraftName}
                                   onChange={(event) => setProjectDraftName(event.target.value)}
@@ -4743,7 +4743,7 @@ export default function App() {
                                   disabled={isUpdatingProjectKey === currentArchiveProject.key}
                                   className="ui-button ui-button-secondary"
                                 >
-                                  {isUpdatingProjectKey === currentArchiveProject.key ? 'Guardando...' : 'Renombrar proyecto'}
+                                  {isUpdatingProjectKey === currentArchiveProject.key ? 'Guardando...' : 'Renombrar trabajo'}
                                 </button>
                                 <button
                                   type="button"
@@ -4751,13 +4751,13 @@ export default function App() {
                                   disabled={isUpdatingProjectKey === currentArchiveProject.key}
                                   className="ui-button ui-button-danger"
                                 >
-                                  {isUpdatingProjectKey === currentArchiveProject.key ? 'Actualizando...' : 'Quitar proyecto'}
+                                  {isUpdatingProjectKey === currentArchiveProject.key ? 'Actualizando...' : 'Quitar trabajo'}
                                 </button>
                               </div>
                             </>
                           ) : (
                             <p className="module-copy text-sm">
-                              <strong>Sin proyecto</strong> no es un proyecto guardado: es el destino de las sesiones que no tienen etiqueta.
+                              <strong>Sin trabajo</strong> no es un trabajo guardado: es el destino de las salidas que no tienen etiqueta.
                             </p>
                           )}
                         </div>
@@ -4774,7 +4774,7 @@ export default function App() {
                             >
                               <span className="library-entry-card__copy">
                                 <span className="library-entry-card__eyebrow">
-                                  {session.status === 'active' ? 'Activa ahora' : 'Sesión cerrada'}
+                                    {session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
                                 </span>
                                 <strong className="library-entry-card__title">{session.name}</strong>
                                 <span className="library-entry-card__meta">
@@ -4787,14 +4787,14 @@ export default function App() {
                         </div>
                       ) : (
                         <p className="module-copy text-sm">
-                          No hay sesiones en el filtro actual.
+                          No hay salidas en el filtro actual.
                         </p>
                       )}
                     </div>
 
                     <div className="panel archive-records-panel">
                       <div className="panel-heading">
-                        <p className="eyebrow">Sesión abierta</p>
+                        <p className="eyebrow">Salida abierta</p>
                         <h3 className="display-heading text-3xl">{recordSession.name}</h3>
                         <p className="module-copy text-sm">
                           {resolveProjectName(recordSession.projectName)} · {recordSession.region || 'sin zona'} ·{' '}
@@ -4837,7 +4837,7 @@ export default function App() {
                         </div>
                       ) : (
                         <p className="module-copy text-sm">
-                          Esta sesión todavía no tiene registros guardados.
+                          Esta salida todavía no tiene registros guardados.
                         </p>
                       )}
                     </div>
@@ -4845,7 +4845,7 @@ export default function App() {
                     <div className="panel archive-media-panel">
                       <div className="panel-heading">
                         <p className="eyebrow">Fotos y audio</p>
-                        <h3 className="display-heading text-3xl">Biblioteca visible de la sesión</h3>
+                        <h3 className="display-heading text-3xl">Biblioteca visible de la salida</h3>
                         <p className="module-copy text-sm">
                           Las fotos y las tomas H6 quedan a la vista en la misma pantalla, sin menús avanzados.
                         </p>
@@ -4881,7 +4881,7 @@ export default function App() {
                             ))}
                           </div>
                         ) : (
-                          <p className="module-copy text-sm">Esta sesión todavía no tiene fotos visibles.</p>
+                          <p className="module-copy text-sm">Esta salida todavía no tiene fotos visibles.</p>
                         )}
                       </div>
 
@@ -4925,14 +4925,14 @@ export default function App() {
                                     </span>
                                   </span>
                                   <span className="library-entry-card__cta">
-                                    {linkedPoint ? 'Abrir registro' : 'Abrir sesión'}
+                                    {linkedPoint ? 'Abrir registro' : 'Abrir salida'}
                                   </span>
                                 </button>
                               );
                             })}
                           </div>
                         ) : (
-                          <p className="module-copy text-sm">Esta sesión todavía no tiene tomas H6 importadas.</p>
+                          <p className="module-copy text-sm">Esta salida todavía no tiene tomas H6 importadas.</p>
                         )}
                       </div>
                     </div>
@@ -4956,7 +4956,7 @@ export default function App() {
                           <p className="summary-value">{recordPoint.soundscapeClassification?.summary || 'Sin clasificar'}</p>
                         </div>
                         <div className="soft-card">
-                          <p className="eyebrow">Estado de sesión</p>
+                          <p className="eyebrow">Estado de salida</p>
                           <p className="summary-value">{recordSession.status === 'active' ? 'Activa' : 'Cerrada'}</p>
                         </div>
                       </div>
@@ -5058,7 +5058,7 @@ export default function App() {
                           <p className="module-copy text-sm">Referencia H6: {recordPoint.zoomTakeReference || 'Sin ID'}</p>
                         </div>
                         <div className="soft-card">
-                          <p className="eyebrow">Proyecto</p>
+                          <p className="eyebrow">Trabajo</p>
                           <p className="summary-value">{resolveProjectName(recordSession.projectName)}</p>
                           <p className="module-copy text-sm">{recordSession.region || 'Sin región'}</p>
                         </div>

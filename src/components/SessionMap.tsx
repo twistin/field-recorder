@@ -168,5 +168,5 @@ export function SessionMap({
     });
   }, [draftPoint, onSelectPoint, points, selectedPointId]);
 
-  return <div ref={mapContainerRef} className="field-map" aria-label="Mapa de puntos de la sesión" />;
+  return <div ref={mapContainerRef} className="field-map" aria-label="Mapa de puntos de la salida" />;
 }
