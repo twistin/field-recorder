@@ -848,6 +848,7 @@ export default function App() {
   const [dashboardQuery, setDashboardQuery] = useState('');
   const [sessions, setSessions] = useState<UiFieldSession[]>([]);
   const [selectedArchiveProjectKey, setSelectedArchiveProjectKey] = useState<'all' | string>('all');
+  const [projectDraftName, setProjectDraftName] = useState('');
   const [captureWorkspace, setCaptureWorkspace] = useState<'map' | 'points'>('map');
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => {
     if (typeof window === 'undefined') {
@@ -890,6 +891,7 @@ export default function App() {
   const [isSyncingPendingMetadata, setIsSyncingPendingMetadata] = useState(false);
   const [isSyncingCloudSessionId, setIsSyncingCloudSessionId] = useState<string | null>(null);
   const [isSyncingCatalogSessionId, setIsSyncingCatalogSessionId] = useState<string | null>(null);
+  const [isUpdatingProjectKey, setIsUpdatingProjectKey] = useState<string | null>(null);
   const [catalogApiStatus, setCatalogApiStatus] = useState<'unknown' | 'available' | 'unavailable'>('unknown');
   const [zoomImportTargetSessionId, setZoomImportTargetSessionId] = useState<string | null>(null);
 
@@ -1899,9 +1901,59 @@ export default function App() {
         await deleteFieldSession(sessionId);
       } catch (error) {
         console.error('Deleting session failed:', error);
-        setAppError('La sesión desapareció de la vista, pero no se pudo borrar del archivo.');
+      setAppError('La sesión desapareció de la vista, pero no se pudo borrar del archivo.');
       }
     }
+  }
+
+  async function applyProjectNameToSessions(projectKey: string, nextProjectName: string, statusMessage: string) {
+    const projectSessions = sessionsRef.current.filter((session) => buildProjectKey(session.projectName) === projectKey);
+    if (projectSessions.length === 0) {
+      return;
+    }
+
+    setIsUpdatingProjectKey(projectKey);
+    setAppError(null);
+
+    try {
+      for (const session of projectSessions) {
+        await persistSession({
+          ...session,
+          projectName: nextProjectName,
+        });
+      }
+
+      setSelectedArchiveProjectKey(nextProjectName.trim() ? buildProjectKey(nextProjectName) : 'all');
+      setStatusNote(statusMessage);
+    } catch (error) {
+      console.error('Updating project failed:', error);
+      setAppError('No se pudo actualizar el proyecto en todas sus sesiones.');
+    } finally {
+      setIsUpdatingProjectKey(null);
+    }
+  }
+
+  async function renameProject(projectKey: string) {
+    const nextProjectName = projectDraftName.trim();
+    if (!nextProjectName) {
+      setAppError('El proyecto necesita un nombre. Si quieres quitarlo, usa "Quitar proyecto".');
+      return;
+    }
+
+    if (buildProjectKey(nextProjectName) === projectKey) {
+      setStatusNote('El proyecto ya tiene ese nombre.');
+      return;
+    }
+
+    await applyProjectNameToSessions(projectKey, nextProjectName, `Proyecto renombrado a "${nextProjectName}".`);
+  }
+
+  async function clearProject(projectKey: string) {
+    await applyProjectNameToSessions(
+      projectKey,
+      '',
+      'Proyecto eliminado como agrupación. Las sesiones siguen existiendo en "Sin proyecto".',
+    );
   }
 
   async function exportSession(session: UiFieldSession) {
@@ -2511,9 +2563,33 @@ export default function App() {
     (session) => session.catalogSyncStatus === 'pending' || session.catalogSyncStatus === 'local-only',
   ).length;
   const syncedCatalogSessionCount = sessions.filter((session) => session.catalogSyncStatus === 'synced').length;
+  const totalOperationalPendingCount =
+    pendingEnrichmentCount + pendingCloudSessionCount + pendingCatalogSessionCount;
   const activeSessionMeta = activeSession
     ? `${activeSession.projectName || 'sin proyecto'} · ${activeSession.region || 'sin zona'}`
     : 'Crea una sesión para empezar a registrar puntos.';
+  const syncPendingCount = pendingCloudSessionCount + pendingCatalogSessionCount;
+  const syncPendingParts = [
+    pendingCloudSessionCount > 0 ? `${pendingCloudSessionCount} sin subir` : null,
+    pendingCatalogSessionCount > 0 ? `${pendingCatalogSessionCount} sin catálogo` : null,
+  ].filter((part): part is string => Boolean(part));
+  const syncPendingSummary =
+    syncPendingParts.length > 0 ? syncPendingParts.join(' · ') : 'Todas las sesiones están respaldadas y visibles.';
+  const metadataReviewSummary =
+    pendingEnrichmentCount > 0
+      ? pendingEnrichmentCount === 1
+        ? '1 registro todavía sin clima o lugar.'
+        : `${pendingEnrichmentCount} registros todavía sin clima o lugar.`
+      : 'Lugar y clima al día en todos los registros.';
+  const operationalPendingParts = [
+    pendingEnrichmentCount > 0 ? `${pendingEnrichmentCount} registros por completar` : null,
+    pendingCloudSessionCount > 0 ? `${pendingCloudSessionCount} sesiones sin subir` : null,
+    pendingCatalogSessionCount > 0 ? `${pendingCatalogSessionCount} sin catálogo` : null,
+  ].filter((part): part is string => Boolean(part));
+  const operationalPendingSummary =
+    operationalPendingParts.length > 0
+      ? operationalPendingParts.join(' · ')
+      : 'Sin tareas pendientes en metadatos, nube o catálogo.';
   const activeSessionProjectName = activeSession ? resolveProjectName(activeSession.projectName) : 'Sin proyecto';
   const totalPhotoCount = sessions.reduce(
     (count, session) => count + session.points.reduce((sessionCount, point) => sessionCount + point.photos.length, 0),
@@ -2565,6 +2641,12 @@ export default function App() {
     selectedArchiveProjectKey === 'all'
       ? null
       : archiveProjectGroups.find((group) => group.key === selectedArchiveProjectKey) ?? null;
+  const canManageSelectedProject = Boolean(currentArchiveProject) && currentArchiveProject.key !== 'sin-proyecto';
+
+  useEffect(() => {
+    setProjectDraftName(currentArchiveProject?.name ?? '');
+  }, [currentArchiveProject?.key, currentArchiveProject?.name]);
+
   const recordSessionPoints = recordSession
     ? [...recordSession.points].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     : [];
@@ -2589,6 +2671,16 @@ export default function App() {
   const livePlaceLabel = detectedPlace?.placeName || 'Lugar pendiente';
   const liveClimateLabel = weatherSnapshot?.summary || 'Clima pendiente';
   const greetingLabel = getGreetingLabel(now);
+  const homeLauncherTitle = activeSession ? 'Seguir jornada' : 'Preparar salida';
+  const homeLauncherCopy = activeSession
+    ? `${activeSession.name} sigue abierta. Usa estas acciones como punto de entrada y consulta el estado real en la tarjeta “Jornada actual”.`
+    : 'Empieza creando o abriendo una jornada. Captura y archivo se activan desde este mismo punto de entrada.';
+  const homeGpsValue = currentGps ? gpsAccuracyLabel : 'Sin señal';
+  const homeGpsCopy = currentGps ? `${gpsLabel} · ${gpsStatusLabel}` : 'Activa el GPS para situar la jornada.';
+  const homePlaceValue = detectedPlace ? 'Listo' : currentGps ? 'Buscando' : 'Pendiente';
+  const homePlaceCopy = detectedPlace?.placeName || 'El lugar aparecerá cuando haya fijación GPS y red.';
+  const homeSyncValue = syncPendingCount === 0 ? 'Al día' : String(syncPendingCount);
+  const homeReviewValue = pendingEnrichmentCount === 0 ? 'Listo' : String(pendingEnrichmentCount);
   const storageSummary =
     storageMode === 'ready'
       ? 'Archivo local disponible'
@@ -3246,52 +3338,54 @@ export default function App() {
               </nav>
             </div>
 
-            <div className="panel sidebar-session-card sidebar-session-card--compact">
-              <p className="eyebrow">Jornada actual</p>
-              <p className="sidebar-session-card__title">
-                {activeSession ? activeSession.name : 'No hay salida activa'}
-              </p>
-              {activeSession ? (
-                <div className="session-meta-list session-meta-list--compact">
-                  <div className="session-meta-row">
-                    <span className="session-meta-label">Proyecto</span>
-                    <span>{activeSessionProjectName}</span>
-                  </div>
-                  <div className="session-meta-row">
-                    <span className="session-meta-label">Zona</span>
-                    <span>{activeSession.region || 'sin definir'}</span>
-                  </div>
-                </div>
-              ) : (
-                <p className="module-copy text-sm">
-                  Crea una sesión para poder lanzar nuevos registros desde el terreno.
+            {view !== 'home' ? (
+              <div className="panel sidebar-session-card sidebar-session-card--compact">
+                <p className="eyebrow">Jornada actual</p>
+                <p className="sidebar-session-card__title">
+                  {activeSession ? activeSession.name : 'No hay salida activa'}
                 </p>
-              )}
-              <div className="sidebar-session-card__stats">
-                <span className="telemetry-chip">
-                  {activeSession ? `${activeSession.points.length} registros` : '0 registros'}
-                </span>
-                <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
-                  {isOnline ? 'En línea' : 'Offline'}
-                </span>
-              </div>
-              {activeSession ? (
-                <div className="action-row action-row--compact action-row--support">
-                  <button type="button" onClick={() => setView('export')} className="ui-button ui-button-secondary">
-                    <History className="h-4 w-4" />
-                    Abrir archivo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openZoomImportPicker(activeSession.id)}
-                    className="ui-button ui-button-secondary"
-                  >
-                    <AudioWaveform className="h-4 w-4" />
-                    Importar H6
-                  </button>
+                {activeSession ? (
+                  <div className="session-meta-list session-meta-list--compact">
+                    <div className="session-meta-row">
+                      <span className="session-meta-label">Proyecto</span>
+                      <span>{activeSessionProjectName}</span>
+                    </div>
+                    <div className="session-meta-row">
+                      <span className="session-meta-label">Zona</span>
+                      <span>{activeSession.region || 'sin definir'}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="module-copy text-sm">
+                    Crea una sesión para poder lanzar nuevos registros desde el terreno.
+                  </p>
+                )}
+                <div className="sidebar-session-card__stats">
+                  <span className="telemetry-chip">
+                    {activeSession ? `${activeSession.points.length} registros` : '0 registros'}
+                  </span>
+                  <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
+                    {isOnline ? 'En línea' : 'Offline'}
+                  </span>
                 </div>
-              ) : null}
-            </div>
+                {activeSession ? (
+                  <div className="action-row action-row--compact action-row--support">
+                    <button type="button" onClick={() => setView('export')} className="ui-button ui-button-secondary">
+                      <History className="h-4 w-4" />
+                      Abrir archivo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openZoomImportPicker(activeSession.id)}
+                      className="ui-button ui-button-secondary"
+                    >
+                      <AudioWaveform className="h-4 w-4" />
+                      Importar H6
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </aside>
         ) : null}
 
@@ -3304,48 +3398,11 @@ export default function App() {
               className="panel home-topbar"
             >
               <div className="home-topbar__brand">
-                <p className="eyebrow">Resumen operativo</p>
-                <p className="display-heading home-topbar__title">
-                  {activeSession ? activeSession.name : 'Sin jornada activa'}
-                </p>
+                <p className="eyebrow">Entrada principal</p>
+                <p className="display-heading home-topbar__title">{homeLauncherTitle}</p>
                 <p className="module-copy text-sm md:text-base">
-                  {activeSession
-                    ? `${activeSessionProjectName} · ${activeSession.region || 'sin zona'} · ${activeSession.points.length} registros · ${activeSession.audioTakes.length} tomas H6`
-                    : 'Crea una jornada, abre un proyecto existente o entra directamente al archivo sin navegar a ciegas.'}
+                  {homeLauncherCopy}
                 </p>
-              </div>
-              <div className="home-summary-grid">
-                <div className="soft-card">
-                  <p className="eyebrow">Sesión</p>
-                  <p className="summary-value">{activeSession ? 'Activa' : 'Pendiente'}</p>
-                  <p className="module-copy text-sm">{activeSession ? activeSession.name : 'Abre sesiones para crear una.'}</p>
-                </div>
-                <div className="soft-card">
-                  <p className="eyebrow">GPS</p>
-                  <p className="summary-value">{currentGps ? gpsAccuracyLabel : 'Sin señal'}</p>
-                  <p className="module-copy text-sm">{gpsLabel}</p>
-                </div>
-                <div className="soft-card">
-                  <p className="eyebrow">Archivo</p>
-                  <p className="summary-value">{totalPhotoCount}</p>
-                  <p className="module-copy text-sm">{totalAudioTakeCount} tomas H6 visibles.</p>
-                </div>
-                <div className="soft-card">
-                  <p className="eyebrow">Pendientes</p>
-                  <p className="summary-value">{pendingEnrichmentCount + pendingCloudSessionCount + pendingCatalogSessionCount}</p>
-                  <p className="module-copy text-sm">Metadatos, nube o catálogo por resolver.</p>
-                </div>
-              </div>
-              <div className="home-topbar__controls">
-                <div className="status-inline-group">
-                  <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
-                    {isOnline ? 'En línea' : 'Offline'}
-                  </span>
-                  <span className="telemetry-chip telemetry-chip--muted">{storageSummary}</span>
-                  <span className="telemetry-chip telemetry-chip--muted">
-                    {activeSession ? `${activeSession.points.length} registros activos` : 'Sin sesión activa'}
-                  </span>
-                </div>
                 <div className="action-row home-topbar__actions">
                   <button type="button" onClick={() => setView('session')} className="ui-button ui-button-secondary">
                     <MapPinned className="h-4 w-4" />
@@ -3369,6 +3426,39 @@ export default function App() {
                     <History className="h-4 w-4" />
                     Abrir archivo
                   </button>
+                </div>
+              </div>
+              <div className="home-summary-grid">
+                <div className="soft-card">
+                  <p className="eyebrow">GPS</p>
+                  <p className="summary-value">{homeGpsValue}</p>
+                  <p className="module-copy text-sm">{homeGpsCopy}</p>
+                </div>
+                <div className="soft-card">
+                  <p className="eyebrow">Lugar</p>
+                  <p className="summary-value">{homePlaceValue}</p>
+                  <p className="module-copy text-sm">{homePlaceCopy}</p>
+                </div>
+                <div className="soft-card">
+                  <p className="eyebrow">Sincronización</p>
+                  <p className="summary-value">{homeSyncValue}</p>
+                  <p className="module-copy text-sm">{syncPendingSummary}</p>
+                </div>
+                <div className="soft-card">
+                  <p className="eyebrow">Revisión</p>
+                  <p className="summary-value">{homeReviewValue}</p>
+                  <p className="module-copy text-sm">{metadataReviewSummary}</p>
+                </div>
+              </div>
+              <div className="home-topbar__controls">
+                <div className="status-inline-group">
+                  <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
+                    {isOnline ? 'En línea' : 'Offline'}
+                  </span>
+                  <span className="telemetry-chip telemetry-chip--muted">{storageSummary}</span>
+                  <span className="telemetry-chip telemetry-chip--muted">
+                    {activeSession ? `${activeSession.points.length} registros activos` : 'Sin sesión activa'}
+                  </span>
                 </div>
                 <div className="utility-inline-group">
                   {activeSession ? (
@@ -3536,31 +3626,6 @@ export default function App() {
                         <p className="summary-value">{activeSession ? activeSession.audioTakes.length : 0}</p>
                         <p className="module-copy text-sm">Tomas importadas en esta sesión.</p>
                       </div>
-                    </div>
-
-                    <div className="action-row">
-                      <button type="button" onClick={() => setView('session')} className="ui-button ui-button-secondary">
-                        <MapPinned className="h-4 w-4" />
-                        Abrir sesiones
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setView(activeSession ? 'point' : 'session')}
-                        className="ui-button ui-button-primary"
-                      >
-                        <Mic className="h-4 w-4" />
-                        {activeSession ? 'Nuevo registro' : 'Preparar jornada'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          recordPoint && recordSession ? openRecordView(recordSession.id, recordPoint.id) : setView('export')
-                        }
-                        className="ui-button ui-button-secondary"
-                      >
-                        <History className="h-4 w-4" />
-                        Abrir archivo
-                      </button>
                     </div>
 
                     {latestActivePoints.length > 0 ? (
@@ -3782,8 +3847,9 @@ export default function App() {
                           <p className="summary-value">{activeSession.audioTakes.length}</p>
                         </div>
                         <div className="soft-card">
-                          <p className="eyebrow">Pendientes</p>
-                          <p className="summary-value">{pendingEnrichmentCount + pendingCloudSessionCount}</p>
+                          <p className="eyebrow">Revisión</p>
+                          <p className="summary-value">{totalOperationalPendingCount}</p>
+                          <p className="module-copy text-sm">{operationalPendingSummary}</p>
                         </div>
                       </div>
 
@@ -4652,6 +4718,50 @@ export default function App() {
                           ? `${currentArchiveProject.sessionCount} sesiones · ${currentArchiveProject.pointCount} registros · ${currentArchiveProject.audioTakeCount} tomas H6`
                           : `${visibleArchiveSessions.length} sesiones visibles en total`}
                       </p>
+
+                      {currentArchiveProject ? (
+                        <div className="soft-card project-admin-card">
+                          <p className="eyebrow">Gestionar proyecto</p>
+                          {canManageSelectedProject ? (
+                            <>
+                              <p className="module-copy text-sm">
+                                Un proyecto agrupa varias sesiones. Si lo quitas, no borras registros: esas sesiones pasan a <strong>Sin proyecto</strong>.
+                              </p>
+                              <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                                <span>Nombre del proyecto</span>
+                                <input
+                                  value={projectDraftName}
+                                  onChange={(event) => setProjectDraftName(event.target.value)}
+                                  className="field-input"
+                                  placeholder="Paisajes urbanos de Vigo"
+                                />
+                              </label>
+                              <div className="action-row">
+                                <button
+                                  type="button"
+                                  onClick={() => void renameProject(currentArchiveProject.key)}
+                                  disabled={isUpdatingProjectKey === currentArchiveProject.key}
+                                  className="ui-button ui-button-secondary"
+                                >
+                                  {isUpdatingProjectKey === currentArchiveProject.key ? 'Guardando...' : 'Renombrar proyecto'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void clearProject(currentArchiveProject.key)}
+                                  disabled={isUpdatingProjectKey === currentArchiveProject.key}
+                                  className="ui-button ui-button-danger"
+                                >
+                                  {isUpdatingProjectKey === currentArchiveProject.key ? 'Actualizando...' : 'Quitar proyecto'}
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <p className="module-copy text-sm">
+                              <strong>Sin proyecto</strong> no es un proyecto guardado: es el destino de las sesiones que no tienen etiqueta.
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
 
                       {visibleArchiveSessions.length > 0 ? (
                         <div className="archive-session-list">
