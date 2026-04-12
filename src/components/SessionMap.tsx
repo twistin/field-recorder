@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { LayerGroup, Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -32,6 +32,7 @@ export function SessionMap({
   const markersLayerRef = useRef<LayerGroup | null>(null);
   const leafletRef = useRef<typeof import('leaflet') | null>(null);
   const fittedBoundsKeyRef = useRef<string>('');
+  const [isMapReady, setIsMapReady] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -60,6 +61,7 @@ export function SessionMap({
       markersLayerRef.current = L.layerGroup().addTo(map);
       map.setView([40.4168, -3.7038], 5);
       mapRef.current = map;
+      setIsMapReady(true);
     }
 
     initializeMap();
@@ -72,6 +74,7 @@ export function SessionMap({
       }
       markersLayerRef.current = null;
       leafletRef.current = null;
+      setIsMapReady(false);
     };
   }, []);
 
@@ -166,7 +169,7 @@ export function SessionMap({
     window.requestAnimationFrame(() => {
       map.invalidateSize();
     });
-  }, [draftPoint, onSelectPoint, points, selectedPointId]);
+  }, [draftPoint, isMapReady, onSelectPoint, points, selectedPointId]);
 
   return <div ref={mapContainerRef} className="field-map" aria-label="Mapa de puntos de la salida" />;
 }

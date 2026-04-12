@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { LayerGroup, Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -28,6 +28,7 @@ export function FieldActivityMap({
   const layerRef = useRef<LayerGroup | null>(null);
   const leafletRef = useRef<typeof import('leaflet') | null>(null);
   const fittedBoundsKeyRef = useRef<string>('');
+  const [isMapReady, setIsMapReady] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -56,6 +57,7 @@ export function FieldActivityMap({
       layerRef.current = L.layerGroup().addTo(map);
       map.setView([40.4168, -3.7038], 4);
       mapRef.current = map;
+      setIsMapReady(true);
     }
 
     initializeMap();
@@ -68,6 +70,7 @@ export function FieldActivityMap({
       }
       layerRef.current = null;
       leafletRef.current = null;
+      setIsMapReady(false);
     };
   }, []);
 
@@ -145,7 +148,7 @@ export function FieldActivityMap({
     window.requestAnimationFrame(() => {
       map.invalidateSize();
     });
-  }, [clusters, currentLocation]);
+  }, [clusters, currentLocation, isMapReady]);
 
   return <div ref={mapContainerRef} className="field-map field-map--dashboard" aria-label="Mapa de actividad de grabaciones" />;
 }
