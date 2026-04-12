@@ -343,12 +343,13 @@ function normalizeFieldSession(session: FieldSession): FieldSession {
   };
 }
 
-function buildPhotoPreviewUrl(photo: Pick<SessionPhoto, 'blob' | 'cloudUrl'>): string | null {
+function buildPhotoPreviewUrl(photo: Pick<SessionPhoto, 'blob' | 'cloudPath' | 'cloudUrl'>): string | null {
   if (photo.blob.size > 0) {
     return URL.createObjectURL(photo.blob);
   }
 
-  return photo.cloudUrl ?? null;
+  const remoteSource = photo.cloudPath ?? photo.cloudUrl;
+  return remoteSource ? `/api/storage/photo?blob=${encodeURIComponent(remoteSource)}` : null;
 }
 
 function buildPlaceholderPhotoBlob(mimeType: string): Blob {
@@ -3111,11 +3112,22 @@ export default function App() {
               <p className="sidebar-session-card__title">
                 {activeSession ? activeSession.name : 'No hay salida activa'}
               </p>
-              <p className="module-copy text-sm">
-                {activeSession
-                  ? `${activeSessionProjectName} · ${activeSession.region || 'zona sin definir'}`
-                  : 'Crea una sesión para poder lanzar nuevos registros desde el terreno.'}
-              </p>
+              {activeSession ? (
+                <div className="session-meta-list session-meta-list--compact">
+                  <div className="session-meta-row">
+                    <span className="session-meta-label">Proyecto</span>
+                    <span>{activeSessionProjectName}</span>
+                  </div>
+                  <div className="session-meta-row">
+                    <span className="session-meta-label">Zona</span>
+                    <span>{activeSession.region || 'sin definir'}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="module-copy text-sm">
+                  Crea una sesión para poder lanzar nuevos registros desde el terreno.
+                </p>
+              )}
               <div className="sidebar-session-card__stats">
                 <span className="telemetry-chip">
                   {activeSession ? `${activeSession.points.length} registros` : '0 registros'}
@@ -3124,6 +3136,22 @@ export default function App() {
                   {isOnline ? 'En línea' : 'Offline'}
                 </span>
               </div>
+              {activeSession ? (
+                <div className="action-row action-row--compact action-row--support">
+                  <button type="button" onClick={() => setView('export')} className="ui-button ui-button-secondary">
+                    <History className="h-4 w-4" />
+                    Abrir archivo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openZoomImportPicker(activeSession.id)}
+                    className="ui-button ui-button-secondary"
+                  >
+                    <AudioWaveform className="h-4 w-4" />
+                    Importar H6
+                  </button>
+                </div>
+              ) : null}
             </div>
           </aside>
         ) : null}
@@ -3326,11 +3354,26 @@ export default function App() {
                     <h3 className="display-heading text-3xl panel-primary-title">
                       {activeSession ? activeSession.name : 'Prepara la próxima salida'}
                     </h3>
-                    <p className="module-copy text-sm">
-                      {activeSession
-                        ? `${activeSessionProjectName} · ${activeSession.region || 'zona sin definir'} · ${activeSession.points.length} registros.`
-                        : 'Define una jornada, activa el GPS y deja listo el contexto antes de salir al terreno.'}
-                    </p>
+                    {activeSession ? (
+                      <div className="session-meta-list">
+                        <div className="session-meta-row">
+                          <span className="session-meta-label">Proyecto</span>
+                          <span>{activeSessionProjectName}</span>
+                        </div>
+                        <div className="session-meta-row">
+                          <span className="session-meta-label">Zona</span>
+                          <span>{activeSession.region || 'sin definir'}</span>
+                        </div>
+                        <div className="session-meta-row">
+                          <span className="session-meta-label">Registros</span>
+                          <span>{activeSession.points.length}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="module-copy text-sm">
+                        Define una jornada, activa el GPS y deja listo el contexto antes de salir al terreno.
+                      </p>
+                    )}
                   </div>
 
                   {activeSession ? (
@@ -3358,6 +3401,14 @@ export default function App() {
                         <button type="button" onClick={() => setView('point')} className="ui-button ui-button-primary">
                           <Mic className="h-4 w-4" />
                           Ir a nuevo registro
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openZoomImportPicker(activeSession.id)}
+                          className="ui-button ui-button-secondary"
+                        >
+                          <AudioWaveform className="h-4 w-4" />
+                          Importar carpeta Zoom H6
                         </button>
                         {recordPoint && recordSession ? (
                           <button

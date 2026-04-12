@@ -718,6 +718,32 @@ audio {
   margin-top: 1rem;
 }
 
+.session-meta-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.session-meta-list--compact {
+  margin-top: 0.7rem;
+}
+
+.session-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: baseline;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+.session-meta-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 .cta-launcher {
   display: inline-flex;
   align-items: center;
