@@ -12,6 +12,17 @@ export interface PublishedSelection {
   audioUrl: string;
   imageFileName: string;
   audioFileName: string;
+  pointCapturedAt: string;
+  latitude: number | null;
+  longitude: number | null;
+  weather: string;
+  placeContext: string;
+  tags: string[];
+  notes: string;
+  habitat: string;
+  characteristics: string;
+  microphoneSetup: string;
+  zoomTakeReference: string;
   publishedAt: string;
   updatedAt: string;
 }
@@ -30,4 +41,15 @@ export interface PublishSelectionPayload {
   audioUrl: string;
   imageFileName: string;
   audioFileName: string;
+  pointCapturedAt: string;
+  latitude: number | null;
+  longitude: number | null;
+  weather: string;
+  placeContext: string;
+  tags: string[];
+  notes: string;
+  habitat: string;
+  characteristics: string;
+  microphoneSetup: string;
+  zoomTakeReference: string;
 }

@@ -2120,6 +2120,17 @@ export default function App() {
         audioUrl: syncedSelection.audioUrl,
         imageFileName: photo.fileName,
         audioFileName: audioTake.fileName,
+        pointCapturedAt: recordPoint.createdAt,
+        latitude: recordPoint.gps.lat,
+        longitude: recordPoint.gps.lon,
+        weather: recordPoint.observedWeather || recordPoint.automaticWeather?.summary || '',
+        placeContext: recordPoint.detectedPlace?.context || '',
+        tags: [...recordPoint.tags, ...(recordPoint.soundscapeClassification?.tags ?? [])],
+        notes: recordPoint.notes,
+        habitat: recordPoint.habitat,
+        characteristics: recordPoint.characteristics,
+        microphoneSetup: recordPoint.microphoneSetup,
+        zoomTakeReference: recordPoint.zoomTakeReference || audioTake.detectedTakeReference || '',
       });
 
       setPublishedSelectionsForPoint((current) => [selection, ...current.filter((entry) => entry.id !== selection.id)]);
@@ -2927,7 +2938,7 @@ export default function App() {
         : 'Sólo memoria';
   const isSunMode = displayMode === 'sun';
   const currentViewLabel =
-    view === 'home' ? 'Resumen' : view === 'session' ? 'Salidas' : view === 'point' ? 'Captura' : 'Archivo';
+    view === 'home' ? 'Resumen' : view === 'session' ? 'Salidas' : view === 'point' ? 'Captura' : 'Proyectos';
   const currentViewTitle =
     view === 'home'
       ? 'Resumen operativo del trabajo de campo'
@@ -2937,7 +2948,7 @@ export default function App() {
           ? activeSession
             ? 'Nuevo registro con GPS, fotos, clima e IA'
             : 'Prepara una salida antes de registrar'
-          : 'Archivo visible de fotos, audio y exportación';
+          : 'Proyectos, fotos, audio y exportación';
   const currentViewDescription =
     view === 'home'
       ? 'Desde aquí ves el estado de la salida, los trabajos existentes y la biblioteca reciente sin navegar a ciegas.'
@@ -2981,7 +2992,7 @@ export default function App() {
     },
     {
       view: 'export',
-      label: 'Archivo',
+      label: 'Proyectos',
       description: 'Fotos, tomas y exportación',
       icon: History,
       onClick: () => setView('export'),
@@ -3010,10 +3021,10 @@ export default function App() {
     },
     {
       eyebrow: 'Registro',
-      title: 'Archivo visible',
+      title: 'Proyectos',
       description: 'Registros, galería, tomas H6 y exportación en la misma vista.',
       status: recordSession ? `${recordSession.name} · ${recordSession.audioTakes.length} tomas H6` : `${totalPhotoCount} fotos · ${totalAudioTakeCount} tomas`,
-      cta: recordPoint ? 'Abrir archivo' : 'Ver archivo',
+      cta: recordPoint ? 'Abrir proyectos' : 'Ver proyectos',
       icon: History,
       featured: view === 'export',
       onClick: () => setView('export'),
@@ -4155,7 +4166,7 @@ export default function App() {
                   <div className="action-row action-row--compact action-row--support">
                     <button type="button" onClick={() => setView('export')} className="ui-button ui-button-secondary">
                       <History className="h-4 w-4" />
-                      Abrir archivo
+                      Abrir proyectos
                     </button>
                     <button
                       type="button"
@@ -4207,7 +4218,7 @@ export default function App() {
                     className="ui-button ui-button-secondary"
                   >
                     <History className="h-4 w-4" />
-                    Abrir archivo
+                    Abrir proyectos
                   </button>
                 </div>
               </div>
@@ -4440,7 +4451,7 @@ export default function App() {
                         <p className="eyebrow">Trabajo existente</p>
                         <h3 className="display-heading text-3xl">Trabajos y salidas</h3>
                         <p className="module-copy text-sm">
-                          Los trabajos recientes quedan siempre a la vista con acceso directo a su archivo.
+                          Los trabajos recientes quedan siempre a la vista con acceso directo a sus proyectos y salidas.
                         </p>
                       </div>
 
@@ -4492,7 +4503,7 @@ export default function App() {
                                       {resolveProjectName(session.projectName)} · {session.points.length} registros · {session.audioTakes.length} tomas H6
                                     </span>
                                   </span>
-                                  <span className="library-entry-card__cta">Abrir archivo</span>
+                                  <span className="library-entry-card__cta">Abrir proyectos</span>
                                 </button>
                               ))}
                             </div>
@@ -4729,7 +4740,7 @@ export default function App() {
 
                 <div className="panel dashboard-browser-panel panel-tone panel-tone--mint">
                   <div className="panel-heading">
-                    <p className="eyebrow">Archivo de trabajo</p>
+                    <p className="eyebrow">Proyectos</p>
                     <h3 className="display-heading text-3xl">Trabajos y salidas visibles</h3>
                     <p className="module-copy text-sm">
                       Todo lo que ya existe queda aquí con acceso directo. No hace falta recordar nombres ni volver atrás.
@@ -4751,14 +4762,14 @@ export default function App() {
                               >
                                 <span className="library-entry-card__copy">
                                   <span className="library-entry-card__eyebrow">
-                                    {group.activeSessionCount > 0 ? 'Con salida activa' : 'Archivo'}
+                                    {group.activeSessionCount > 0 ? 'Con salida activa' : 'Proyecto'}
                                   </span>
                                   <strong className="library-entry-card__title">{group.name}</strong>
                                   <span className="library-entry-card__meta">
                                     {group.sessionCount} salidas · {group.pointCount} registros · {group.audioTakeCount} tomas H6
                                   </span>
                                 </span>
-                                <span className="library-entry-card__cta">Abrir archivo</span>
+                                <span className="library-entry-card__cta">Abrir proyectos</span>
                               </button>
                             ))}
                           </div>
@@ -4790,7 +4801,7 @@ export default function App() {
                                   </span>
                                 </span>
                                 <span className="library-entry-card__cta">
-                                  {session.status === 'active' ? 'Abrir panel' : 'Abrir archivo'}
+                                  {session.status === 'active' ? 'Abrir panel' : 'Abrir proyectos'}
                                 </span>
                               </button>
                             ))}
@@ -5469,8 +5480,8 @@ export default function App() {
                   <>
                     <div className="panel archive-browser-panel panel-tone panel-tone--mint">
                       <div className="panel-heading">
-                        <p className="eyebrow">Archivo visible</p>
-                        <h3 className="display-heading text-3xl">Trabajos y salidas archivadas</h3>
+                        <p className="eyebrow">Proyectos</p>
+                        <h3 className="display-heading text-3xl">Proyectos, trabajos y salidas</h3>
                         <p className="module-copy text-sm">
                           Filtra por trabajo y abre cualquier salida sin adivinar dónde quedó guardada.
                         </p>

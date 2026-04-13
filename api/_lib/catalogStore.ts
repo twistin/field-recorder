@@ -114,6 +114,17 @@ const SCHEMA_STATEMENTS = [
     audio_url TEXT NOT NULL,
     image_file_name TEXT NOT NULL,
     audio_file_name TEXT NOT NULL,
+    point_captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    weather_label TEXT NOT NULL DEFAULT '',
+    place_context TEXT NOT NULL DEFAULT '',
+    tags_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    point_notes TEXT NOT NULL DEFAULT '',
+    habitat TEXT NOT NULL DEFAULT '',
+    characteristics TEXT NOT NULL DEFAULT '',
+    microphone_setup TEXT NOT NULL DEFAULT '',
+    zoom_take_reference TEXT NOT NULL DEFAULT '',
     published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
@@ -121,6 +132,17 @@ const SCHEMA_STATEMENTS = [
     ON published_selections (session_id, published_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_published_selections_point_id
     ON published_selections (point_id, published_at DESC)`,
+  `ALTER TABLE published_selections ADD COLUMN IF NOT EXISTS point_captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
+  `ALTER TABLE published_selections ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION`,
+  `ALTER TABLE published_selections ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION`,
+  `ALTER TABLE published_selections ADD COLUMN IF NOT EXISTS weather_label TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE published_selections ADD COLUMN IF NOT EXISTS place_context TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE published_selections ADD COLUMN IF NOT EXISTS tags_json JSONB NOT NULL DEFAULT '[]'::jsonb`,
+  `ALTER TABLE published_selections ADD COLUMN IF NOT EXISTS point_notes TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE published_selections ADD COLUMN IF NOT EXISTS habitat TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE published_selections ADD COLUMN IF NOT EXISTS characteristics TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE published_selections ADD COLUMN IF NOT EXISTS microphone_setup TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE published_selections ADD COLUMN IF NOT EXISTS zoom_take_reference TEXT NOT NULL DEFAULT ''`,
 ];
 
 let schemaReadyPromise: Promise<void> | null = null;
@@ -157,14 +179,33 @@ function countPhotos(session: CatalogSessionPayload): number {
   return session.points.reduce((count, point) => count + point.photos.length, 0);
 }
 
+function normalizeTags(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === 'string');
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
 function normalizePublishedSelection(
-  row: Omit<PublishedSelection, 'publishedAt' | 'updatedAt'> & {
+  row: Omit<PublishedSelection, 'publishedAt' | 'updatedAt' | 'tags'> & {
+    tags: unknown;
     publishedAt: string | Date;
     updatedAt: string | Date;
   },
 ): PublishedSelection {
   return {
     ...row,
+    tags: normalizeTags(row.tags),
     publishedAt: toIsoString(row.publishedAt),
     updatedAt: toIsoString(row.updatedAt),
   };
@@ -519,12 +560,26 @@ export async function upsertPublishedSelection(
       audio_url,
       image_file_name,
       audio_file_name,
+      point_captured_at,
+      latitude,
+      longitude,
+      weather_label,
+      place_context,
+      tags_json,
+      point_notes,
+      habitat,
+      characteristics,
+      microphone_setup,
+      zoom_take_reference,
       published_at,
       updated_at
     ) VALUES (
       $1, $2, $3, $4, $5,
       $6, $7, $8, $9, $10,
-      $11, $12, $13, $14, $15
+      $11, $12, $13, $14, $15,
+      $16, $17, $18, $19, $20,
+      $21, $22, $23, $24, $25,
+      $26, $27
     )
     ON CONFLICT (id) DO UPDATE SET
       session_id = EXCLUDED.session_id,
@@ -539,6 +594,17 @@ export async function upsertPublishedSelection(
       audio_url = EXCLUDED.audio_url,
       image_file_name = EXCLUDED.image_file_name,
       audio_file_name = EXCLUDED.audio_file_name,
+      point_captured_at = EXCLUDED.point_captured_at,
+      latitude = EXCLUDED.latitude,
+      longitude = EXCLUDED.longitude,
+      weather_label = EXCLUDED.weather_label,
+      place_context = EXCLUDED.place_context,
+      tags_json = EXCLUDED.tags_json,
+      point_notes = EXCLUDED.point_notes,
+      habitat = EXCLUDED.habitat,
+      characteristics = EXCLUDED.characteristics,
+      microphone_setup = EXCLUDED.microphone_setup,
+      zoom_take_reference = EXCLUDED.zoom_take_reference,
       updated_at = EXCLUDED.updated_at
     RETURNING
       id,
@@ -554,6 +620,17 @@ export async function upsertPublishedSelection(
       audio_url AS "audioUrl",
       image_file_name AS "imageFileName",
       audio_file_name AS "audioFileName",
+      point_captured_at AS "pointCapturedAt",
+      latitude,
+      longitude,
+      weather_label AS weather,
+      place_context AS "placeContext",
+      tags_json AS tags,
+      point_notes AS notes,
+      habitat,
+      characteristics,
+      microphone_setup AS "microphoneSetup",
+      zoom_take_reference AS "zoomTakeReference",
       published_at AS "publishedAt",
       updated_at AS "updatedAt"`,
     [
@@ -570,6 +647,17 @@ export async function upsertPublishedSelection(
       selection.audioUrl,
       selection.imageFileName,
       selection.audioFileName,
+      selection.pointCapturedAt,
+      selection.latitude,
+      selection.longitude,
+      selection.weather,
+      selection.placeContext,
+      JSON.stringify(selection.tags),
+      selection.notes,
+      selection.habitat,
+      selection.characteristics,
+      selection.microphoneSetup,
+      selection.zoomTakeReference,
       now,
       now,
     ],
@@ -623,6 +711,17 @@ export async function listPublishedSelections(filters?: {
       audio_url AS "audioUrl",
       image_file_name AS "imageFileName",
       audio_file_name AS "audioFileName",
+      point_captured_at AS "pointCapturedAt",
+      latitude,
+      longitude,
+      weather_label AS weather,
+      place_context AS "placeContext",
+      tags_json AS tags,
+      point_notes AS notes,
+      habitat,
+      characteristics,
+      microphone_setup AS "microphoneSetup",
+      zoom_take_reference AS "zoomTakeReference",
       published_at AS "publishedAt",
       updated_at AS "updatedAt"
     FROM published_selections
