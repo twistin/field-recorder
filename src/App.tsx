@@ -917,6 +917,7 @@ export default function App() {
   const [selectedArchiveProjectKey, setSelectedArchiveProjectKey] = useState<'all' | string>('all');
   const [projectDraftName, setProjectDraftName] = useState('');
   const [captureWorkspace, setCaptureWorkspace] = useState<'map' | 'points'>('map');
+  const [archiveWorkspace, setArchiveWorkspace] = useState<'session' | 'media' | 'record'>('session');
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => {
     if (typeof window === 'undefined') {
       return 'night';
@@ -1065,6 +1066,17 @@ export default function App() {
       setSelectedArchiveProjectKey('all');
     }
   }, [archiveProjectGroups, selectedArchiveProjectKey]);
+
+  useEffect(() => {
+    if (!recordSession) {
+      setArchiveWorkspace('session');
+      return;
+    }
+
+    if (!recordPoint && archiveWorkspace === 'record') {
+      setArchiveWorkspace('session');
+    }
+  }, [archiveWorkspace, recordPoint, recordSession]);
 
   useEffect(() => {
     if (allRecords.length === 0) {
@@ -2586,6 +2598,7 @@ export default function App() {
   function openRecordView(sessionId: string, pointId: string) {
     setRecordSessionId(sessionId);
     setRecordPointId(pointId);
+    setArchiveWorkspace('record');
 
     if (activeSessionId === sessionId) {
       setSelectedPointId(pointId);
@@ -2607,6 +2620,7 @@ export default function App() {
     setSelectedArchiveProjectKey(buildProjectKey(session.projectName));
     setRecordSessionId(session.id);
     setRecordPointId(latestPoint?.id ?? null);
+    setArchiveWorkspace('session');
 
     if (session.status === 'active') {
       setActiveSessionId(session.id);
@@ -2619,6 +2633,7 @@ export default function App() {
   function focusArchiveProject(projectKey: string) {
     if (projectKey === 'all') {
       setSelectedArchiveProjectKey('all');
+      setArchiveWorkspace('session');
       setView('export');
       return;
     }
@@ -3511,6 +3526,547 @@ export default function App() {
           </div>
         ) : null}
       </div>
+    );
+  }
+
+  function renderArchiveSessionWorkspace() {
+    if (!recordSession) {
+      return null;
+    }
+
+    return (
+      <>
+        <div className="panel archive-records-panel panel-tone panel-tone--sky">
+          <div className="panel-heading">
+            <p className="eyebrow">Salida abierta</p>
+            <h3 className="display-heading text-3xl">{recordSession.name}</h3>
+            <p className="module-copy text-sm">
+              {resolveProjectName(recordSession.projectName)} · {recordSession.region || 'sin zona'} ·{' '}
+              {formatDateTime(recordSession.startedAt, "d MMM yyyy · HH:mm")}
+            </p>
+          </div>
+
+          <div className="action-row action-row--compact">
+            <span className="telemetry-chip">{recordSessionPoints.length} registros</span>
+            <span className="telemetry-chip">{recordSessionPhotoLibrary.length} fotos</span>
+            <span className="telemetry-chip">{recordSessionAudioLibrary.length} tomas H6</span>
+          </div>
+
+          {recordSessionPoints.length > 0 ? (
+            <div className="archive-point-list">
+              {recordSessionPoints.map((point) => (
+                <React.Fragment key={point.id}>
+                  <SessionPointCard
+                    point={{
+                      id: point.id,
+                      placeName: point.placeName,
+                      createdAt: point.createdAt,
+                      observedWeather: point.observedWeather,
+                      zoomTakeReference: point.zoomTakeReference,
+                      microphoneSetup: point.microphoneSetup,
+                      tags: point.tags,
+                      photoPreviewUrl: point.photos[0]?.previewUrl ?? undefined,
+                    }}
+                    active={point.id === recordPoint?.id}
+                    onSelect={() => openRecordView(recordSession.id, point.id)}
+                  />
+                </React.Fragment>
+              ))}
+            </div>
+          ) : (
+            <p className="module-copy text-sm">Esta salida todavía no tiene registros guardados.</p>
+          )}
+        </div>
+
+        <div className="panel record-preview-card panel-tone panel-tone--amber">
+          <div className="panel-heading">
+            <p className="eyebrow">Registro activo en la salida</p>
+            <h3 className="display-heading text-3xl">
+              {recordPoint ? recordPoint.placeName : 'Sin registro seleccionado'}
+            </h3>
+          </div>
+
+          {recordPoint ? (
+            <>
+              <p className="module-copy text-sm">
+                {recordPoint.soundscapeClassification?.summary ||
+                  recordPoint.observedWeather ||
+                  'Selecciona un registro para abrir su ficha completa o revisar su biblioteca.'}
+              </p>
+              <div className="action-row">
+                <button
+                  type="button"
+                  onClick={() => setArchiveWorkspace('record')}
+                  className="ui-button ui-button-primary"
+                >
+                  Abrir ficha del registro
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setArchiveWorkspace('media')}
+                  className="ui-button ui-button-secondary"
+                >
+                  Ver biblioteca
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="module-copy text-sm">Selecciona un registro de la salida para abrir su ficha o su biblioteca.</p>
+          )}
+        </div>
+
+        {renderArchiveSessionCard(recordSession)}
+      </>
+    );
+  }
+
+  function renderArchiveMediaWorkspace() {
+    if (!recordSession) {
+      return null;
+    }
+
+    return (
+      <>
+        <div className="panel archive-media-panel panel-tone panel-tone--amber">
+          <div className="panel-heading">
+            <p className="eyebrow">Fotos y audio</p>
+            <h3 className="display-heading text-3xl">Biblioteca visible de la salida</h3>
+            <p className="module-copy text-sm">
+              Recorre imágenes y tomas H6 sin abrir todavía la ficha completa del registro.
+            </p>
+          </div>
+
+          <div className="home-media-section">
+            <div className="home-media-section__header">
+              <span className="telemetry-chip">
+                <Camera className="h-3.5 w-3.5" />
+                {recordSessionPhotoLibrary.length} fotos
+              </span>
+              <span className="telemetry-chip">
+                <AudioWaveform className="h-3.5 w-3.5" />
+                {recordSessionAudioLibrary.filter((take) => take.associatedPointId).length} tomas asociadas
+              </span>
+            </div>
+
+            {recordSessionPhotoLibrary.length > 0 ? (
+              <div className="archive-media-grid">
+                {recordSessionPhotoLibrary.map((photo) => (
+                  <button
+                    key={photo.id}
+                    type="button"
+                    onClick={() => openRecordView(recordSession.id, photo.pointId)}
+                    className="media-thumb-card"
+                  >
+                    <img src={photo.previewUrl} alt={photo.pointName} className="media-thumb-card__image" />
+                    <span className="media-thumb-card__caption">
+                      <strong>{photo.pointName}</strong>
+                      <small>{formatDateTime(photo.createdAt, "d MMM · HH:mm")}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="module-copy text-sm">Esta salida todavía no tiene fotos visibles.</p>
+            )}
+          </div>
+
+          <div className="home-media-section">
+            <div className="home-media-section__header">
+              <span className="telemetry-chip">
+                <AudioWaveform className="h-3.5 w-3.5" />
+                {recordSessionAudioLibrary.length} tomas H6
+              </span>
+            </div>
+
+            {recordSessionAudioLibrary.length > 0 ? (
+              <div className="archive-audio-list">
+                {recordSessionAudioLibrary.map((take) => {
+                  const linkedPoint =
+                    recordSession.points.find((point) => point.id === take.associatedPointId) ?? null;
+                  const matchLabel =
+                    take.matchedBy === 'reference'
+                      ? 'Referencia'
+                      : take.matchedBy === 'time'
+                        ? 'Hora'
+                        : take.matchedBy === 'sequence'
+                          ? 'Orden'
+                          : take.matchedBy === 'manual'
+                            ? 'Manual'
+                            : 'Sin asociar';
+
+                  return (
+                    <button
+                      key={take.id}
+                      type="button"
+                      onClick={() =>
+                        linkedPoint ? openRecordView(recordSession.id, linkedPoint.id) : focusArchiveSession(recordSession.id)
+                      }
+                      className="library-entry-card"
+                    >
+                      <span className="library-entry-card__copy">
+                        <span className="library-entry-card__eyebrow">Toma H6 · {matchLabel}</span>
+                        <strong className="library-entry-card__title">{take.fileName}</strong>
+                        <span className="library-entry-card__meta">
+                          {linkedPoint ? linkedPoint.placeName : 'Sin punto asociado'} ·{' '}
+                          {formatDateTime(take.inferredRecordedAt, "d MMM yyyy · HH:mm")}
+                        </span>
+                      </span>
+                      <span className="library-entry-card__cta">
+                        {linkedPoint ? 'Abrir registro' : 'Abrir salida'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="module-copy text-sm">Esta salida todavía no tiene tomas H6 importadas.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="panel record-preview-card panel-tone panel-tone--sky">
+          <div className="panel-heading">
+            <p className="eyebrow">Registro seleccionado en la biblioteca</p>
+            <h3 className="display-heading text-3xl">
+              {recordPoint ? recordPoint.placeName : 'Sin registro seleccionado'}
+            </h3>
+          </div>
+
+          {recordPoint ? (
+            <>
+              <p className="module-copy text-sm">
+                {recordPoint.notes || recordPoint.detectedPlace?.context || 'Este registro ya puede abrirse en la ficha completa.'}
+              </p>
+              <div className="action-row">
+                <button
+                  type="button"
+                  onClick={() => setArchiveWorkspace('record')}
+                  className="ui-button ui-button-primary"
+                >
+                  Ver ficha completa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setArchiveWorkspace('session')}
+                  className="ui-button ui-button-secondary"
+                >
+                  Volver a salida
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="module-copy text-sm">Selecciona una foto o una toma H6 para enfocar el registro correspondiente.</p>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderArchiveRecordWorkspace() {
+    if (!recordSession) {
+      return null;
+    }
+
+    if (!recordPoint) {
+      return (
+        <div className="panel empty-state-card">
+          <p className="display-heading text-3xl">Selecciona un registro</p>
+          <p className="module-copy text-sm">
+            Abre un registro desde la salida o desde la biblioteca para ver su ficha completa, publicarlo o exportarlo.
+          </p>
+          <div className="action-row">
+            <button type="button" onClick={() => setArchiveWorkspace('session')} className="ui-button ui-button-primary">
+              Ir a la salida
+            </button>
+            <button type="button" onClick={() => setArchiveWorkspace('media')} className="ui-button ui-button-secondary">
+              Abrir biblioteca
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <div className="panel record-header-card panel-tone panel-tone--sky">
+          <div className="panel-heading">
+            <p className="eyebrow">Registro seleccionado</p>
+            <h3 className="display-heading text-4xl">{recordPoint.placeName}</h3>
+            <p className="module-copy text-sm">
+              {recordSession.name} · {resolveProjectName(recordSession.projectName)} ·{' '}
+              {formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm:ss")}
+            </p>
+          </div>
+
+          <div className="record-header-card__meta">
+            <div className="soft-card">
+              <p className="eyebrow">ID H6 asociado</p>
+              <p className="summary-value">{recordPoint.zoomTakeReference || 'Sin ID'}</p>
+            </div>
+            <div className="soft-card">
+              <p className="eyebrow">IA sonora</p>
+              <p className="summary-value">{recordPoint.soundscapeClassification?.summary || 'Sin clasificar'}</p>
+            </div>
+            <div className="soft-card">
+              <p className="eyebrow">Estado de salida</p>
+              <p className="summary-value">{recordSession.status === 'active' ? 'Activa' : 'Cerrada'}</p>
+            </div>
+          </div>
+
+          <div className="action-row">
+            <button
+              type="button"
+              onClick={() => exportSessionPointCsv(recordSession, recordPoint)}
+              className="ui-button ui-button-primary"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Exportar CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => exportSessionPointKml(recordSession, recordPoint)}
+              className="ui-button ui-button-secondary"
+            >
+              <MapIcon className="h-4 w-4" />
+              Exportar KML
+            </button>
+            <button
+              type="button"
+              onClick={() => void exportSession(recordSession)}
+              className="ui-button ui-button-secondary"
+            >
+              <Download className="h-4 w-4" />
+              Exportar ZIP
+            </button>
+            {recordSession.status === 'active' ? (
+              <button
+                type="button"
+                onClick={() => setView('point')}
+                className="ui-button ui-button-secondary"
+              >
+                <Mic className="h-4 w-4" />
+                Seguir registrando
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="panel record-gallery-card panel-tone panel-tone--clay">
+          <div className="panel-heading">
+            <p className="eyebrow">Fotos del registro</p>
+            <h3 className="display-heading text-3xl">Galería del punto seleccionado</h3>
+          </div>
+
+          {recordPoint.photos.some((photo) => photo.previewUrl) ? (
+            <div className="record-gallery-grid">
+              {recordPoint.photos.map((photo) =>
+                photo.previewUrl ? (
+                  <img
+                    key={photo.id}
+                    src={photo.previewUrl}
+                    alt={photo.fileName}
+                    className="record-gallery-grid__image"
+                  />
+                ) : null,
+              )}
+            </div>
+          ) : (
+            <p className="module-copy text-sm">Este registro no tiene imágenes asociadas.</p>
+          )}
+        </div>
+
+        <div className="panel panel-tone panel-tone--amber">
+          <div className="panel-heading">
+            <p className="eyebrow">Selección web</p>
+            <h3 className="display-heading text-3xl">Imagen + audio publicables</h3>
+            <p className="module-copy text-sm">
+              La publicación sube la imagen y la toma H6 elegidas, guarda una selección remota y te deja URLs directas para consumir desde tu web.
+            </p>
+          </div>
+
+          {recordPointPhotoOptions.length === 0 ? (
+            <p className="module-copy text-sm">Este punto no tiene imágenes para publicar.</p>
+          ) : recordPointAudioOptions.length === 0 ? (
+            <p className="module-copy text-sm">
+              Este punto todavía no tiene ninguna toma H6 asociada. Asígnala primero en el índice de tomas.
+            </p>
+          ) : (
+            <div className="grid gap-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                  <span>Imagen</span>
+                  <select
+                    value={publishPhotoId}
+                    onChange={(event) => setPublishPhotoId(event.target.value)}
+                    className="field-input"
+                  >
+                    {recordPointPhotoOptions.map((photo) => (
+                      <option key={photo.id} value={photo.id}>
+                        {photo.fileName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                  <span>Audio</span>
+                  <select
+                    value={publishAudioTakeId}
+                    onChange={(event) => setPublishAudioTakeId(event.target.value)}
+                    className="field-input"
+                  >
+                    {recordPointAudioOptions.map((take) => (
+                      <option key={take.id} value={take.id}>
+                        {take.fileName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {selectedPublishPhoto?.previewUrl ? (
+                <img
+                  src={selectedPublishPhoto.previewUrl}
+                  alt={selectedPublishPhoto.fileName}
+                  className="record-gallery-grid__image"
+                />
+              ) : null}
+
+              <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                <span>Caption</span>
+                <textarea
+                  value={publishCaption}
+                  onChange={(event) => setPublishCaption(event.target.value)}
+                  rows={4}
+                  className="field-input min-h-28"
+                  placeholder="Texto breve para tu web"
+                />
+              </label>
+
+              <div className="action-row">
+                <button
+                  type="button"
+                  onClick={() => void publishCurrentSelection()}
+                  disabled={isPublishingSelection}
+                  className="ui-button ui-button-primary"
+                >
+                  <Globe className="h-4 w-4" />
+                  {isPublishingSelection ? 'Publicando...' : 'Publicar selección'}
+                </button>
+              </div>
+
+              {publishedSelectionsForPoint.length > 0 ? (
+                <div className="grid gap-3">
+                  {publishedSelectionsForPoint.slice(0, 3).map((selection) => (
+                    <div key={selection.id} className="soft-card">
+                      <p className="eyebrow">Publicado {formatDateTime(selection.publishedAt, "d MMM yyyy · HH:mm")}</p>
+                      <p className="module-copy text-sm">{selection.caption}</p>
+                      <div className="action-row action-row--compact mt-3">
+                        <a href={selection.imageUrl} target="_blank" rel="noreferrer" className="ui-button ui-button-secondary">
+                          Abrir imagen
+                        </a>
+                        <a href={selection.audioUrl} target="_blank" rel="noreferrer" className="ui-button ui-button-secondary">
+                          Abrir audio
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        <div className="panel record-metadata-card panel-tone panel-tone--mint">
+          <div className="panel-heading">
+            <p className="eyebrow">Ficha del registro</p>
+            <h3 className="display-heading text-3xl">GPS, clima, notas y etiquetas</h3>
+          </div>
+
+          <div className="record-meta-grid">
+            <div className="soft-card">
+              <p className="eyebrow">GPS</p>
+              <p className="summary-value">{recordPoint.gps.accuracy ? `${Math.round(recordPoint.gps.accuracy)} m` : 'n/d'}</p>
+              <p className="module-copy text-sm">
+                {recordPoint.gps.lat.toFixed(6)}, {recordPoint.gps.lon.toFixed(6)}
+              </p>
+            </div>
+            <div className="soft-card">
+              <p className="eyebrow">Clima</p>
+              <p className="summary-value">{recordPoint.observedWeather || 'Sin dato'}</p>
+              <p className="module-copy text-sm">{recordPoint.automaticWeather?.details || 'Sin detalle automático'}</p>
+            </div>
+            <div className="soft-card">
+              <p className="eyebrow">IA sonora</p>
+              <p className="summary-value">{recordPoint.soundscapeClassification?.summary || 'Sin clasificar'}</p>
+              <p className="module-copy text-sm">{recordPoint.soundscapeClassification?.details || 'No se ejecutó clasificación pasiva.'}</p>
+            </div>
+            <div className="soft-card">
+              <p className="eyebrow">Lugar resuelto</p>
+              <p className="summary-value">{recordPoint.detectedPlace?.placeName || recordPoint.placeName}</p>
+              <p className="module-copy text-sm">{recordPoint.detectedPlace?.context || 'Sin contexto adicional'}</p>
+            </div>
+            <div className="soft-card">
+              <p className="eyebrow">Micros / setup</p>
+              <p className="summary-value">{recordPoint.microphoneSetup || 'Sin setup'}</p>
+              <p className="module-copy text-sm">Referencia H6: {recordPoint.zoomTakeReference || 'Sin ID'}</p>
+            </div>
+            <div className="soft-card">
+              <p className="eyebrow">Trabajo</p>
+              <p className="summary-value">{resolveProjectName(recordSession.projectName)}</p>
+              <p className="module-copy text-sm">{recordSession.region || 'Sin región'}</p>
+            </div>
+          </div>
+
+          {recordPoint.soundscapeClassification?.tags.length ? (
+            <div className="tag-strip">
+              {recordPoint.soundscapeClassification.tags.map((tag) => (
+                <span key={tag} className="tag-pill">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {recordPoint.tags.length ? (
+            <div className="tag-strip">
+              {recordPoint.tags.map((tag) => (
+                <span key={tag} className="tag-pill">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {recordPoint.notes ? (
+            <div className="soft-card">
+              <p className="eyebrow">Notas</p>
+              <p className="module-copy text-sm">{recordPoint.notes}</p>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="panel record-map-card panel-tone panel-tone--sky">
+          <div className="panel-heading">
+            <p className="eyebrow">Posición</p>
+            <h3 className="display-heading text-3xl">Mapa del registro seleccionado</h3>
+          </div>
+
+          <SessionMap
+            points={[
+              {
+                id: recordPoint.id,
+                placeName: recordPoint.placeName,
+                lat: recordPoint.gps.lat,
+                lon: recordPoint.gps.lon,
+                orderLabel: '1',
+              },
+            ]}
+            selectedPointId={recordPoint.id}
+            onSelectPoint={() => undefined}
+          />
+        </div>
+      </>
     );
   }
 
@@ -4887,11 +5443,11 @@ export default function App() {
                 exit={{ opacity: 0, y: -18 }}
                 className="layout-record"
               >
-                {!recordSession || !recordPoint ? (
+                {!recordSession ? (
                   <div className="panel empty-state-card">
-                    <p className="display-heading text-3xl">Todavía no hay registros completos</p>
+                    <p className="display-heading text-3xl">Todavía no hay salidas archivadas</p>
                     <p className="module-copy text-sm">
-                      Crea o selecciona un registro desde el panel o desde la captura activa para revisar su ficha final.
+                      Abre una salida desde el navegador lateral para entrar en su espacio de trabajo y revisar registros, biblioteca o ficha completa.
                     </p>
                   </div>
                 ) : (
@@ -5003,433 +5559,54 @@ export default function App() {
                         </p>
                       )}
                     </div>
-
-                    <div className="panel archive-records-panel panel-tone panel-tone--sky">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Salida abierta</p>
-                        <h3 className="display-heading text-3xl">{recordSession.name}</h3>
-                        <p className="module-copy text-sm">
-                          {resolveProjectName(recordSession.projectName)} · {recordSession.region || 'sin zona'} ·{' '}
-                          {formatDateTime(recordSession.startedAt, "d MMM yyyy · HH:mm")}
-                        </p>
-                      </div>
-
-                      <div className="action-row action-row--compact">
-                        <span className="telemetry-chip">
-                          {recordSessionPoints.length} registros
-                        </span>
-                        <span className="telemetry-chip">
-                          {recordSessionPhotoLibrary.length} fotos
-                        </span>
-                        <span className="telemetry-chip">
-                          {recordSessionAudioLibrary.length} tomas H6
-                        </span>
-                      </div>
-
-                      {recordSessionPoints.length > 0 ? (
-                        <div className="archive-point-list">
-                          {recordSessionPoints.map((point) => (
-                            <React.Fragment key={point.id}>
-                              <SessionPointCard
-                                point={{
-                                  id: point.id,
-                                  placeName: point.placeName,
-                                  createdAt: point.createdAt,
-                                  observedWeather: point.observedWeather,
-                                  zoomTakeReference: point.zoomTakeReference,
-                                  microphoneSetup: point.microphoneSetup,
-                                  tags: point.tags,
-                                  photoPreviewUrl: point.photos[0]?.previewUrl ?? undefined,
-                                }}
-                                active={point.id === recordPoint?.id}
-                                onSelect={() => openRecordView(recordSession.id, point.id)}
-                              />
-                            </React.Fragment>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="module-copy text-sm">
-                          Esta salida todavía no tiene registros guardados.
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="panel archive-media-panel panel-tone panel-tone--amber">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Fotos y audio</p>
-                        <h3 className="display-heading text-3xl">Biblioteca visible de la salida</h3>
-                        <p className="module-copy text-sm">
-                          Las fotos y las tomas H6 quedan a la vista en la misma pantalla, sin menús avanzados.
-                        </p>
-                      </div>
-
-                      <div className="home-media-section">
-                        <div className="home-media-section__header">
-                          <span className="telemetry-chip">
-                            <Camera className="h-3.5 w-3.5" />
-                            {recordSessionPhotoLibrary.length} fotos
-                          </span>
-                          <span className="telemetry-chip">
-                            <AudioWaveform className="h-3.5 w-3.5" />
-                            {recordSessionAudioLibrary.filter((take) => take.associatedPointId).length} tomas asociadas
-                          </span>
-                        </div>
-
-                        {recordSessionPhotoLibrary.length > 0 ? (
-                          <div className="archive-media-grid">
-                            {recordSessionPhotoLibrary.map((photo) => (
-                              <button
-                                key={photo.id}
-                                type="button"
-                                onClick={() => openRecordView(recordSession.id, photo.pointId)}
-                                className="media-thumb-card"
-                              >
-                                <img src={photo.previewUrl} alt={photo.pointName} className="media-thumb-card__image" />
-                                <span className="media-thumb-card__caption">
-                                  <strong>{photo.pointName}</strong>
-                                  <small>{formatDateTime(photo.createdAt, "d MMM · HH:mm")}</small>
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="module-copy text-sm">Esta salida todavía no tiene fotos visibles.</p>
-                        )}
-                      </div>
-
-                      <div className="home-media-section">
-                        <div className="home-media-section__header">
-                          <span className="telemetry-chip">
-                            <AudioWaveform className="h-3.5 w-3.5" />
-                            {recordSessionAudioLibrary.length} tomas H6
-                          </span>
-                        </div>
-
-                        {recordSessionAudioLibrary.length > 0 ? (
-                          <div className="archive-audio-list">
-                            {recordSessionAudioLibrary.map((take) => {
-                              const linkedPoint =
-                                recordSession.points.find((point) => point.id === take.associatedPointId) ?? null;
-                              const matchLabel =
-                                take.matchedBy === 'reference'
-                                  ? 'Referencia'
-                                  : take.matchedBy === 'time'
-                                    ? 'Hora'
-                                    : take.matchedBy === 'sequence'
-                                      ? 'Orden'
-                                    : take.matchedBy === 'manual'
-                                      ? 'Manual'
-                                      : 'Sin asociar';
-
-                              return (
-                                <button
-                                  key={take.id}
-                                  type="button"
-                                  onClick={() =>
-                                    linkedPoint ? openRecordView(recordSession.id, linkedPoint.id) : focusArchiveSession(recordSession.id)
-                                  }
-                                  className="library-entry-card"
-                                >
-                                  <span className="library-entry-card__copy">
-                                    <span className="library-entry-card__eyebrow">Toma H6 · {matchLabel}</span>
-                                    <strong className="library-entry-card__title">{take.fileName}</strong>
-                                    <span className="library-entry-card__meta">
-                                      {linkedPoint ? linkedPoint.placeName : 'Sin punto asociado'} ·{' '}
-                                      {formatDateTime(take.inferredRecordedAt, "d MMM yyyy · HH:mm")}
-                                    </span>
-                                  </span>
-                                  <span className="library-entry-card__cta">
-                                    {linkedPoint ? 'Abrir registro' : 'Abrir salida'}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p className="module-copy text-sm">Esta salida todavía no tiene tomas H6 importadas.</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="panel record-header-card panel-tone panel-tone--sky">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Registro seleccionado</p>
-                        <h3 className="display-heading text-4xl">{recordPoint.placeName}</h3>
-                        <p className="module-copy text-sm">
-                          {recordSession.name} · {resolveProjectName(recordSession.projectName)} · {formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm:ss")}
-                        </p>
-                      </div>
-
-                      <div className="record-header-card__meta">
-                        <div className="soft-card">
-                          <p className="eyebrow">ID H6 asociado</p>
-                          <p className="summary-value">{recordPoint.zoomTakeReference || 'Sin ID'}</p>
-                        </div>
-                        <div className="soft-card">
-                          <p className="eyebrow">IA sonora</p>
-                          <p className="summary-value">{recordPoint.soundscapeClassification?.summary || 'Sin clasificar'}</p>
-                        </div>
-                        <div className="soft-card">
-                          <p className="eyebrow">Estado de salida</p>
-                          <p className="summary-value">{recordSession.status === 'active' ? 'Activa' : 'Cerrada'}</p>
-                        </div>
-                      </div>
-
-                      <div className="action-row">
-                        <button
-                          type="button"
-                          onClick={() => exportSessionPointCsv(recordSession, recordPoint)}
-                          className="ui-button ui-button-primary"
-                        >
-                          <FileSpreadsheet className="h-4 w-4" />
-                          Exportar CSV
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => exportSessionPointKml(recordSession, recordPoint)}
-                          className="ui-button ui-button-secondary"
-                        >
-                          <MapIcon className="h-4 w-4" />
-                          Exportar KML
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void exportSession(recordSession)}
-                          className="ui-button ui-button-secondary"
-                        >
-                          <Download className="h-4 w-4" />
-                          Exportar ZIP
-                        </button>
-                        {recordSession.status === 'active' ? (
-                          <button
-                            type="button"
-                            onClick={() => setView('point')}
-                            className="ui-button ui-button-secondary"
-                          >
-                            <Mic className="h-4 w-4" />
-                            Seguir registrando
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="panel record-gallery-card panel-tone panel-tone--clay">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Fotos del registro</p>
-                        <h3 className="display-heading text-3xl">Galería del punto seleccionado</h3>
-                      </div>
-
-                      {recordPoint.photos.some((photo) => photo.previewUrl) ? (
-                        <div className="record-gallery-grid">
-                          {recordPoint.photos.map((photo) =>
-                            photo.previewUrl ? (
-                              <img
-                                key={photo.id}
-                                src={photo.previewUrl}
-                                alt={photo.fileName}
-                                className="record-gallery-grid__image"
-                              />
-                            ) : null,
-                          )}
-                        </div>
-                      ) : (
-                        <p className="module-copy text-sm">Este registro no tiene imágenes asociadas.</p>
-                      )}
-                    </div>
-
-                    <div className="panel panel-tone panel-tone--amber">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Selección web</p>
-                        <h3 className="display-heading text-3xl">Imagen + audio publicables</h3>
-                        <p className="module-copy text-sm">
-                          La publicación sube la imagen y la toma H6 elegidas, guarda una selección remota y te deja URLs directas para consumir desde tu web.
-                        </p>
-                      </div>
-
-                      {recordPointPhotoOptions.length === 0 ? (
-                        <p className="module-copy text-sm">Este punto no tiene imágenes para publicar.</p>
-                      ) : recordPointAudioOptions.length === 0 ? (
-                        <p className="module-copy text-sm">
-                          Este punto todavía no tiene ninguna toma H6 asociada. Asígnala primero en el índice de tomas.
-                        </p>
-                      ) : (
-                        <div className="grid gap-4">
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                              <span>Imagen</span>
-                              <select
-                                value={publishPhotoId}
-                                onChange={(event) => setPublishPhotoId(event.target.value)}
-                                className="field-input"
-                              >
-                                {recordPointPhotoOptions.map((photo) => (
-                                  <option key={photo.id} value={photo.id}>
-                                    {photo.fileName}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-
-                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                              <span>Audio</span>
-                              <select
-                                value={publishAudioTakeId}
-                                onChange={(event) => setPublishAudioTakeId(event.target.value)}
-                                className="field-input"
-                              >
-                                {recordPointAudioOptions.map((take) => (
-                                  <option key={take.id} value={take.id}>
-                                    {take.fileName}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-
-                          {selectedPublishPhoto?.previewUrl ? (
-                            <img
-                              src={selectedPublishPhoto.previewUrl}
-                              alt={selectedPublishPhoto.fileName}
-                              className="record-gallery-grid__image"
-                            />
-                          ) : null}
-
-                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                            <span>Caption</span>
-                            <textarea
-                              value={publishCaption}
-                              onChange={(event) => setPublishCaption(event.target.value)}
-                              rows={4}
-                              className="field-input min-h-28"
-                              placeholder="Texto breve para tu web"
-                            />
-                          </label>
-
-                          <div className="action-row">
-                            <button
-                              type="button"
-                              onClick={() => void publishCurrentSelection()}
-                              disabled={isPublishingSelection}
-                              className="ui-button ui-button-primary"
-                            >
-                              <Globe className="h-4 w-4" />
-                              {isPublishingSelection ? 'Publicando...' : 'Publicar selección'}
-                            </button>
-                          </div>
-
-                          {publishedSelectionsForPoint.length > 0 ? (
-                            <div className="grid gap-3">
-                              {publishedSelectionsForPoint.slice(0, 3).map((selection) => (
-                                <div key={selection.id} className="soft-card">
-                                  <p className="eyebrow">Publicado {formatDateTime(selection.publishedAt, "d MMM yyyy · HH:mm")}</p>
-                                  <p className="module-copy text-sm">{selection.caption}</p>
-                                  <div className="action-row action-row--compact mt-3">
-                                    <a href={selection.imageUrl} target="_blank" rel="noreferrer" className="ui-button ui-button-secondary">
-                                      Abrir imagen
-                                    </a>
-                                    <a href={selection.audioUrl} target="_blank" rel="noreferrer" className="ui-button ui-button-secondary">
-                                      Abrir audio
-                                    </a>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="panel record-metadata-card panel-tone panel-tone--mint">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Ficha del registro</p>
-                        <h3 className="display-heading text-3xl">GPS, clima, notas y etiquetas</h3>
-                      </div>
-
-                      <div className="record-meta-grid">
-                        <div className="soft-card">
-                          <p className="eyebrow">GPS</p>
-                          <p className="summary-value">{recordPoint.gps.accuracy ? `${Math.round(recordPoint.gps.accuracy)} m` : 'n/d'}</p>
+                    <div className="archive-detail-stack">
+                      <div className="panel archive-workspace-panel panel-tone panel-tone--sky">
+                        <div className="panel-heading">
+                          <p className="eyebrow">Espacio de trabajo</p>
+                          <h3 className="display-heading text-3xl">{recordSession.name}</h3>
                           <p className="module-copy text-sm">
-                            {recordPoint.gps.lat.toFixed(6)}, {recordPoint.gps.lon.toFixed(6)}
+                            Muévete por la salida con un modo cada vez: registros, biblioteca o ficha completa.
                           </p>
                         </div>
-                        <div className="soft-card">
-                          <p className="eyebrow">Clima</p>
-                          <p className="summary-value">{recordPoint.observedWeather || 'Sin dato'}</p>
-                          <p className="module-copy text-sm">{recordPoint.automaticWeather?.details || 'Sin detalle automático'}</p>
+
+                        <div className="action-row action-row--compact">
+                          <span className="telemetry-chip">{resolveProjectName(recordSession.projectName)}</span>
+                          <span className="telemetry-chip">{recordSessionPoints.length} registros</span>
+                          <span className="telemetry-chip">{recordSessionAudioLibrary.length} tomas H6</span>
                         </div>
-                        <div className="soft-card">
-                          <p className="eyebrow">IA sonora</p>
-                          <p className="summary-value">{recordPoint.soundscapeClassification?.summary || 'Sin clasificar'}</p>
-                          <p className="module-copy text-sm">{recordPoint.soundscapeClassification?.details || 'No se ejecutó clasificación pasiva.'}</p>
-                        </div>
-                        <div className="soft-card">
-                          <p className="eyebrow">Lugar resuelto</p>
-                          <p className="summary-value">{recordPoint.detectedPlace?.placeName || recordPoint.placeName}</p>
-                          <p className="module-copy text-sm">{recordPoint.detectedPlace?.context || 'Sin contexto adicional'}</p>
-                        </div>
-                        <div className="soft-card">
-                          <p className="eyebrow">Micros / setup</p>
-                          <p className="summary-value">{recordPoint.microphoneSetup || 'Sin setup'}</p>
-                          <p className="module-copy text-sm">Referencia H6: {recordPoint.zoomTakeReference || 'Sin ID'}</p>
-                        </div>
-                        <div className="soft-card">
-                          <p className="eyebrow">Trabajo</p>
-                          <p className="summary-value">{resolveProjectName(recordSession.projectName)}</p>
-                          <p className="module-copy text-sm">{recordSession.region || 'Sin región'}</p>
+
+                        <div className="segment-switch archive-workspace-switch">
+                          <button
+                            type="button"
+                            onClick={() => setArchiveWorkspace('session')}
+                            className={`segment-switch__button ${archiveWorkspace === 'session' ? 'is-active' : ''}`}
+                          >
+                            Salida
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setArchiveWorkspace('media')}
+                            className={`segment-switch__button ${archiveWorkspace === 'media' ? 'is-active' : ''}`}
+                          >
+                            Biblioteca
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setArchiveWorkspace('record')}
+                            disabled={!recordPoint}
+                            className={`segment-switch__button ${archiveWorkspace === 'record' ? 'is-active' : ''}`}
+                          >
+                            Registro
+                          </button>
                         </div>
                       </div>
 
-                      {recordPoint.soundscapeClassification?.tags.length ? (
-                        <div className="tag-strip">
-                          {recordPoint.soundscapeClassification.tags.map((tag) => (
-                            <span key={tag} className="tag-pill">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {recordPoint.tags.length ? (
-                        <div className="tag-strip">
-                          {recordPoint.tags.map((tag) => (
-                            <span key={tag} className="tag-pill">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {recordPoint.notes ? (
-                        <div className="soft-card">
-                          <p className="eyebrow">Notas</p>
-                          <p className="module-copy text-sm">{recordPoint.notes}</p>
-                        </div>
-                      ) : null}
+                      {archiveWorkspace === 'session'
+                        ? renderArchiveSessionWorkspace()
+                        : archiveWorkspace === 'media'
+                          ? renderArchiveMediaWorkspace()
+                          : renderArchiveRecordWorkspace()}
                     </div>
-
-                    <div className="panel record-map-card panel-tone panel-tone--sky">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Posición</p>
-                        <h3 className="display-heading text-3xl">Mapa del registro seleccionado</h3>
-                      </div>
-
-                      <SessionMap
-                        points={[
-                          {
-                            id: recordPoint.id,
-                            placeName: recordPoint.placeName,
-                            lat: recordPoint.gps.lat,
-                            lon: recordPoint.gps.lon,
-                            orderLabel: '1',
-                          },
-                        ]}
-                        selectedPointId={recordPoint.id}
-                        onSelectPoint={() => undefined}
-                      />
-                    </div>
-
-                    {renderArchiveSessionCard(recordSession)}
                   </>
                 )}
               </motion.section>

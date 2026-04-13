@@ -1377,6 +1377,21 @@ audio {
   gap: 0.6rem;
 }
 
+.archive-detail-stack {
+  display: grid;
+  gap: 1.15rem;
+  align-content: start;
+}
+
+.archive-workspace-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.archive-workspace-switch {
+  width: fit-content;
+}
+
 .archive-filter-button {
   display: inline-flex;
   align-items: center;
@@ -2413,21 +2428,24 @@ select:focus-visible {
 
   .layout-record {
     grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    align-items: start;
   }
 
   .archive-browser-panel {
     grid-column: 1;
-    grid-row: 1 / span 3;
+    grid-row: 1;
+    position: sticky;
+    top: 1rem;
+    align-self: start;
   }
 
-  .archive-records-panel,
-  .archive-media-panel {
+  .archive-detail-stack {
     grid-column: 2;
   }
 
-  .record-header-card,
-  .archive-session-card {
-    grid-column: 1 / -1;
+  .archive-detail-stack > * {
+    grid-column: auto;
+    grid-row: auto;
   }
 }
 
@@ -2481,36 +2499,21 @@ select:focus-visible {
   }
 
   .layout-record {
-    grid-template-columns: minmax(0, 0.7fr) minmax(0, 0.9fr) minmax(0, 1.08fr);
+    grid-template-columns: minmax(0, 0.68fr) minmax(0, 1.32fr);
   }
 
   .archive-browser-panel {
     grid-column: 1;
-    grid-row: 1 / span 3;
+    grid-row: 1;
   }
 
-  .archive-records-panel {
+  .archive-detail-stack {
     grid-column: 2;
   }
 
-  .archive-media-panel {
-    grid-column: 3;
-  }
-
-  .record-header-card {
-    grid-column: 2 / -1;
-  }
-
-  .record-gallery-card {
-    grid-column: 2;
-  }
-
-  .record-metadata-card {
-    grid-column: 3;
-  }
-
-  .record-map-card {
-    grid-column: 2 / -1;
+  .archive-detail-stack > * {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .archive-session-card {
