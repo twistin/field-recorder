@@ -27,7 +27,7 @@ export function SessionPointCard({
       type="button"
       onClick={onSelect}
       aria-pressed={active}
-      className={`panel point-card flex w-full flex-col gap-4 p-5 text-left transition ${
+      className={`panel point-card panel-tone panel-tone--sky flex w-full flex-col gap-4 p-5 text-left transition ${
         active ? 'is-active' : ''
       }`}
     >
@@ -50,15 +50,15 @@ export function SessionPointCard({
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <div className="soft-card">
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-[color:var(--muted)]">
+        <div className="point-card__fact point-card__fact--weather">
+          <div className="point-card__fact-label">
             <MapPin className="h-4 w-4 text-[color:var(--ember)]" />
             Clima
           </div>
           <p className="mt-2 text-sm text-[color:var(--ink)]">{point.observedWeather || 'Sin dato'}</p>
         </div>
-        <div className="soft-card">
-          <p className="eyebrow text-[color:var(--muted)]">Referencia Zoom H6</p>
+        <div className="point-card__fact point-card__fact--audio">
+          <p className="point-card__fact-label">Referencia Zoom H6</p>
           <p className="mt-2 text-sm text-[color:var(--ink)]">{point.zoomTakeReference || 'Sin referencia'}</p>
           <p className="mt-2 text-sm text-[color:var(--muted)]">{point.microphoneSetup || 'Sin setup'}</p>
         </div>

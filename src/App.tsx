@@ -3413,7 +3413,7 @@ export default function App() {
               key="home-topbar"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="panel home-topbar"
+              className="panel home-topbar panel-tone panel-tone--sky"
             >
               <div className="home-topbar__brand">
                 <p className="eyebrow">Entrada principal</p>
@@ -3610,7 +3610,7 @@ export default function App() {
                 className="layout-home"
               >
                 <div className="home-primary-grid">
-                  <div className="panel home-session-overview">
+              <div className="panel home-session-overview panel-tone panel-tone--sky">
                     <div className="panel-heading">
                       <p className="eyebrow">Salida actual</p>
                       <h3 className="display-heading text-3xl">
@@ -3670,7 +3670,7 @@ export default function App() {
                   </div>
 
                   <div className="home-library-stack">
-                    <div className="panel home-library-card">
+                    <div className="panel home-library-card panel-tone panel-tone--mint">
                       <div className="panel-heading">
                         <p className="eyebrow">Trabajo existente</p>
                         <h3 className="display-heading text-3xl">Trabajos y salidas</h3>
@@ -3738,7 +3738,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="panel home-library-card home-library-card--media">
+                    <div className="panel home-library-card home-library-card--media panel-tone panel-tone--amber">
                       <div className="panel-heading">
                         <p className="eyebrow">Archivos</p>
                         <h3 className="display-heading text-3xl">Fotos y audio visibles</h3>
@@ -3821,7 +3821,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -18 }}
                 className="layout-dashboard"
               >
-                <div className="panel panel-primary dashboard-session-panel">
+                <div className="panel panel-primary dashboard-session-panel panel-tone panel-tone--sky">
                   <div className="panel-heading panel-heading--inverse">
                     <p className="eyebrow eyebrow-inverse">{activeSession ? 'Salida activa' : 'Preparar salida'}</p>
                     <h3 className="display-heading text-3xl panel-primary-title">
@@ -3962,7 +3962,7 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="panel dashboard-browser-panel">
+                <div className="panel dashboard-browser-panel panel-tone panel-tone--mint">
                   <div className="panel-heading">
                     <p className="eyebrow">Archivo de trabajo</p>
                     <h3 className="display-heading text-3xl">Trabajos y salidas visibles</h3>
@@ -4038,7 +4038,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="panel dashboard-search-panel">
+                <div className="panel dashboard-search-panel panel-tone panel-tone--clay">
                   <div className="panel-heading">
                     <p className="eyebrow">Buscar registros</p>
                     <h3 className="display-heading text-3xl">Lugar, trabajo o referencia H6</h3>
@@ -4091,7 +4091,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="panel dashboard-map-panel">
+                <div className="panel dashboard-map-panel panel-tone panel-tone--sky">
                   <div className="panel-heading">
                     <p className="eyebrow">Mapa de calor de grabaciones</p>
                     <h3 className="display-heading text-3xl">Actividad global de campo</h3>
@@ -4125,7 +4125,7 @@ export default function App() {
                   />
                 </div>
 
-                <div className="panel dashboard-insights-panel">
+                <div className="panel dashboard-insights-panel panel-tone panel-tone--amber">
                   <div className="panel-heading">
                     <p className="eyebrow">Volumen y pendientes</p>
                     <h3 className="display-heading text-3xl">Estado del archivo y la sincronización</h3>
@@ -4221,7 +4221,7 @@ export default function App() {
                   </div>
                 ) : (
                   <>
-                    <div className="panel panel-primary log-summary-card">
+                    <div className="panel panel-primary log-summary-card panel-tone panel-tone--sky">
                       <div className="panel-heading panel-heading--inverse">
                         <p className="eyebrow eyebrow-inverse">Registro activo</p>
                         <h3 className="display-heading text-3xl panel-primary-title">{activeSessionProjectName}</h3>
@@ -4345,7 +4345,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="panel log-form-card">
+                    <div className="panel log-form-card panel-tone panel-tone--mint">
                       <div className="panel-heading">
                         <p className="eyebrow">Datos esenciales</p>
                         <h3 className="display-heading text-3xl">Lo mínimo para cerrar un buen registro</h3>
@@ -4491,7 +4491,7 @@ export default function App() {
                       </details>
                     </div>
 
-                    <div className="panel listen-panel">
+                    <div className="panel listen-panel panel-tone panel-tone--amber">
                       <div className="panel-heading">
                         <p className="eyebrow">Sección IA</p>
                         <h3 className="display-heading text-3xl">Detectar Elementos Del Ambiente</h3>
@@ -4530,7 +4530,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="panel photos-panel">
+                    <div className="panel photos-panel panel-tone panel-tone--clay">
                       <div className="panel-heading">
                         <p className="eyebrow">Área de fotos</p>
                         <h3 className="display-heading text-3xl">Setup y entorno</h3>
@@ -4571,7 +4571,7 @@ export default function App() {
                       ) : null}
                     </div>
 
-                    <div className="panel log-map-panel">
+                    <div className="panel log-map-panel panel-tone panel-tone--sky">
                       <div className="panel-heading">
                         <p className="eyebrow">Exploración</p>
                         <h3 className="display-heading text-3xl">Mapa y registros previos</h3>
@@ -4645,7 +4645,7 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="panel record-preview-card">
+                    <div className="panel record-preview-card panel-tone panel-tone--amber">
                       <div className="panel-heading">
                         <p className="eyebrow">Último registro visible</p>
                         <h3 className="display-heading text-3xl">
@@ -4702,7 +4702,7 @@ export default function App() {
                   </div>
                 ) : (
                   <>
-                    <div className="panel archive-browser-panel">
+                    <div className="panel archive-browser-panel panel-tone panel-tone--mint">
                       <div className="panel-heading">
                         <p className="eyebrow">Archivo visible</p>
                         <h3 className="display-heading text-3xl">Trabajos y salidas archivadas</h3>
@@ -4810,7 +4810,7 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="panel archive-records-panel">
+                    <div className="panel archive-records-panel panel-tone panel-tone--sky">
                       <div className="panel-heading">
                         <p className="eyebrow">Salida abierta</p>
                         <h3 className="display-heading text-3xl">{recordSession.name}</h3>
@@ -4860,7 +4860,7 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="panel archive-media-panel">
+                    <div className="panel archive-media-panel panel-tone panel-tone--amber">
                       <div className="panel-heading">
                         <p className="eyebrow">Fotos y audio</p>
                         <h3 className="display-heading text-3xl">Biblioteca visible de la salida</h3>
@@ -4957,7 +4957,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="panel record-header-card">
+                    <div className="panel record-header-card panel-tone panel-tone--sky">
                       <div className="panel-heading">
                         <p className="eyebrow">Registro seleccionado</p>
                         <h3 className="display-heading text-4xl">{recordPoint.placeName}</h3>
@@ -5019,7 +5019,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="panel record-gallery-card">
+                    <div className="panel record-gallery-card panel-tone panel-tone--clay">
                       <div className="panel-heading">
                         <p className="eyebrow">Fotos del registro</p>
                         <h3 className="display-heading text-3xl">Galería del punto seleccionado</h3>
@@ -5043,7 +5043,7 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="panel record-metadata-card">
+                    <div className="panel record-metadata-card panel-tone panel-tone--mint">
                       <div className="panel-heading">
                         <p className="eyebrow">Ficha del registro</p>
                         <h3 className="display-heading text-3xl">GPS, clima, notas y etiquetas</h3>
@@ -5112,7 +5112,7 @@ export default function App() {
                       ) : null}
                     </div>
 
-                    <div className="panel record-map-card">
+                    <div className="panel record-map-card panel-tone panel-tone--sky">
                       <div className="panel-heading">
                         <p className="eyebrow">Posición</p>
                         <h3 className="display-heading text-3xl">Mapa del registro seleccionado</h3>
