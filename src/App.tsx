@@ -174,6 +174,15 @@ function buildSelectionCaption(session: Pick<FieldSession, 'projectName'>, point
     .join(' · ');
 }
 
+function buildPublishedSelectionId(
+  sessionId: string,
+  pointId: string,
+  photoId: string,
+  audioTakeId: string,
+): string {
+  return ['pubsel', sessionId, pointId, photoId, audioTakeId].join('-');
+}
+
 function buildProjectKey(projectName: string): string {
   return resolveProjectName(projectName)
     .toLowerCase()
@@ -2045,8 +2054,14 @@ export default function App() {
     setAppError(null);
 
     try {
-      await exportFieldSessionPackage(dehydrateSession(session));
-      setStatusNote(`Salida "${session.name}" exportada.`);
+      const exportSummary = await exportFieldSessionPackage(dehydrateSession(session));
+      if (exportSummary.missingAudioCount > 0) {
+        setStatusNote(
+          `Salida "${session.name}" exportada con ${exportSummary.exportedAudioCount}/${session.audioTakes.length} audios. Faltan ${exportSummary.missingAudioCount}; revisa takes/missing-audio.txt y reimporta la carpeta H6 si hace falta.`,
+        );
+      } else {
+        setStatusNote(`Salida "${session.name}" exportada.`);
+      }
     } catch (error) {
       console.error('Export session failed:', error);
       setAppError('No se pudo exportar la salida.');
@@ -2092,7 +2107,7 @@ export default function App() {
       await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
 
       const selection = await publishSelection({
-        id: uuidv4(),
+        id: buildPublishedSelectionId(recordSession.id, recordPoint.id, photo.id, audioTake.id),
         sessionId: recordSession.id,
         pointId: recordPoint.id,
         photoId: photo.id,

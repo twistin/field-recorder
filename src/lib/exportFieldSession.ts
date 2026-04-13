@@ -2,6 +2,12 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import type { FieldSession, SessionPoint } from '../types/fieldSessions';
 
+export interface FieldSessionExportSummary {
+  exportedAudioCount: number;
+  missingAudioCount: number;
+  missingAudioFiles: string[];
+}
+
 function slugifyForFile(value: string): string {
   const slug = value
     .toLowerCase()
@@ -424,13 +430,15 @@ function buildTakesCsv(session: FieldSession): string {
   return lines.join('\n');
 }
 
-export async function exportFieldSessionPackage(session: FieldSession): Promise<void> {
+export async function exportFieldSessionPackage(session: FieldSession): Promise<FieldSessionExportSummary> {
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   const sessionFolder = `${format(new Date(session.startedAt), 'yyyyMMdd-HHmm', { locale: es })}-${slugifyForFile(session.name)}`;
   const sortedPoints = [...session.points].sort(
     (left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
   );
+  const missingAudioFiles: string[] = [];
+  let exportedAudioCount = 0;
 
   zip.file(
     `${sessionFolder}/session.json`,
@@ -482,6 +490,7 @@ export async function exportFieldSessionPackage(session: FieldSession): Promise<
   for (const [takeIndex, take] of session.audioTakes.entries()) {
     const audioBlob = await resolveStoredBlob(take);
     if (!audioBlob) {
+      missingAudioFiles.push(take.fileName);
       continue;
     }
 
@@ -490,6 +499,22 @@ export async function exportFieldSessionPackage(session: FieldSession): Promise<
     zip.file(
       `${sessionFolder}/takes/files/${String(takeIndex + 1).padStart(3, '0')}-${safeFileName}.${extension}`,
       audioBlob,
+    );
+    exportedAudioCount += 1;
+  }
+
+  if (missingAudioFiles.length > 0) {
+    zip.file(
+      `${sessionFolder}/takes/missing-audio.txt`,
+      [
+        'Algunas tomas H6 no pudieron incluirse en este ZIP.',
+        '',
+        'Esto ocurre cuando la sesión sólo conserva metadatos del audio, pero no el binario local ni una copia en Blob.',
+        'Solución: reimporta la carpeta original de la Zoom H6 en esta sesión o sincroniza el audio a la nube y exporta otra vez.',
+        '',
+        'Tomas ausentes:',
+        ...missingAudioFiles.map((fileName) => `- ${fileName}`),
+      ].join('\n'),
     );
   }
 
@@ -532,6 +557,12 @@ export async function exportFieldSessionPackage(session: FieldSession): Promise<
 
   const archiveBlob = await zip.generateAsync({ type: 'blob' });
   downloadBlob(archiveBlob, `${sessionFolder}.zip`);
+
+  return {
+    exportedAudioCount,
+    missingAudioCount: missingAudioFiles.length,
+    missingAudioFiles,
+  };
 }
 
 export function exportSessionPointCsv(session: FieldSession, point: SessionPoint): void {

@@ -1,6 +1,22 @@
 import { listPublishedSelections, upsertPublishedSelection } from './_lib/catalogStore.js';
 import type { PublishSelectionPayload } from '../src/types/publishedSelections';
 
+function buildCorsHeaders() {
+  const headers = new Headers();
+  headers.set('access-control-allow-origin', '*');
+  headers.set('access-control-allow-methods', 'GET, OPTIONS');
+  headers.set('access-control-allow-headers', 'content-type');
+  headers.set('vary', 'origin');
+  return headers;
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: buildCorsHeaders(),
+  });
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -12,11 +28,16 @@ export async function GET(request: Request) {
       pointId,
     });
 
-    return Response.json(selections);
+    return Response.json(selections, {
+      headers: buildCorsHeaders(),
+    });
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : 'Unable to list published selections.' },
-      { status: 500 },
+      {
+        status: 500,
+        headers: buildCorsHeaders(),
+      },
     );
   }
 }

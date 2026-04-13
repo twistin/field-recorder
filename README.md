@@ -39,11 +39,30 @@ La app está preparada para desplegarse como frontend estático de Vite.
 
 - La app puede respaldar sesiones y fotos en Vercel Blob.
 - Las fotos suben con `Client Uploads`, directamente desde el navegador a Blob.
+- Las tomas importadas de Zoom H6 también pueden subirse a Blob cuando sincronizas o publicas una selección web.
 - Cada cambio local deja la sesión en estado pendiente hasta que se sincroniza.
 - Si vuelves a estar online, la app intenta reanudar el respaldo de sesiones pendientes.
 - El manifiesto remoto sigue subiendo desde función servidor e incluye metadatos de puntos, tomas Zoom H6 y fotos ya subidas a Blob.
 - El catálogo remoto guarda sesiones, puntos, fotos y tomas en Neon Postgres para poder consultarlas después fuera del navegador.
 - Para probar el respaldo en local usa el despliegue de Vercel o `vercel dev`; `vite dev` no sirve las rutas `api/*`.
+
+## Selecciones publicadas
+
+- La app puede publicar una selección de `imagen + audio + caption` desde la ficha de un punto.
+- Las selecciones publicadas quedan disponibles en `GET /api/published-selections`.
+- Puedes filtrar por `sessionId` o `pointId`.
+- La respuesta incluye `imageUrl` y `audioUrl`, preparadas para consumir desde otra web.
+
+Ejemplo de consumo:
+
+```ts
+const response = await fetch('https://tu-app.vercel.app/api/published-selections');
+const selections = await response.json();
+
+for (const item of selections) {
+  console.log(item.caption, item.imageUrl, item.audioUrl);
+}
+```
 
 ## Catálogo remoto
 
