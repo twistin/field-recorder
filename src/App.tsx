@@ -7,6 +7,7 @@ import {
   CloudRain,
   Download,
   FileSpreadsheet,
+  Globe,
   House,
   History,
   ImagePlus,
@@ -53,7 +54,7 @@ import {
   mergeSessionAudioTakes,
   reconcileSessionAudioTakes,
 } from './lib/zoomImport';
-import { syncSessionToCloud } from './lib/cloudSync';
+import { syncSelectionToCloud, syncSessionToCloud } from './lib/cloudSync';
 import type { CatalogSessionPayload, CatalogSessionSummary } from './lib/catalogPayload';
 import {
   CATALOG_API_UNAVAILABLE_MESSAGE,
@@ -62,6 +63,7 @@ import {
   listCatalogSessionsRemote,
   syncSessionToCatalog,
 } from './lib/catalogSync';
+import { listPublishedSelections, publishSelection } from './lib/publishedSelections';
 import type {
   AutomaticWeatherSummary,
   DetectedPlaceSummary,
@@ -72,6 +74,7 @@ import type {
   SessionPoint,
   SoundscapeClassification,
 } from './types/fieldSessions';
+import type { PublishedSelection } from './types/publishedSelections';
 
 type View = 'home' | 'session' | 'point' | 'export';
 type DisplayMode = 'night' | 'sun';
@@ -156,6 +159,21 @@ function resolveProjectName(projectName: string): string {
   return projectName.trim() || 'Sin trabajo';
 }
 
+function buildSelectionCaption(session: Pick<FieldSession, 'projectName'>, point: Pick<SessionPoint, 'placeName' | 'notes' | 'observedWeather' | 'soundscapeClassification'>): string {
+  const note = point.notes.trim();
+  if (note) {
+    return note;
+  }
+
+  return [
+    point.placeName.trim(),
+    point.soundscapeClassification?.summary || point.observedWeather || '',
+    resolveProjectName(session.projectName),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function buildProjectKey(projectName: string): string {
   return resolveProjectName(projectName)
     .toLowerCase()
@@ -210,6 +228,10 @@ function formatTakeTechnicalSummary(take: SessionAudioTake): string {
   ].filter(Boolean);
 
   return parts.length > 0 ? parts.join(' · ') : 'Metadatos técnicos pendientes';
+}
+
+function buildStorageProxyUrl(blobRef: string): string {
+  return `/api/storage/blob?blob=${encodeURIComponent(blobRef)}`;
 }
 
 function parseOptionalNumber(value: string): number | null {
@@ -296,6 +318,7 @@ function buildPointDraft(
 function normalizeAudioTake(take: SessionAudioTake): SessionAudioTake {
   return {
     ...take,
+    blob: take.blob instanceof Blob ? take.blob : buildPlaceholderAudioBlob(take.mimeType),
     durationSeconds: take.durationSeconds ?? null,
     sampleRateHz: take.sampleRateHz ?? null,
     bitDepth: take.bitDepth ?? null,
@@ -305,6 +328,9 @@ function normalizeAudioTake(take: SessionAudioTake): SessionAudioTake {
     limiterEnabled: take.limiterEnabled ?? null,
     phantomPowerEnabled: take.phantomPowerEnabled ?? null,
     takeNotes: take.takeNotes ?? '',
+    cloudPath: take.cloudPath ?? null,
+    cloudUrl: take.cloudUrl ?? null,
+    cloudSyncedAt: take.cloudSyncedAt ?? null,
   };
 }
 
@@ -351,11 +377,15 @@ function buildPhotoPreviewUrl(photo: Pick<SessionPhoto, 'blob' | 'cloudPath' | '
   }
 
   const remoteSource = photo.cloudPath ?? photo.cloudUrl;
-  return remoteSource ? `/api/storage/photo?blob=${encodeURIComponent(remoteSource)}` : null;
+  return remoteSource ? buildStorageProxyUrl(remoteSource) : null;
 }
 
 function buildPlaceholderPhotoBlob(mimeType: string): Blob {
   return new Blob([], { type: mimeType || 'application/octet-stream' });
+}
+
+function buildPlaceholderAudioBlob(mimeType: string): Blob {
+  return new Blob([], { type: mimeType || 'audio/wav' });
 }
 
 function shouldReusePhotoPreview(existingPhoto: UiSessionPhoto, nextPhoto: SessionPhoto): boolean {
@@ -376,6 +406,7 @@ function buildCatalogSessionForUi(
   existingSession?: UiFieldSession | null,
 ): UiFieldSession {
   const existingPoints = new Map((existingSession?.points ?? []).map((point) => [point.id, point]));
+  const existingAudioTakes = new Map((existingSession?.audioTakes ?? []).map((take) => [take.id, take]));
 
   const normalizedSession = normalizeFieldSession({
     ...session,
@@ -401,10 +432,32 @@ function buildCatalogSessionForUi(
         }),
       };
     }),
+    audioTakes: session.audioTakes.map((take) => {
+      const existingTake = existingAudioTakes.get(take.id);
+
+      return {
+        ...take,
+        blob:
+          existingTake?.blob && existingTake.blob.size > 0
+            ? existingTake.blob
+            : buildPlaceholderAudioBlob(take.mimeType),
+      };
+    }),
   });
 
   return {
     ...normalizedSession,
+    audioTakes: normalizedSession.audioTakes.map((take) => {
+      const existingTake = existingAudioTakes.get(take.id);
+
+      return {
+        ...take,
+        blob:
+          existingTake?.blob && existingTake.blob.size > 0
+            ? existingTake.blob
+            : take.blob,
+      };
+    }),
     points: normalizedSession.points.map((point) => {
       const existingPoint = existingPoints.get(point.id);
       const existingPhotos = new Map((existingPoint?.photos ?? []).map((photo) => [photo.id, photo]));
@@ -480,6 +533,19 @@ function mergeCloudSyncedSessionIntoUi(
     cloudError: cloudSession.cloudError ?? null,
     cloudManifestPath: cloudSession.cloudManifestPath ?? currentUiSession.cloudManifestPath ?? null,
     cloudManifestUrl: cloudSession.cloudManifestUrl ?? currentUiSession.cloudManifestUrl ?? null,
+    audioTakes: currentUiSession.audioTakes.map((take) => {
+      const syncedTake = cloudSession.audioTakes.find((entry) => entry.id === take.id);
+      if (!syncedTake) {
+        return take;
+      }
+
+      return {
+        ...take,
+        cloudPath: syncedTake.cloudPath ?? null,
+        cloudUrl: syncedTake.cloudUrl ?? null,
+        cloudSyncedAt: syncedTake.cloudSyncedAt ?? null,
+      };
+    }),
     points: currentUiSession.points.map((point) => {
       const syncedPoint = cloudSession.points.find((entry) => entry.id === point.id);
       if (!syncedPoint) {
@@ -895,6 +961,11 @@ export default function App() {
   const [isUpdatingProjectKey, setIsUpdatingProjectKey] = useState<string | null>(null);
   const [catalogApiStatus, setCatalogApiStatus] = useState<'unknown' | 'available' | 'unavailable'>('unknown');
   const [zoomImportTargetSessionId, setZoomImportTargetSessionId] = useState<string | null>(null);
+  const [publishPhotoId, setPublishPhotoId] = useState<string>('');
+  const [publishAudioTakeId, setPublishAudioTakeId] = useState<string>('');
+  const [publishCaption, setPublishCaption] = useState('');
+  const [publishedSelectionsForPoint, setPublishedSelectionsForPoint] = useState<PublishedSelection[]>([]);
+  const [isPublishingSelection, setIsPublishingSelection] = useState(false);
 
   const currentGpsRef = useRef<GpsCoordinates | null>(null);
   const sessionsRef = useRef<UiFieldSession[]>([]);
@@ -1972,6 +2043,68 @@ export default function App() {
     }
   }
 
+  async function publishCurrentSelection() {
+    if (!recordSession || !recordPoint) {
+      return;
+    }
+
+    if (!isOnline) {
+      setAppError('Necesitas conexión para publicar una selección web.');
+      return;
+    }
+
+    const photo = recordPoint.photos.find((entry) => entry.id === publishPhotoId) ?? null;
+    const audioTake =
+      recordSession.audioTakes.find((entry) => entry.id === publishAudioTakeId && entry.associatedPointId === recordPoint.id) ??
+      null;
+
+    if (!photo) {
+      setAppError('Selecciona una imagen para publicar.');
+      return;
+    }
+
+    if (!audioTake) {
+      setAppError('Selecciona una toma H6 asociada al punto para publicar.');
+      return;
+    }
+
+    setIsPublishingSelection(true);
+    setAppError(null);
+
+    try {
+      const syncedSelection = await syncSelectionToCloud(dehydrateSession(recordSession), {
+        photoId: photo.id,
+        audioTakeId: audioTake.id,
+      });
+      const nextUiSession = mergeCloudSyncedSessionIntoUi(syncedSelection.session, recordSession);
+      await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
+
+      const selection = await publishSelection({
+        id: uuidv4(),
+        sessionId: recordSession.id,
+        pointId: recordPoint.id,
+        photoId: photo.id,
+        audioTakeId: audioTake.id,
+        caption: publishCaption.trim() || buildSelectionCaption(recordSession, recordPoint),
+        project: resolveProjectName(recordSession.projectName),
+        session: recordSession.name,
+        point: recordPoint.placeName,
+        imageUrl: syncedSelection.imageUrl,
+        audioUrl: syncedSelection.audioUrl,
+        imageFileName: photo.fileName,
+        audioFileName: audioTake.fileName,
+      });
+
+      setPublishedSelectionsForPoint((current) => [selection, ...current.filter((entry) => entry.id !== selection.id)]);
+      setStatusNote(`Selección web publicada para "${recordPoint.placeName}".`);
+    } catch (error) {
+      console.error('Publish selection failed:', error);
+      setAppError(error instanceof Error ? error.message : 'No se pudo publicar la selección web.');
+    } finally {
+      setIsPublishingSelection(false);
+    }
+  }
+
   async function syncSessionToCloudBackup(sessionId: string) {
     const session = sessionsRef.current.find((entry) => entry.id === sessionId);
     if (!session) {
@@ -2661,6 +2794,60 @@ export default function App() {
     setProjectDraftName(currentArchiveProject?.name ?? '');
   }, [currentArchiveProject?.key, currentArchiveProject?.name]);
 
+  useEffect(() => {
+    if (!recordSession || !recordPoint) {
+      setPublishPhotoId('');
+      setPublishAudioTakeId('');
+      setPublishCaption('');
+      setPublishedSelectionsForPoint([]);
+      return;
+    }
+
+    const nextPhotoId = recordPoint.photos[0]?.id ?? '';
+    const nextAudioTakeId =
+      recordSession.audioTakes.find((take) => take.associatedPointId === recordPoint.id)?.id ?? '';
+
+    setPublishPhotoId((current) =>
+      current && recordPoint.photos.some((photo) => photo.id === current) ? current : nextPhotoId,
+    );
+    setPublishAudioTakeId((current) =>
+      current && recordSession.audioTakes.some((take) => take.id === current && take.associatedPointId === recordPoint.id)
+        ? current
+        : nextAudioTakeId,
+    );
+    setPublishCaption(buildSelectionCaption(recordSession, recordPoint));
+  }, [recordPoint?.id, recordSession?.id]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!recordSession || !recordPoint || !isOnline) {
+      setPublishedSelectionsForPoint([]);
+      return () => {
+        active = false;
+      };
+    }
+
+    void listPublishedSelections({
+      sessionId: recordSession.id,
+      pointId: recordPoint.id,
+    })
+      .then((selections) => {
+        if (active) {
+          setPublishedSelectionsForPoint(selections);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setPublishedSelectionsForPoint([]);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isOnline, recordPoint?.id, recordSession?.id]);
+
   const recordSessionPoints = recordSession
     ? [...recordSession.points].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     : [];
@@ -2681,6 +2868,13 @@ export default function App() {
         (left, right) => new Date(right.inferredRecordedAt).getTime() - new Date(left.inferredRecordedAt).getTime(),
       )
     : [];
+  const recordPointPhotoOptions = recordPoint?.photos ?? [];
+  const recordPointAudioOptions = recordSession
+    ? recordSession.audioTakes.filter((take) => take.associatedPointId === recordPoint?.id)
+    : [];
+  const selectedPublishPhoto = recordPointPhotoOptions.find((photo) => photo.id === publishPhotoId) ?? null;
+  const selectedPublishAudioTake =
+    recordPointAudioOptions.find((take) => take.id === publishAudioTakeId) ?? null;
   const latestActivePoints = sortedActiveSessionPoints.slice(0, 4);
   const livePlaceLabel = detectedPlace?.placeName || 'Lugar pendiente';
   const liveClimateLabel = weatherSnapshot?.summary || 'Clima pendiente';
@@ -5040,6 +5234,108 @@ export default function App() {
                         </div>
                       ) : (
                         <p className="module-copy text-sm">Este registro no tiene imágenes asociadas.</p>
+                      )}
+                    </div>
+
+                    <div className="panel panel-tone panel-tone--amber">
+                      <div className="panel-heading">
+                        <p className="eyebrow">Selección web</p>
+                        <h3 className="display-heading text-3xl">Imagen + audio publicables</h3>
+                        <p className="module-copy text-sm">
+                          La publicación sube la imagen y la toma H6 elegidas, guarda una selección remota y te deja URLs directas para consumir desde tu web.
+                        </p>
+                      </div>
+
+                      {recordPointPhotoOptions.length === 0 ? (
+                        <p className="module-copy text-sm">Este punto no tiene imágenes para publicar.</p>
+                      ) : recordPointAudioOptions.length === 0 ? (
+                        <p className="module-copy text-sm">
+                          Este punto todavía no tiene ninguna toma H6 asociada. Asígnala primero en el índice de tomas.
+                        </p>
+                      ) : (
+                        <div className="grid gap-4">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Imagen</span>
+                              <select
+                                value={publishPhotoId}
+                                onChange={(event) => setPublishPhotoId(event.target.value)}
+                                className="field-input"
+                              >
+                                {recordPointPhotoOptions.map((photo) => (
+                                  <option key={photo.id} value={photo.id}>
+                                    {photo.fileName}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Audio</span>
+                              <select
+                                value={publishAudioTakeId}
+                                onChange={(event) => setPublishAudioTakeId(event.target.value)}
+                                className="field-input"
+                              >
+                                {recordPointAudioOptions.map((take) => (
+                                  <option key={take.id} value={take.id}>
+                                    {take.fileName}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          {selectedPublishPhoto?.previewUrl ? (
+                            <img
+                              src={selectedPublishPhoto.previewUrl}
+                              alt={selectedPublishPhoto.fileName}
+                              className="record-gallery-grid__image"
+                            />
+                          ) : null}
+
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Caption</span>
+                            <textarea
+                              value={publishCaption}
+                              onChange={(event) => setPublishCaption(event.target.value)}
+                              rows={4}
+                              className="field-input min-h-28"
+                              placeholder="Texto breve para tu web"
+                            />
+                          </label>
+
+                          <div className="action-row">
+                            <button
+                              type="button"
+                              onClick={() => void publishCurrentSelection()}
+                              disabled={isPublishingSelection}
+                              className="ui-button ui-button-primary"
+                            >
+                              <Globe className="h-4 w-4" />
+                              {isPublishingSelection ? 'Publicando...' : 'Publicar selección'}
+                            </button>
+                          </div>
+
+                          {publishedSelectionsForPoint.length > 0 ? (
+                            <div className="grid gap-3">
+                              {publishedSelectionsForPoint.slice(0, 3).map((selection) => (
+                                <div key={selection.id} className="soft-card">
+                                  <p className="eyebrow">Publicado {formatDateTime(selection.publishedAt, "d MMM yyyy · HH:mm")}</p>
+                                  <p className="module-copy text-sm">{selection.caption}</p>
+                                  <div className="action-row action-row--compact mt-3">
+                                    <a href={selection.imageUrl} target="_blank" rel="noreferrer" className="ui-button ui-button-secondary">
+                                      Abrir imagen
+                                    </a>
+                                    <a href={selection.audioUrl} target="_blank" rel="noreferrer" className="ui-button ui-button-secondary">
+                                      Abrir audio
+                                    </a>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
                       )}
                     </div>
 

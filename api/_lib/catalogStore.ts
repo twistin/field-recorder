@@ -5,6 +5,7 @@ import type {
   CatalogSessionSummary,
   CatalogSyncResult,
 } from '../../src/lib/catalogPayload';
+import type { PublishSelectionPayload, PublishedSelection } from '../../src/types/publishedSelections';
 
 type Sql = NeonQueryFunction<false, false>;
 
@@ -96,6 +97,30 @@ const SCHEMA_STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_audio_takes_session_id
     ON audio_takes (session_id, inferred_recorded_at DESC)`,
+  `ALTER TABLE audio_takes ADD COLUMN IF NOT EXISTS cloud_path TEXT`,
+  `ALTER TABLE audio_takes ADD COLUMN IF NOT EXISTS cloud_url TEXT`,
+  `ALTER TABLE audio_takes ADD COLUMN IF NOT EXISTS cloud_synced_at TIMESTAMPTZ`,
+  `CREATE TABLE IF NOT EXISTS published_selections (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    point_id TEXT NOT NULL,
+    photo_id TEXT NOT NULL,
+    audio_take_id TEXT NOT NULL,
+    caption TEXT NOT NULL DEFAULT '',
+    project_name TEXT NOT NULL DEFAULT '',
+    session_name TEXT NOT NULL,
+    point_name TEXT NOT NULL,
+    image_url TEXT NOT NULL,
+    audio_url TEXT NOT NULL,
+    image_file_name TEXT NOT NULL,
+    audio_file_name TEXT NOT NULL,
+    published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_published_selections_session_id
+    ON published_selections (session_id, published_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_published_selections_point_id
+    ON published_selections (point_id, published_at DESC)`,
 ];
 
 let schemaReadyPromise: Promise<void> | null = null;
@@ -130,6 +155,19 @@ function toIsoString(value: unknown): string {
 
 function countPhotos(session: CatalogSessionPayload): number {
   return session.points.reduce((count, point) => count + point.photos.length, 0);
+}
+
+function normalizePublishedSelection(
+  row: Omit<PublishedSelection, 'publishedAt' | 'updatedAt'> & {
+    publishedAt: string | Date;
+    updatedAt: string | Date;
+  },
+): PublishedSelection {
+  return {
+    ...row,
+    publishedAt: toIsoString(row.publishedAt),
+    updatedAt: toIsoString(row.updatedAt),
+  };
 }
 
 async function ensureCatalogSchema(): Promise<void> {
@@ -341,11 +379,15 @@ export async function upsertCatalogSession(session: CatalogSessionPayload): Prom
           low_cut_enabled,
           limiter_enabled,
           phantom_power_enabled,
-          take_notes
+          take_notes,
+          cloud_path,
+          cloud_url,
+          cloud_synced_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13, $14, $15, $16,
-          $17, $18, $19, $20, $21, $22, $23, $24
+          $17, $18, $19, $20, $21, $22, $23, $24,
+          $25, $26, $27
         )`,
         [
           take.id,
@@ -372,6 +414,9 @@ export async function upsertCatalogSession(session: CatalogSessionPayload): Prom
           take.limiterEnabled,
           take.phantomPowerEnabled,
           take.takeNotes,
+          take.cloudPath ?? null,
+          take.cloudUrl ?? null,
+          take.cloudSyncedAt ?? null,
         ],
       ),
     );
@@ -450,4 +495,146 @@ export async function getCatalogSession(sessionId: string): Promise<CatalogSessi
   )) as Array<{ snapshotJson: CatalogSessionPayload }>;
 
   return rows[0]?.snapshotJson ?? null;
+}
+
+export async function upsertPublishedSelection(
+  selection: PublishSelectionPayload,
+): Promise<PublishedSelection> {
+  await ensureCatalogSchema();
+
+  const sql = getSql();
+  const now = new Date().toISOString();
+  const rows = (await sql.query(
+    `INSERT INTO published_selections (
+      id,
+      session_id,
+      point_id,
+      photo_id,
+      audio_take_id,
+      caption,
+      project_name,
+      session_name,
+      point_name,
+      image_url,
+      audio_url,
+      image_file_name,
+      audio_file_name,
+      published_at,
+      updated_at
+    ) VALUES (
+      $1, $2, $3, $4, $5,
+      $6, $7, $8, $9, $10,
+      $11, $12, $13, $14, $15
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      session_id = EXCLUDED.session_id,
+      point_id = EXCLUDED.point_id,
+      photo_id = EXCLUDED.photo_id,
+      audio_take_id = EXCLUDED.audio_take_id,
+      caption = EXCLUDED.caption,
+      project_name = EXCLUDED.project_name,
+      session_name = EXCLUDED.session_name,
+      point_name = EXCLUDED.point_name,
+      image_url = EXCLUDED.image_url,
+      audio_url = EXCLUDED.audio_url,
+      image_file_name = EXCLUDED.image_file_name,
+      audio_file_name = EXCLUDED.audio_file_name,
+      updated_at = EXCLUDED.updated_at
+    RETURNING
+      id,
+      session_id AS "sessionId",
+      point_id AS "pointId",
+      photo_id AS "photoId",
+      audio_take_id AS "audioTakeId",
+      caption,
+      project_name AS project,
+      session_name AS "session",
+      point_name AS point,
+      image_url AS "imageUrl",
+      audio_url AS "audioUrl",
+      image_file_name AS "imageFileName",
+      audio_file_name AS "audioFileName",
+      published_at AS "publishedAt",
+      updated_at AS "updatedAt"`,
+    [
+      selection.id,
+      selection.sessionId,
+      selection.pointId,
+      selection.photoId,
+      selection.audioTakeId,
+      selection.caption,
+      selection.project,
+      selection.session,
+      selection.point,
+      selection.imageUrl,
+      selection.audioUrl,
+      selection.imageFileName,
+      selection.audioFileName,
+      now,
+      now,
+    ],
+  )) as Array<
+    Omit<PublishedSelection, 'publishedAt' | 'updatedAt'> & {
+      publishedAt: string | Date;
+      updatedAt: string | Date;
+    }
+  >;
+
+  if (!rows[0]) {
+    throw new Error('Published selection upsert returned no row.');
+  }
+
+  return normalizePublishedSelection(rows[0]);
+}
+
+export async function listPublishedSelections(filters?: {
+  sessionId?: string | null;
+  pointId?: string | null;
+}): Promise<PublishedSelection[]> {
+  await ensureCatalogSchema();
+
+  const sql = getSql();
+  const clauses: string[] = [];
+  const values: Array<string> = [];
+
+  if (filters?.sessionId) {
+    values.push(filters.sessionId);
+    clauses.push(`session_id = $${values.length}`);
+  }
+
+  if (filters?.pointId) {
+    values.push(filters.pointId);
+    clauses.push(`point_id = $${values.length}`);
+  }
+
+  const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+  const rows = (await sql.query(
+    `SELECT
+      id,
+      session_id AS "sessionId",
+      point_id AS "pointId",
+      photo_id AS "photoId",
+      audio_take_id AS "audioTakeId",
+      caption,
+      project_name AS project,
+      session_name AS "session",
+      point_name AS point,
+      image_url AS "imageUrl",
+      audio_url AS "audioUrl",
+      image_file_name AS "imageFileName",
+      audio_file_name AS "audioFileName",
+      published_at AS "publishedAt",
+      updated_at AS "updatedAt"
+    FROM published_selections
+    ${whereClause}
+    ORDER BY published_at DESC`,
+    values,
+  )) as Array<
+    Omit<PublishedSelection, 'publishedAt' | 'updatedAt'> & {
+      publishedAt: string | Date;
+      updatedAt: string | Date;
+    }
+  >;
+
+  return rows.map(normalizePublishedSelection);
 }

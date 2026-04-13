@@ -45,6 +45,7 @@ export interface SessionAudioTake {
   fileName: string;
   relativePath: string;
   mimeType: string;
+  blob: Blob;
   sizeBytes: number;
   importedAt: string;
   lastModified: string;
@@ -63,6 +64,9 @@ export interface SessionAudioTake {
   limiterEnabled: boolean | null;
   phantomPowerEnabled: boolean | null;
   takeNotes: string;
+  cloudPath?: string | null;
+  cloudUrl?: string | null;
+  cloudSyncedAt?: string | null;
 }
 
 export interface SessionPoint {

@@ -87,8 +87,35 @@ CREATE TABLE IF NOT EXISTS audio_takes (
   low_cut_enabled BOOLEAN,
   limiter_enabled BOOLEAN,
   phantom_power_enabled BOOLEAN,
-  take_notes TEXT NOT NULL DEFAULT ''
+  take_notes TEXT NOT NULL DEFAULT '',
+  cloud_path TEXT,
+  cloud_url TEXT,
+  cloud_synced_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_audio_takes_session_id
   ON audio_takes (session_id, inferred_recorded_at DESC);
+
+CREATE TABLE IF NOT EXISTS published_selections (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  point_id TEXT NOT NULL,
+  photo_id TEXT NOT NULL,
+  audio_take_id TEXT NOT NULL,
+  caption TEXT NOT NULL DEFAULT '',
+  project_name TEXT NOT NULL DEFAULT '',
+  session_name TEXT NOT NULL,
+  point_name TEXT NOT NULL,
+  image_url TEXT NOT NULL,
+  audio_url TEXT NOT NULL,
+  image_file_name TEXT NOT NULL,
+  audio_file_name TEXT NOT NULL,
+  published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_published_selections_session_id
+  ON published_selections (session_id, published_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_published_selections_point_id
+  ON published_selections (point_id, published_at DESC);

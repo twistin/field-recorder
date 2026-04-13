@@ -1,16 +1,23 @@
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 
-const ALLOWED_CONTENT_TYPES = ['image/*'];
-const MAX_UPLOAD_SIZE_BYTES = 25 * 1024 * 1024;
+const PHOTO_CONTENT_TYPES = ['image/*'];
+const AUDIO_CONTENT_TYPES = ['audio/*'];
+const MAX_UPLOAD_SIZE_BYTES = 512 * 1024 * 1024;
 
 interface PhotoUploadPayload {
   sessionId?: string;
+  kind?: 'photo' | 'audio';
   pointId?: string;
   photoId?: string;
+  audioTakeId?: string;
 }
 
 function isPhotoPath(pathname: string): boolean {
   return /^field-sessions\/[^/]+\/points\/[^/]+\/photos\/[^/]+\.[a-z0-9]+$/i.test(pathname);
+}
+
+function isAudioPath(pathname: string): boolean {
+  return /^field-sessions\/[^/]+\/audio\/[^/]+\.[a-z0-9]+$/i.test(pathname);
 }
 
 function parseClientPayload(clientPayload: string | null): PhotoUploadPayload {
@@ -26,11 +33,24 @@ function parseClientPayload(clientPayload: string | null): PhotoUploadPayload {
 }
 
 function matchesPayload(pathname: string, payload: PhotoUploadPayload): boolean {
-  if (!payload.sessionId || !payload.pointId || !payload.photoId) {
+  if (!payload.sessionId || !payload.kind) {
     return false;
   }
 
-  const expectedPrefix = `field-sessions/${payload.sessionId}/points/${payload.pointId}/photos/${payload.photoId}-`;
+  if (payload.kind === 'photo') {
+    if (!payload.pointId || !payload.photoId) {
+      return false;
+    }
+
+    const expectedPrefix = `field-sessions/${payload.sessionId}/points/${payload.pointId}/photos/${payload.photoId}-`;
+    return pathname.startsWith(expectedPrefix);
+  }
+
+  if (!payload.audioTakeId) {
+    return false;
+  }
+
+  const expectedPrefix = `field-sessions/${payload.sessionId}/audio/${payload.audioTakeId}-`;
   return pathname.startsWith(expectedPrefix);
 }
 
@@ -53,7 +73,7 @@ export async function POST(request: Request) {
       request,
       body,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
-        if (!isPhotoPath(pathname)) {
+        if (!isPhotoPath(pathname) && !isAudioPath(pathname)) {
           throw new Error('Invalid upload pathname.');
         }
 
@@ -62,8 +82,10 @@ export async function POST(request: Request) {
           throw new Error('Upload payload does not match pathname.');
         }
 
+        const allowedContentTypes = payload.kind === 'audio' ? AUDIO_CONTENT_TYPES : PHOTO_CONTENT_TYPES;
+
         return {
-          allowedContentTypes: ALLOWED_CONTENT_TYPES,
+          allowedContentTypes,
           maximumSizeInBytes: MAX_UPLOAD_SIZE_BYTES,
           allowOverwrite: true,
           tokenPayload: clientPayload,

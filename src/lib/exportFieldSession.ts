@@ -26,6 +26,51 @@ function imageExtensionFromMimeType(mimeType: string): string {
   return 'png';
 }
 
+function audioExtensionFromTake(fileName: string, mimeType: string): string {
+  const extensionMatch = fileName.match(/\.([a-z0-9]+)$/i);
+  if (extensionMatch?.[1]) {
+    return extensionMatch[1].toLowerCase();
+  }
+
+  if (mimeType.includes('flac')) {
+    return 'flac';
+  }
+
+  if (mimeType.includes('mp4') || mimeType.includes('m4a')) {
+    return 'm4a';
+  }
+
+  if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
+    return 'mp3';
+  }
+
+  return 'wav';
+}
+
+function buildBlobProxyUrl(blobRef: string): string {
+  return `/api/storage/blob?blob=${encodeURIComponent(blobRef)}`;
+}
+
+async function resolveStoredBlob(
+  asset: Pick<{ blob: Blob; cloudPath?: string | null; cloudUrl?: string | null }, 'blob' | 'cloudPath' | 'cloudUrl'>,
+): Promise<Blob | null> {
+  if (asset.blob.size > 0) {
+    return asset.blob;
+  }
+
+  const remoteSource = asset.cloudPath ?? asset.cloudUrl;
+  if (!remoteSource) {
+    return null;
+  }
+
+  const response = await fetch(buildBlobProxyUrl(remoteSource));
+  if (!response.ok) {
+    throw new Error(`No se pudo descargar un asset remoto para exportar (HTTP ${response.status}).`);
+  }
+
+  return await response.blob();
+}
+
 function downloadBlob(blob: Blob, fileName: string) {
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -392,7 +437,11 @@ export async function exportFieldSessionPackage(session: FieldSession): Promise<
     JSON.stringify(
       {
         ...session,
-        points: sortedPoints,
+        audioTakes: session.audioTakes.map(({ blob: _blob, ...take }) => take),
+        points: sortedPoints.map((point) => ({
+          ...point,
+          photos: point.photos.map(({ blob: _blob, ...photo }) => photo),
+        })),
         photosCount: session.points.reduce((count, point) => count + point.photos.length, 0),
         pointsCount: session.points.length,
         audioTakesCount: session.audioTakes.length,
@@ -413,6 +462,7 @@ export async function exportFieldSessionPackage(session: FieldSession): Promise<
         const linkedPoint = session.points.find((point) => point.id === take.associatedPointId) ?? null;
         return {
           ...take,
+          blob: undefined,
           associatedPoint: linkedPoint
             ? {
                 id: linkedPoint.id,
@@ -429,7 +479,21 @@ export async function exportFieldSessionPackage(session: FieldSession): Promise<
 
   zip.file(`${sessionFolder}/takes/takes.csv`, buildTakesCsv(session));
 
-  sortedPoints.forEach((point, index) => {
+  for (const [takeIndex, take] of session.audioTakes.entries()) {
+    const audioBlob = await resolveStoredBlob(take);
+    if (!audioBlob) {
+      continue;
+    }
+
+    const extension = audioExtensionFromTake(take.fileName, take.mimeType);
+    const safeFileName = slugifyForFile(take.fileName.replace(/\.[^/.]+$/, ''));
+    zip.file(
+      `${sessionFolder}/takes/files/${String(takeIndex + 1).padStart(3, '0')}-${safeFileName}.${extension}`,
+      audioBlob,
+    );
+  }
+
+  for (const [index, point] of sortedPoints.entries()) {
     const pointFolder = `${sessionFolder}/points/${String(index + 1).padStart(3, '0')}-${slugifyForFile(point.placeName)}`;
 
     zip.file(
@@ -441,6 +505,9 @@ export async function exportFieldSessionPackage(session: FieldSession): Promise<
             id: photo.id,
             fileName: photo.fileName,
             mimeType: photo.mimeType,
+            cloudPath: photo.cloudPath ?? null,
+            cloudUrl: photo.cloudUrl ?? null,
+            cloudSyncedAt: photo.cloudSyncedAt ?? null,
           })),
         },
         null,
@@ -448,15 +515,20 @@ export async function exportFieldSessionPackage(session: FieldSession): Promise<
       ),
     );
 
-    point.photos.forEach((photo, photoIndex) => {
+    for (const [photoIndex, photo] of point.photos.entries()) {
+      const photoBlob = await resolveStoredBlob(photo);
+      if (!photoBlob) {
+        continue;
+      }
+
       const extension = imageExtensionFromMimeType(photo.mimeType);
       const safeFileName = slugifyForFile(photo.fileName.replace(/\.[^/.]+$/, ''));
       zip.file(
         `${pointFolder}/photos/${String(photoIndex + 1).padStart(2, '0')}-${safeFileName}.${extension}`,
-        photo.blob,
+        photoBlob,
       );
-    });
-  });
+    }
+  }
 
   const archiveBlob = await zip.generateAsync({ type: 'blob' });
   downloadBlob(archiveBlob, `${sessionFolder}.zip`);

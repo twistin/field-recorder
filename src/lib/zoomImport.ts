@@ -291,6 +291,7 @@ export async function buildImportedAudioTakes(
           relativePath:
             (file as File & { webkitRelativePath?: string }).webkitRelativePath?.trim() || file.name,
           mimeType: file.type || 'audio/wav',
+          blob: file,
           sizeBytes: file.size,
           importedAt,
           lastModified: new Date(file.lastModified || Date.now()).toISOString(),
@@ -302,6 +303,9 @@ export async function buildImportedAudioTakes(
           limiterEnabled: null,
           phantomPowerEnabled: null,
           takeNotes: '',
+          cloudPath: null,
+          cloudUrl: null,
+          cloudSyncedAt: null,
           ...match,
         };
       }),

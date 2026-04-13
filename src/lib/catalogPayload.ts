@@ -1,4 +1,4 @@
-import type { FieldSession, SessionPhoto, SessionPoint } from '../types/fieldSessions';
+import type { FieldSession, SessionAudioTake, SessionPhoto, SessionPoint } from '../types/fieldSessions';
 
 export interface CatalogPhotoPayload extends Omit<SessionPhoto, 'blob'> {
   cloudPath?: string | null;
@@ -10,9 +10,16 @@ export interface CatalogPointPayload extends Omit<SessionPoint, 'photos'> {
   photos: CatalogPhotoPayload[];
 }
 
-export interface CatalogSessionPayload extends Omit<FieldSession, 'points'> {
+export interface CatalogAudioTakePayload extends Omit<SessionAudioTake, 'blob'> {
+  cloudPath?: string | null;
+  cloudUrl?: string | null;
+  cloudSyncedAt?: string | null;
+}
+
+export interface CatalogSessionPayload extends Omit<FieldSession, 'points' | 'audioTakes'> {
   schemaVersion: 1;
   points: CatalogPointPayload[];
+  audioTakes: CatalogAudioTakePayload[];
 }
 
 export interface CatalogSyncResult {
@@ -44,6 +51,12 @@ export function buildCatalogSessionPayload(session: FieldSession): CatalogSessio
   return {
     ...session,
     schemaVersion: 1,
+    audioTakes: session.audioTakes.map(({ blob: _blob, ...take }) => ({
+      ...take,
+      cloudPath: take.cloudPath ?? null,
+      cloudUrl: take.cloudUrl ?? null,
+      cloudSyncedAt: take.cloudSyncedAt ?? null,
+    })),
     points: session.points.map((point) => ({
       ...point,
       photos: point.photos.map((photo) => ({

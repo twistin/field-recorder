@@ -8,7 +8,9 @@ Herramienta de campo para documentar sesiones de grabación de soundscapes con r
 - Registra puntos con GPS, fecha, hora y clima automático.
 - Detecta el lugar a partir de coordenadas.
 - Asocia fotos, notas, tags, características del entorno y referencia de toma.
+- Conserva las tomas importadas de Zoom H6 para exportarlas o sincronizarlas después.
 - Muestra los puntos en mapa y exporta cada sesión en un paquete ZIP estructurado.
+- Publica selecciones web con imagen + audio desde `/api/published-selections`.
 
 ## Desarrollo local
 
