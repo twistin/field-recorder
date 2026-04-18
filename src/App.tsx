@@ -2920,16 +2920,44 @@ export default function App() {
   const livePlaceLabel = detectedPlace?.placeName || 'Lugar pendiente';
   const liveClimateLabel = weatherSnapshot?.summary || 'Clima pendiente';
   const greetingLabel = getGreetingLabel(now);
-  const homeLauncherTitle = activeSession ? 'Seguir salida' : 'Preparar salida';
+  const homeLauncherTitle = activeSession ? 'Continuar salida' : 'Preparar salida';
   const homeLauncherCopy = activeSession
-    ? `${activeSession.name} sigue abierta. Usa estas acciones como punto de entrada y consulta el estado real en la tarjeta “Salida actual”.`
-    : 'Empieza creando o abriendo una salida. Captura y archivo se activan desde este mismo punto de entrada.';
+    ? `${activeSession.name} sigue abierta. Registra el siguiente punto desde aquí y usa las acciones de apoyo sólo cuando necesites revisar salidas o archivo.`
+    : 'Empieza creando o abriendo una salida. La captura y el archivo se activan desde este mismo punto de entrada.';
+  const homePrimaryActionLabel = activeSession ? 'Registrar punto' : 'Preparar salida';
+  const homeArchiveActionLabel = recordPoint && recordSession ? 'Ver último registro' : 'Ver proyectos';
   const homeGpsValue = currentGps ? gpsAccuracyLabel : 'Sin señal';
   const homeGpsCopy = currentGps ? `${gpsLabel} · ${gpsStatusLabel}` : 'Activa el GPS para situar la salida.';
-  const homePlaceValue = detectedPlace ? 'Listo' : currentGps ? 'Buscando' : 'Pendiente';
+  const homePlaceValue = detectedPlace ? 'Lugar detectado' : currentGps ? 'Buscando lugar' : 'Esperando GPS';
   const homePlaceCopy = detectedPlace?.placeName || 'El lugar aparecerá cuando haya fijación GPS y red.';
-  const homeSyncValue = syncPendingCount === 0 ? 'Al día' : String(syncPendingCount);
-  const homeReviewValue = pendingEnrichmentCount === 0 ? 'Listo' : String(pendingEnrichmentCount);
+  const homeSyncValue = syncPendingCount === 0 ? 'Sincronizado' : `${syncPendingCount} pendientes`;
+  const homeReviewValue = pendingEnrichmentCount === 0 ? 'Revisión al día' : `${pendingEnrichmentCount} pendientes`;
+  const homeStatusItems = [
+    {
+      id: 'gps',
+      label: 'GPS',
+      value: homeGpsValue,
+      detail: homeGpsCopy,
+    },
+    {
+      id: 'place',
+      label: 'Lugar',
+      value: homePlaceValue,
+      detail: homePlaceCopy,
+    },
+    {
+      id: 'sync',
+      label: 'Sincronización',
+      value: homeSyncValue,
+      detail: syncPendingSummary,
+    },
+    {
+      id: 'review',
+      label: 'Revisión',
+      value: homeReviewValue,
+      detail: metadataReviewSummary,
+    },
+  ] as const;
   const storageSummary =
     storageMode === 'ready'
       ? 'Archivo local disponible'
@@ -3004,7 +3032,7 @@ export default function App() {
       title: 'Trabajos y salidas',
       description: 'Abre lo que ya existe o prepara una salida nueva sin perder la jerarquía.',
       status: activeSession ? `${activeSession.points.length} registros en ${activeSession.name}` : `${projectCount} trabajos visibles`,
-      cta: activeSession ? 'Abrir salidas' : 'Crear salida',
+      cta: activeSession ? 'Ver salidas' : 'Crear salida',
       icon: MapPinned,
       featured: !activeSession,
       onClick: () => setView('session'),
@@ -3024,7 +3052,7 @@ export default function App() {
       title: 'Proyectos',
       description: 'Registros, galería, tomas H6 y exportación en la misma vista.',
       status: recordSession ? `${recordSession.name} · ${recordSession.audioTakes.length} tomas H6` : `${totalPhotoCount} fotos · ${totalAudioTakeCount} tomas`,
-      cta: recordPoint ? 'Abrir proyectos' : 'Ver proyectos',
+      cta: 'Ver proyectos',
       icon: History,
       featured: view === 'export',
       onClick: () => setView('export'),
@@ -4166,7 +4194,7 @@ export default function App() {
                   <div className="action-row action-row--compact action-row--support">
                     <button type="button" onClick={() => setView('export')} className="ui-button ui-button-secondary">
                       <History className="h-4 w-4" />
-                      Abrir proyectos
+                      Ver proyectos
                     </button>
                     <button
                       type="button"
@@ -4193,56 +4221,48 @@ export default function App() {
             >
               <div className="home-topbar__brand">
                 <p className="eyebrow">Entrada principal</p>
-                <p className="display-heading home-topbar__title">{homeLauncherTitle}</p>
+                <h1 className="display-heading home-topbar__title">{homeLauncherTitle}</h1>
                 <p className="module-copy text-sm md:text-base">
                   {homeLauncherCopy}
                 </p>
-                <div className="action-row home-topbar__actions">
-                  <button type="button" onClick={() => setView('session')} className="ui-button ui-button-secondary">
-                    <MapPinned className="h-4 w-4" />
-                    Abrir salidas
-                  </button>
+                <div className="home-topbar__actions" role="group" aria-label="Acciones principales del resumen">
                   <button
                     type="button"
                     onClick={() => setView(activeSession ? 'point' : 'session')}
-                    className="ui-button ui-button-primary"
+                    className="ui-button ui-button-primary home-topbar__primary-action"
                   >
                     <Mic className="h-4 w-4" />
-                    {activeSession ? 'Nuevo registro' : 'Preparar salida'}
+                    {homePrimaryActionLabel}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      recordPoint && recordSession ? openRecordView(recordSession.id, recordPoint.id) : setView('export')
-                    }
-                    className="ui-button ui-button-secondary"
-                  >
-                    <History className="h-4 w-4" />
-                    Abrir proyectos
-                  </button>
+                  <div className="home-topbar__support-actions">
+                    <button type="button" onClick={() => setView('session')} className="ui-button ui-button-secondary">
+                      <MapPinned className="h-4 w-4" />
+                      Ver salidas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        recordPoint && recordSession ? openRecordView(recordSession.id, recordPoint.id) : setView('export')
+                      }
+                      className="ui-button ui-button-ghost"
+                    >
+                      <History className="h-4 w-4" />
+                      {homeArchiveActionLabel}
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div className="home-summary-grid">
-                <div className="soft-card">
-                  <p className="eyebrow">GPS</p>
-                  <p className="summary-value">{homeGpsValue}</p>
-                  <p className="module-copy text-sm">{homeGpsCopy}</p>
-                </div>
-                <div className="soft-card">
-                  <p className="eyebrow">Lugar</p>
-                  <p className="summary-value">{homePlaceValue}</p>
-                  <p className="module-copy text-sm">{homePlaceCopy}</p>
-                </div>
-                <div className="soft-card">
-                  <p className="eyebrow">Sincronización</p>
-                  <p className="summary-value">{homeSyncValue}</p>
-                  <p className="module-copy text-sm">{syncPendingSummary}</p>
-                </div>
-                <div className="soft-card">
-                  <p className="eyebrow">Revisión</p>
-                  <p className="summary-value">{homeReviewValue}</p>
-                  <p className="module-copy text-sm">{metadataReviewSummary}</p>
-                </div>
+                <section className="home-status-strip" aria-label="Estado operativo del resumen">
+                  <p className="eyebrow home-status-strip__eyebrow">Estado operativo</p>
+                  <dl className="home-status-strip__grid">
+                    {homeStatusItems.map((item) => (
+                      <div key={item.id} className="home-status-strip__item">
+                        <dt className="home-status-strip__term">{item.label}</dt>
+                        <dd className="home-status-strip__value">{item.value}</dd>
+                        <p className="home-status-strip__detail">{item.detail}</p>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
               </div>
               <div className="home-topbar__controls">
                 <div className="status-inline-group">
@@ -4438,7 +4458,7 @@ export default function App() {
                                 {formatDateTime(point.createdAt, "d MMM yyyy · HH:mm")} · {point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}
                               </span>
                             </span>
-                            <span className="library-entry-card__cta">Abrir</span>
+                            <span className="library-entry-card__cta">Ver registro</span>
                           </button>
                         ))}
                       </div>
@@ -4448,7 +4468,7 @@ export default function App() {
                   <div className="home-library-stack">
                     <div className="panel home-library-card panel-tone panel-tone--mint">
                       <div className="panel-heading">
-                        <p className="eyebrow">Trabajo existente</p>
+                        <p className="eyebrow">Trabajo reciente</p>
                         <h3 className="display-heading text-3xl">Trabajos y salidas</h3>
                         <p className="module-copy text-sm">
                           Los trabajos recientes quedan siempre a la vista con acceso directo a sus proyectos y salidas.
@@ -4474,7 +4494,7 @@ export default function App() {
                                       {group.sessionCount} salidas · {group.pointCount} registros · {group.audioTakeCount} tomas H6
                                     </span>
                                   </span>
-                                  <span className="library-entry-card__cta">Abrir</span>
+                                  <span className="library-entry-card__cta">Abrir proyecto</span>
                                 </button>
                               ))}
                             </div>
@@ -4503,7 +4523,7 @@ export default function App() {
                                       {resolveProjectName(session.projectName)} · {session.points.length} registros · {session.audioTakes.length} tomas H6
                                     </span>
                                   </span>
-                                  <span className="library-entry-card__cta">Abrir proyectos</span>
+                                  <span className="library-entry-card__cta">Ver salida</span>
                                 </button>
                               ))}
                             </div>
@@ -4516,10 +4536,10 @@ export default function App() {
 
                     <div className="panel home-library-card home-library-card--media panel-tone panel-tone--amber">
                       <div className="panel-heading">
-                        <p className="eyebrow">Archivos</p>
-                        <h3 className="display-heading text-3xl">Fotos y audio visibles</h3>
+                        <p className="eyebrow">Media</p>
+                        <h3 className="display-heading text-3xl">Media reciente</h3>
                         <p className="module-copy text-sm">
-                          La media reciente deja de estar escondida: abre cada foto o toma desde aquí.
+                          Revisa las últimas fotos y tomas H6 sin salir del resumen.
                         </p>
                       </div>
 
@@ -4527,7 +4547,7 @@ export default function App() {
                         <div className="home-media-section__header">
                           <span className="telemetry-chip">
                             <Camera className="h-3.5 w-3.5" />
-                            {recentPhotoLibrary.length} fotos visibles
+                            {recentPhotoLibrary.length} fotos recientes
                           </span>
                         </div>
                         {recentPhotoLibrary.length > 0 ? (
@@ -4548,7 +4568,7 @@ export default function App() {
                             ))}
                           </div>
                         ) : (
-                          <p className="module-copy text-sm">No hay fotos recientes disponibles en esta vista.</p>
+                          <p className="module-copy text-sm">No hay fotos recientes para revisar en el resumen.</p>
                         )}
                       </div>
 
@@ -4556,7 +4576,7 @@ export default function App() {
                         <div className="home-media-section__header">
                           <span className="telemetry-chip">
                             <AudioWaveform className="h-3.5 w-3.5" />
-                            {recentAudioLibrary.length} tomas H6 visibles
+                            {recentAudioLibrary.length} tomas H6 recientes
                           </span>
                         </div>
                         {recentAudioLibrary.length > 0 ? (
@@ -4575,12 +4595,12 @@ export default function App() {
                                     {take.pointName || 'Sin punto asociado'} · {take.projectName} · {formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}
                                   </span>
                                 </span>
-                                <span className="library-entry-card__cta">Abrir salida</span>
+                                <span className="library-entry-card__cta">Ver salida</span>
                               </button>
                             ))}
                           </div>
                         ) : (
-                          <p className="module-copy text-sm">Todavía no hay tomas H6 visibles en la biblioteca.</p>
+                          <p className="module-copy text-sm">Todavía no hay tomas H6 recientes para revisar desde el resumen.</p>
                         )}
                       </div>
                     </div>
