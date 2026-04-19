@@ -1,14 +1,21 @@
 import type { ReactNode } from 'react';
 
+import { Button, type ButtonVariant } from './Button';
 import { classNames } from './classNames';
 
 type SectionHeadingTag = 'h2' | 'h3' | 'h4';
+type SectionActionVariant = Extract<ButtonVariant, 'secondary' | 'ghost'>;
 
 export type SectionHeaderProps = {
   eyebrow?: string;
   title: string;
   description?: string;
   action?: ReactNode;
+  actionLabel?: string;
+  onAction?: () => void;
+  actionHref?: string;
+  actionVariant?: SectionActionVariant;
+  actionAriaLabel?: string;
   titleId?: string;
   descriptionId?: string;
   titleAs?: SectionHeadingTag;
@@ -16,11 +23,21 @@ export type SectionHeaderProps = {
   className?: string;
 };
 
+/**
+ * Standard section header for dashboard modules.
+ * A section action should stay secondary or ghost and should represent one section-level task
+ * such as "view all", "open library", or "see archive". Do not place the main CTA here.
+ */
 export function SectionHeader({
   eyebrow,
   title,
   description,
   action,
+  actionLabel,
+  onAction,
+  actionHref,
+  actionVariant = 'ghost',
+  actionAriaLabel,
   titleId,
   descriptionId,
   titleAs = 'h2',
@@ -28,6 +45,29 @@ export function SectionHeader({
   className,
 }: SectionHeaderProps) {
   const TitleTag = titleAs;
+  const resolvedAction =
+    action ??
+    (actionLabel ? (
+      actionHref ? (
+        <Button
+          href={actionHref}
+          variant={actionVariant}
+          className="section-header-action"
+          aria-label={actionAriaLabel}
+        >
+          {actionLabel}
+        </Button>
+      ) : onAction ? (
+        <Button
+          onClick={onAction}
+          variant={actionVariant}
+          className="section-header-action"
+          aria-label={actionAriaLabel}
+        >
+          {actionLabel}
+        </Button>
+      ) : null
+    ) : null);
 
   return (
     <header
@@ -48,7 +88,7 @@ export function SectionHeader({
           </p>
         ) : null}
       </div>
-      {action ? <div className="dashboard-section-header__action">{action}</div> : null}
+      {resolvedAction ? <div className="dashboard-section-header__action">{resolvedAction}</div> : null}
     </header>
   );
 }

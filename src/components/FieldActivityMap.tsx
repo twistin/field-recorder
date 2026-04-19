@@ -150,5 +150,12 @@ export function FieldActivityMap({
     });
   }, [clusters, currentLocation, isMapReady]);
 
-  return <div ref={mapContainerRef} className="field-map field-map--dashboard" aria-label="Mapa de actividad de grabaciones" />;
+  return (
+    <div
+      ref={mapContainerRef}
+      className="field-map field-map--dashboard"
+      role="region"
+      aria-label="Mapa de actividad de grabaciones"
+    />
+  );
 }

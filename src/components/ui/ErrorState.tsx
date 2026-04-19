@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { Card } from './Card';
 import { classNames } from './classNames';
 
 export type ErrorStateProps = {
@@ -22,21 +23,25 @@ export function ErrorState({
   className,
 }: ErrorStateProps) {
   return (
-    <div
+    <Card
       role="alert"
-      className={classNames('error-state', compact ? 'error-state--compact' : null, className)}
+      variant="state"
+      border="strong"
+      className={classNames('error-state-card', className)}
     >
-      <div className="error-state__header">
-        <span className="error-state__icon" aria-hidden="true">
-          {icon ?? '!'}
-        </span>
-        <div className="error-state__copy">
-          <p className="eyebrow error-state__eyebrow">{eyebrow}</p>
-          <p className="display-heading error-state__title">{title}</p>
-          <p className="module-copy text-sm error-state__description">{description}</p>
+      <div className={classNames('error-state', compact ? 'error-state--compact' : null)}>
+        <div className="error-state__header">
+          <span className="error-state__icon" aria-hidden="true">
+            {icon ?? '!'}
+          </span>
+          <div className="error-state__copy">
+            <p className="eyebrow error-state__eyebrow">{eyebrow}</p>
+            <p className="display-heading error-state__title">{title}</p>
+            <p className="module-copy text-sm error-state__description">{description}</p>
+          </div>
         </div>
+        {action ? <div className="error-state__action">{action}</div> : null}
       </div>
-      {action ? <div className="error-state__action">{action}</div> : null}
-    </div>
+    </Card>
   );
 }

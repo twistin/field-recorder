@@ -2,6 +2,11 @@ import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from 'reac
 
 import { classNames } from './classNames';
 
+/**
+ * `primary` is reserved for the single next-best action in the current view.
+ * In practice that means one prominent primary CTA, usually inside a `hero` card.
+ * Use `secondary` and `ghost` for supporting actions so the view keeps a clear action hierarchy.
+ */
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 type ButtonOwnProps = {
@@ -24,6 +29,10 @@ type ButtonAsAnchor = ButtonOwnProps &
 
 export type ButtonProps = ButtonAsButton | ButtonAsAnchor;
 
+/**
+ * Shared action primitive for buttons and links.
+ * Prefer explicit verb + object labels. Avoid multiple `primary` buttons in the same viewport.
+ */
 export function Button(props: ButtonProps) {
   const {
     variant = 'secondary',

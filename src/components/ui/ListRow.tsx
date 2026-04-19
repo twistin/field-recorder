@@ -2,6 +2,11 @@ import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from 'reac
 
 import { classNames } from './classNames';
 
+/**
+ * Use `ListRow` for repeated operational items that share the same structure
+ * and one dominant action target. If the item needs large media, multiple CTAs,
+ * or a lot of bespoke layout, prefer a `preview` card instead.
+ */
 type ListRowOwnProps = {
   eyebrow?: ReactNode;
   title: ReactNode;
@@ -29,6 +34,10 @@ type ListRowStatic = ListRowOwnProps & {
 
 export type ListRowProps = ListRowAsButton | ListRowAsAnchor | ListRowStatic;
 
+/**
+ * Scannable row primitive for structured lists.
+ * Lists should be preferred over card grids when the user is comparing many similar items.
+ */
 export function ListRow(props: ListRowProps) {
   const {
     eyebrow,

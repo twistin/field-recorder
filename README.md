@@ -20,6 +20,26 @@ Herramienta de campo para documentar sesiones de grabación de soundscapes con r
 2. Copia `.env.example` a `.env.local` sólo si necesitas ajustar variables locales.
 3. Arranca el entorno con `npm run dev`.
 
+## Checks automatizados de UI
+
+La app tiene una capa ligera de validación para accesibilidad, teclado y estabilidad visual del dashboard.
+
+- `npm run test:a11y`: ejecuta checks con axe sobre el shell principal y flujos vacíos clave.
+- `npm run test:keyboard`: valida navegación por teclado en desktop, tablet y móvil.
+- `npm run test:visual`: compara capturas del dashboard en desktop, tablet y móvil.
+- `npm run test:e2e:update`: regenera snapshots visuales cuando un cambio de UI es intencional.
+
+Dependencias necesarias:
+
+1. Instala dependencias del proyecto con `npm install`.
+2. Instala Chromium para Playwright con `npx playwright install chromium`.
+
+Notas prácticas:
+
+- Las pruebas arrancan Vite automáticamente en `http://127.0.0.1:3000`.
+- Si ya tienes el servidor levantado fuera de Playwright, usa `PLAYWRIGHT_USE_EXTERNAL_SERVER=1 npm run test:e2e`.
+- Los tests fijan hora, reducen movimiento y bloquean Google Fonts para minimizar ruido en snapshots.
+
 ## Despliegue en Vercel
 
 La app está preparada para desplegarse como frontend estático de Vite.

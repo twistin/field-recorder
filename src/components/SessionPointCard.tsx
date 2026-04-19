@@ -2,6 +2,8 @@ import { MapPin } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
+import { Card } from './ui';
+
 export interface SessionPointCardItem {
   id: string;
   placeName: string;
@@ -23,11 +25,17 @@ export function SessionPointCard({
   onSelect: () => void;
 }) {
   return (
-    <button
+    <Card
+      as="button"
       type="button"
+      variant={active ? 'panel' : 'preview'}
+      tone="sky"
+      level="card"
+      border={active ? 'strong' : 'subtle'}
       onClick={onSelect}
-      aria-pressed={active}
-      className={`panel point-card panel-tone panel-tone--sky flex w-full flex-col gap-4 p-5 text-left transition ${
+      aria-current={active ? 'true' : undefined}
+      aria-label={active ? `Ficha abierta de ${point.placeName}` : `Abrir ficha de ${point.placeName}`}
+      className={`point-card flex w-full flex-col gap-4 p-5 text-left transition ${
         active ? 'is-active' : ''
       }`}
     >
@@ -73,6 +81,6 @@ export function SessionPointCard({
           ))}
         </div>
       ) : null}
-    </button>
+    </Card>
   );
 }

@@ -12,6 +12,7 @@ import {
   History,
   ImagePlus,
   LocateFixed,
+  Menu,
   Map as MapIcon,
   MapPin,
   MapPinned,
@@ -26,8 +27,9 @@ import {
   Waves,
   WifiOff,
   Wind,
+  X,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { v4 as uuidv4 } from 'uuid';
@@ -38,13 +40,19 @@ import { SessionPointCard } from './components/SessionPointCard';
 import {
   Badge,
   Button,
+  Card,
   EmptyState,
   ErrorState,
   IconButton,
   ListRow,
+  SegmentedControl,
   SectionHeader,
-  Surface,
 } from './components/ui';
+import {
+  getInteractiveMotion,
+  getSurfaceEnterMotion,
+  getViewTransitionMotion,
+} from './components/ui/motion';
 import {
   deleteFieldSession,
   listFieldSessions,
@@ -89,6 +97,13 @@ import type { PublishedSelection } from './types/publishedSelections';
 type View = 'home' | 'session' | 'point' | 'export';
 type DisplayMode = 'night' | 'sun';
 type HomeMediaFilter = 'all' | 'photos' | 'audio';
+type NavigationItem = {
+  view: View;
+  label: string;
+  description: string;
+  icon: React.ComponentType<{ className?: string }>;
+  onClick: () => void;
+};
 
 const DISPLAY_MODE_STORAGE_KEY = 'fieldnotes-display-mode';
 const REMOTE_CATALOG_REFRESH_INTERVAL_MS = 45_000;
@@ -833,6 +848,7 @@ function ViewButton({
       type="button"
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
+      aria-label={compact ? `${label}. ${description}` : undefined}
       className={`dock-button ${active ? 'is-active' : ''} ${compact ? 'is-compact' : ''}`}
     >
       <span className="dock-button__icon" aria-hidden="true">
@@ -865,12 +881,13 @@ function WorkflowCard({
   featured?: boolean;
   onClick: () => void;
 }) {
+  const prefersReducedMotion = useReducedMotion();
+
   return (
     <motion.button
       type="button"
-      whileHover={{ y: -4 }}
-      whileTap={{ scale: 0.995 }}
       onClick={onClick}
+      {...getInteractiveMotion(prefersReducedMotion)}
       className={`workflow-card ${featured ? 'is-featured' : ''}`}
     >
       <span className="workflow-card__icon">
@@ -936,7 +953,190 @@ function HomeHeroVisual() {
   );
 }
 
+function AppNavigationPanels({
+  titleId,
+  activeView,
+  navigationItems,
+  activeSession,
+  activeSessionProjectName,
+  isOnline,
+  onOpenProjects,
+  onImportZoom,
+  onNavigate,
+}: {
+  titleId: string;
+  activeView: View;
+  navigationItems: NavigationItem[];
+  activeSession: UiFieldSession | null;
+  activeSessionProjectName: string;
+  isOnline: boolean;
+  onOpenProjects: () => void;
+  onImportZoom: () => void;
+  onNavigate?: () => void;
+}) {
+  return (
+    <>
+      <section className="panel sidebar-nav-panel" aria-labelledby={titleId}>
+        <div className="sidebar-brand">
+          <p className="eyebrow sidebar-brand__eyebrow">FieldNotes AI</p>
+          <h2 id={titleId} className="sidebar-brand__title">
+            Centro de trabajo
+          </h2>
+          <p className="sidebar-brand__copy">
+            Resumen, salidas, captura y archivo dentro de una navegación estable.
+          </p>
+        </div>
+        <nav className="sidebar-nav" aria-label="Navegación principal">
+          <ul className="sidebar-nav__list">
+            {navigationItems.map((item) => (
+              <li key={item.view} className="sidebar-nav__item">
+                <ViewButton
+                  active={activeView === item.view}
+                  label={item.label}
+                  description={item.description}
+                  icon={item.icon}
+                  onClick={() => {
+                    item.onClick();
+                    onNavigate?.();
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </section>
+
+      {activeView !== 'home' ? (
+        <section
+          className="panel sidebar-session-card sidebar-session-card--compact"
+          aria-labelledby={`${titleId}-current-session-title`}
+        >
+          <p className="eyebrow">Salida actual</p>
+          <h2 id={`${titleId}-current-session-title`} className="sidebar-session-card__title">
+            {activeSession ? activeSession.name : 'No hay salida activa'}
+          </h2>
+          {activeSession ? (
+            <dl className="session-meta-list session-meta-list--compact">
+              <div className="session-meta-row">
+                <dt className="session-meta-label">Trabajo</dt>
+                <dd>{activeSessionProjectName}</dd>
+              </div>
+              <div className="session-meta-row">
+                <dt className="session-meta-label">Zona</dt>
+                <dd>{activeSession.region || 'sin definir'}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="module-copy text-sm">
+              Crea una salida para poder lanzar nuevos registros desde el terreno.
+            </p>
+          )}
+          <ul className="sidebar-session-card__stats" aria-label="Estado de la salida actual">
+            <li>
+              <span className="telemetry-chip">
+                {activeSession ? `${activeSession.points.length} registros` : '0 registros'}
+              </span>
+            </li>
+            <li>
+              <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
+                {isOnline ? 'En línea' : 'Offline'}
+              </span>
+            </li>
+          </ul>
+          {activeSession ? (
+            <div className="action-row action-row--compact action-row--support">
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenProjects();
+                  onNavigate?.();
+                }}
+                className="ui-button ui-button-secondary"
+              >
+                <History className="h-4 w-4" />
+                Ver proyectos
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onImportZoom();
+                  onNavigate?.();
+                }}
+                className="ui-button ui-button-secondary"
+              >
+                <AudioWaveform className="h-4 w-4" />
+                Importar H6
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+function ShellHeader({
+  currentViewLabel,
+  supportText,
+  isSunMode,
+  onToggleDisplayMode,
+  isDrawerOpen,
+  onOpenDrawer,
+  menuButtonRef,
+}: {
+  currentViewLabel: string;
+  supportText: string;
+  isSunMode: boolean;
+  onToggleDisplayMode: () => void;
+  isDrawerOpen: boolean;
+  onOpenDrawer: () => void;
+  menuButtonRef: React.RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <Card as="header" variant="panel" border="subtle" className="fieldnotes-shell-header" aria-label="Cabecera de aplicación">
+      <div className="fieldnotes-shell-header__leading">
+        <button
+          ref={menuButtonRef}
+          type="button"
+          className="icon-button fieldnotes-shell-header__menu-button"
+          aria-label="Abrir navegación"
+          aria-haspopup="dialog"
+          aria-expanded={isDrawerOpen}
+          aria-controls="fieldnotes-tablet-drawer"
+          onClick={onOpenDrawer}
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+
+        <div className="fieldnotes-shell-header__copy">
+          <p className="eyebrow fieldnotes-shell-header__eyebrow">FieldNotes AI</p>
+          <p className="fieldnotes-shell-header__title">Centro de trabajo</p>
+          <div className="fieldnotes-shell-header__context">
+            <Badge variant="muted">{currentViewLabel}</Badge>
+            <p className="fieldnotes-shell-header__support">{supportText}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="fieldnotes-shell-header__actions">
+        <button
+          type="button"
+          onClick={onToggleDisplayMode}
+          className={`mode-toggle ${isSunMode ? 'is-sun' : ''}`}
+          aria-label={isSunMode ? 'Activar modo noche' : 'Activar modo sol'}
+        >
+          <span className="mode-toggle__icon">
+            {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
+          </span>
+          {isSunMode ? 'Modo noche' : 'Modo sol'}
+        </button>
+      </div>
+    </Card>
+  );
+}
+
 export default function App() {
+  const prefersReducedMotion = useReducedMotion();
   const [view, setView] = useState<View>('home');
   const [sessionDraft, setSessionDraft] = useState<SessionDraft>(buildSessionDraft());
   const [pointDraft, setPointDraft] = useState<PointDraft>(buildPointDraft());
@@ -948,6 +1148,7 @@ export default function App() {
   const [captureWorkspace, setCaptureWorkspace] = useState<'map' | 'points'>('map');
   const [archiveWorkspace, setArchiveWorkspace] = useState<'session' | 'media' | 'record'>('session');
   const [homeMediaFilter, setHomeMediaFilter] = useState<HomeMediaFilter>('all');
+  const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => {
     if (typeof window === 'undefined') {
       return 'night';
@@ -1013,6 +1214,11 @@ export default function App() {
   const weatherAbortRef = useRef<AbortController | null>(null);
   const lastWeatherKeyRef = useRef<string | null>(null);
   const lastAutomaticWeatherValueRef = useRef<string>('');
+  const mainContentRef = useRef<HTMLElement | null>(null);
+  const drawerPanelRef = useRef<HTMLElement | null>(null);
+  const drawerMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const drawerCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const wasNavDrawerOpenRef = useRef(false);
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
   const sortedActiveSessionPoints = activeSession
@@ -1086,6 +1292,96 @@ export default function App() {
       }
     }
   }, [displayMode]);
+
+  useEffect(() => {
+    setIsNavDrawerOpen(false);
+  }, [view]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleResize = () => {
+      if (window.innerWidth < 760 || window.innerWidth >= 960) {
+        setIsNavDrawerOpen(false);
+      }
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || !isNavDrawerOpen) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isNavDrawerOpen]);
+
+  useEffect(() => {
+    if (!isNavDrawerOpen) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsNavDrawerOpen(false);
+        return;
+      }
+
+      if (event.key !== 'Tab') {
+        return;
+      }
+
+      const drawer = drawerPanelRef.current;
+      if (!drawer) {
+        return;
+      }
+
+      const focusableElements = drawer.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+
+      if (focusableElements.length === 0) {
+        return;
+      }
+
+      const firstFocusableElement = focusableElements[0];
+      const lastFocusableElement = focusableElements[focusableElements.length - 1];
+
+      if (event.shiftKey && document.activeElement === firstFocusableElement) {
+        event.preventDefault();
+        lastFocusableElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastFocusableElement) {
+        event.preventDefault();
+        firstFocusableElement.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isNavDrawerOpen]);
+
+  useEffect(() => {
+    if (isNavDrawerOpen) {
+      drawerCloseButtonRef.current?.focus();
+    } else if (wasNavDrawerOpenRef.current) {
+      drawerMenuButtonRef.current?.focus();
+    }
+
+    wasNavDrawerOpenRef.current = isNavDrawerOpen;
+  }, [isNavDrawerOpen]);
 
   useEffect(() => {
     if (selectedArchiveProjectKey === 'all') {
@@ -3092,18 +3388,59 @@ export default function App() {
         : view === 'point'
           ? 'La captura queda aislada para trabajar rápido en el terreno: ubicación, escucha, fotos y notas en una sola pantalla.'
           : 'El archivo deja visibles salidas, registros, fotos y tomas H6 para revisar y exportar sin esconder acciones.';
+  const surfaceEnterMotion = getSurfaceEnterMotion(prefersReducedMotion);
+  const viewTransitionMotion = getViewTransitionMotion(prefersReducedMotion);
+  const syncingCloudSessionName =
+    isSyncingCloudSessionId != null
+      ? sessions.find((session) => session.id === isSyncingCloudSessionId)?.name ?? 'la salida seleccionada'
+      : null;
+  const syncingCatalogSessionName =
+    isSyncingCatalogSessionId != null
+      ? sessions.find((session) => session.id === isSyncingCatalogSessionId)?.name ?? 'la salida seleccionada'
+      : null;
+  const importingSessionName =
+    isImportingSessionId != null
+      ? sessions.find((session) => session.id === isImportingSessionId)?.name ?? 'la salida seleccionada'
+      : null;
+  const exportingSessionName =
+    isExportingSessionId != null
+      ? sessions.find((session) => session.id === isExportingSessionId)?.name ?? 'la salida seleccionada'
+      : null;
+  const activeBusyMessage =
+    storageMode === 'loading'
+      ? 'Preparando almacenamiento local.'
+      : isQuickCapturing
+        ? 'Guardando un registro rápido.'
+        : soundscapeStatus === 'listening'
+          ? 'Analizando el ambiente sonoro.'
+          : locationStatus === 'loading'
+            ? 'Actualizando el lugar detectado.'
+            : weatherStatus === 'loading'
+              ? 'Actualizando el clima automático.'
+              : isPublishingSelection
+                ? 'Publicando la selección web.'
+                : isUpdatingProjectKey != null
+                  ? 'Actualizando el trabajo seleccionado.'
+                  : importingSessionName
+                    ? `Importando audio H6 en ${importingSessionName}.`
+                    : syncingCloudSessionName
+                      ? `Respaldando ${syncingCloudSessionName} en la nube.`
+                      : syncingCatalogSessionName
+                        ? `Sincronizando ${syncingCatalogSessionName} con el catálogo remoto.`
+                        : exportingSessionName
+                          ? `Exportando ${exportingSessionName}.`
+                          : isSyncingPendingMetadata
+                            ? 'Sincronizando metadatos pendientes.'
+                            : null;
+  const shellSupportText = activeSession
+    ? `Salida activa: ${activeSession.name}`
+    : 'Sin salida activa';
   const captureEntryLabel = activeSession ? 'Ir a captura' : 'Preparar salida';
   const latestRecordLabel = recordPoint ? recordPoint.placeName : 'Sin ficha final todavía';
   const latestRecordSummary = recordPoint
     ? `${formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm")} · ${resolveProjectName(recordSession?.projectName ?? '')}`
     : 'El archivo final aparecerá en cuanto guardes el primer punto.';
-  const navigationItems: Array<{
-    view: View;
-    label: string;
-    description: string;
-    icon: React.ComponentType<{ className?: string }>;
-    onClick: () => void;
-  }> = [
+  const navigationItems: NavigationItem[] = [
     {
       view: 'home',
       label: 'Resumen',
@@ -3365,16 +3702,20 @@ export default function App() {
 
           <div className="archive-session-card__actions flex items-center gap-2">
             <button
+              type="button"
               onClick={() => void syncSessionToCloudBackup(session.id)}
               disabled={!isOnline || isSyncingCloudSessionId === session.id}
+              aria-busy={isSyncingCloudSessionId === session.id}
               className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
             >
               <Upload className="h-4 w-4" />
               {isSyncingCloudSessionId === session.id ? 'Respaldando' : 'Respaldar nube'}
             </button>
             <button
+              type="button"
               onClick={() => void syncSessionToCatalogStore(session.id)}
               disabled={!isOnline || isCatalogApiUnavailable || isSyncingCatalogSessionId === session.id}
+              aria-busy={isSyncingCatalogSessionId === session.id}
               className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
             >
               <Upload className="h-4 w-4" />
@@ -3385,16 +3726,20 @@ export default function App() {
                   : 'Sincronizar catálogo'}
             </button>
             <button
+              type="button"
               onClick={() => openZoomImportPicker(session.id)}
               disabled={isImportingSessionId === session.id}
+              aria-busy={isImportingSessionId === session.id}
               className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
             >
               <Upload className="h-4 w-4" />
               {isImportingSessionId === session.id ? 'Importando Zoom H6' : 'Importar Zoom H6'}
             </button>
             <button
+              type="button"
               onClick={() => void exportSession(session)}
               disabled={isExportingSessionId === session.id}
+              aria-busy={isExportingSessionId === session.id}
               className="ui-button ui-button-primary disabled:cursor-wait disabled:opacity-60"
             >
               <Download className="h-4 w-4" />
@@ -3697,7 +4042,7 @@ export default function App() {
 
     return (
       <>
-        <div className="panel archive-records-panel panel-tone panel-tone--sky">
+        <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-records-panel panel-tone panel-tone--sky">
           <div className="panel-heading">
             <p className="eyebrow">Salida abierta</p>
             <h3 className="display-heading text-3xl">{recordSession.name}</h3>
@@ -3739,7 +4084,7 @@ export default function App() {
           )}
         </div>
 
-        <div className="panel record-preview-card panel-tone panel-tone--amber">
+        <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-preview-card panel-tone panel-tone--amber">
           <div className="panel-heading">
             <p className="eyebrow">Registro activo en la salida</p>
             <h3 className="display-heading text-3xl">
@@ -3788,7 +4133,7 @@ export default function App() {
 
     return (
       <>
-        <div className="panel archive-media-panel panel-tone panel-tone--amber">
+        <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-media-panel panel-tone panel-tone--amber">
           <div className="panel-heading">
             <p className="eyebrow">Fotos y audio</p>
             <h3 className="display-heading text-3xl">Biblioteca visible de la salida</h3>
@@ -3885,7 +4230,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="panel record-preview-card panel-tone panel-tone--sky">
+        <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-preview-card panel-tone panel-tone--sky">
           <div className="panel-heading">
             <p className="eyebrow">Registro seleccionado en la biblioteca</p>
             <h3 className="display-heading text-3xl">
@@ -3949,7 +4294,7 @@ export default function App() {
 
     return (
       <>
-        <div className="panel record-header-card panel-tone panel-tone--sky">
+        <div className="panel surface-level--panel surface-emphasis--panel surface-border--default record-header-card panel-tone panel-tone--sky">
           <div className="panel-heading">
             <p className="eyebrow">Registro seleccionado</p>
             <h3 className="display-heading text-4xl">{recordPoint.placeName}</h3>
@@ -4012,7 +4357,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="panel record-gallery-card panel-tone panel-tone--clay">
+        <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-gallery-card panel-tone panel-tone--clay">
           <div className="panel-heading">
             <p className="eyebrow">Fotos del registro</p>
             <h3 className="display-heading text-3xl">Galería del punto seleccionado</h3>
@@ -4036,7 +4381,10 @@ export default function App() {
           )}
         </div>
 
-        <div className="panel panel-tone panel-tone--amber">
+        <div
+          className="panel surface-level--panel surface-emphasis--panel surface-border--default panel-tone panel-tone--amber"
+          aria-busy={isPublishingSelection}
+        >
           <div className="panel-heading">
             <p className="eyebrow">Selección web</p>
             <h3 className="display-heading text-3xl">Imagen + audio publicables</h3>
@@ -4109,6 +4457,7 @@ export default function App() {
                   type="button"
                   onClick={() => void publishCurrentSelection()}
                   disabled={isPublishingSelection}
+                  aria-busy={isPublishingSelection}
                   className="ui-button ui-button-primary"
                 >
                   <Globe className="h-4 w-4" />
@@ -4138,7 +4487,7 @@ export default function App() {
           )}
         </div>
 
-        <div className="panel record-metadata-card panel-tone panel-tone--mint">
+        <div className="panel surface-level--panel surface-emphasis--panel surface-border--default record-metadata-card panel-tone panel-tone--mint">
           <div className="panel-heading">
             <p className="eyebrow">Ficha del registro</p>
             <h3 className="display-heading text-3xl">GPS, clima, notas y etiquetas</h3>
@@ -4207,7 +4556,7 @@ export default function App() {
           ) : null}
         </div>
 
-        <div className="panel record-map-card panel-tone panel-tone--sky">
+        <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-map-card panel-tone panel-tone--sky">
           <div className="panel-heading">
             <p className="eyebrow">Posición</p>
             <h3 className="display-heading text-3xl">Mapa del registro seleccionado</h3>
@@ -4232,7 +4581,21 @@ export default function App() {
   }
 
   return (
-    <div className="field-shell fieldnotes-shell">
+    <MotionConfig reducedMotion="user">
+      <div className="field-shell fieldnotes-shell">
+      <a
+        href="#fieldnotes-main-content"
+        className="skip-link"
+        onClick={(event) => {
+          event.preventDefault();
+          mainContentRef.current?.focus();
+        }}
+      >
+        Saltar al contenido principal
+      </a>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {activeBusyMessage}
+      </div>
       <input
         ref={zoomImportInputRef}
         type="file"
@@ -4248,103 +4611,91 @@ export default function App() {
       </datalist>
 
       <div className="fieldnotes-app">
-        {showSidebar ? (
-          <aside className="fieldnotes-sidebar" aria-label="Panel lateral">
-            <section className="panel sidebar-nav-panel" aria-labelledby="sidebar-nav-title">
-              <div className="sidebar-brand">
-                <p className="eyebrow sidebar-brand__eyebrow">FieldNotes AI</p>
-                <h2 id="sidebar-nav-title" className="sidebar-brand__title">
-                  Centro de trabajo
-                </h2>
-                <p className="sidebar-brand__copy">
-                  Resumen, salidas, captura y archivo dentro de una navegación estable.
-                </p>
-              </div>
-              <nav className="sidebar-nav" aria-label="Navegación principal">
-                <ul className="sidebar-nav__list">
-                  {navigationItems.map((item) => (
-                    <li key={item.view} className="sidebar-nav__item">
-                      <ViewButton
-                        active={view === item.view}
-                        label={item.label}
-                        description={item.description}
-                        icon={item.icon}
-                        onClick={item.onClick}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            </section>
+        <ShellHeader
+          currentViewLabel={currentViewLabel}
+          supportText={shellSupportText}
+          isSunMode={isSunMode}
+          onToggleDisplayMode={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
+          isDrawerOpen={isNavDrawerOpen}
+          onOpenDrawer={() => setIsNavDrawerOpen(true)}
+          menuButtonRef={drawerMenuButtonRef}
+        />
 
-            {view !== 'home' ? (
-              <section
-                className="panel sidebar-session-card sidebar-session-card--compact"
-                aria-labelledby="sidebar-current-session-title"
-              >
-                <p className="eyebrow">Salida actual</p>
-                <h2 id="sidebar-current-session-title" className="sidebar-session-card__title">
-                  {activeSession ? activeSession.name : 'No hay salida activa'}
-                </h2>
-                {activeSession ? (
-                  <dl className="session-meta-list session-meta-list--compact">
-                    <div className="session-meta-row">
-                      <dt className="session-meta-label">Trabajo</dt>
-                      <dd>{activeSessionProjectName}</dd>
-                    </div>
-                    <div className="session-meta-row">
-                      <dt className="session-meta-label">Zona</dt>
-                      <dd>{activeSession.region || 'sin definir'}</dd>
-                    </div>
-                  </dl>
-                ) : (
-                  <p className="module-copy text-sm">
-                    Crea una salida para poder lanzar nuevos registros desde el terreno.
-                  </p>
-                )}
-                <ul className="sidebar-session-card__stats" aria-label="Estado de la salida actual">
-                  <li>
-                    <span className="telemetry-chip">
-                      {activeSession ? `${activeSession.points.length} registros` : '0 registros'}
-                    </span>
-                  </li>
-                  <li>
-                    <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
-                      {isOnline ? 'En línea' : 'Offline'}
-                    </span>
-                  </li>
-                </ul>
-                {activeSession ? (
-                  <div className="action-row action-row--compact action-row--support">
-                    <button type="button" onClick={() => setView('export')} className="ui-button ui-button-secondary">
-                      <History className="h-4 w-4" />
-                      Ver proyectos
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openZoomImportPicker(activeSession.id)}
-                      className="ui-button ui-button-secondary"
-                    >
-                      <AudioWaveform className="h-4 w-4" />
-                      Importar H6
-                    </button>
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
-          </aside>
-        ) : null}
+        <div
+          className={`fieldnotes-tablet-drawer__backdrop ${isNavDrawerOpen ? 'is-open' : ''}`}
+          aria-hidden="true"
+          onClick={() => setIsNavDrawerOpen(false)}
+        />
 
-        <div className="fieldnotes-workspace">
+        <aside
+          ref={drawerPanelRef}
+          id="fieldnotes-tablet-drawer"
+          className={`fieldnotes-tablet-drawer ${isNavDrawerOpen ? 'is-open' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tablet-drawer-nav-title"
+          aria-describedby="tablet-drawer-description"
+          aria-hidden={!isNavDrawerOpen}
+        >
+          <p id="tablet-drawer-description" className="sr-only">
+            Navegación principal y estado de la salida actual.
+          </p>
+          <div className="fieldnotes-tablet-drawer__header">
+            <p className="eyebrow">Navegación</p>
+            <button
+              ref={drawerCloseButtonRef}
+              type="button"
+              className="icon-button fieldnotes-tablet-drawer__close"
+              aria-label="Cerrar navegación"
+              onClick={() => setIsNavDrawerOpen(false)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="fieldnotes-tablet-drawer__content">
+            <AppNavigationPanels
+              titleId="tablet-drawer-nav-title"
+              activeView={view}
+              navigationItems={navigationItems}
+              activeSession={activeSession}
+              activeSessionProjectName={activeSessionProjectName}
+              isOnline={isOnline}
+              onOpenProjects={() => setView('export')}
+              onImportZoom={() => activeSession ? openZoomImportPicker(activeSession.id) : undefined}
+              onNavigate={() => setIsNavDrawerOpen(false)}
+            />
+          </div>
+        </aside>
+
+        <div className="fieldnotes-shell-body">
+          {showSidebar ? (
+            <aside className="fieldnotes-sidebar" aria-label="Panel lateral">
+              <AppNavigationPanels
+                titleId="desktop-sidebar-nav-title"
+                activeView={view}
+                navigationItems={navigationItems}
+                activeSession={activeSession}
+                activeSessionProjectName={activeSessionProjectName}
+                isOnline={isOnline}
+                onOpenProjects={() => setView('export')}
+                onImportZoom={() => activeSession ? openZoomImportPicker(activeSession.id) : undefined}
+              />
+            </aside>
+          ) : null}
+
+          <div className="fieldnotes-workspace">
           <div className="fieldnotes-contextbar">
           {view === 'home' ? (
-            <motion.header
+            <Card
+              as={motion.header}
               key="home-topbar"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="panel home-topbar panel-tone panel-tone--sky"
+              variant="hero"
+              tone="sky"
+              className="home-topbar"
               aria-labelledby="dashboard-home-title"
               aria-describedby="dashboard-home-description"
+              {...surfaceEnterMotion}
             >
               <div className="home-topbar__brand">
                 <p className="eyebrow">Entrada principal</p>
@@ -4387,7 +4738,7 @@ export default function App() {
                       <div key={item.id} className="home-status-strip__item">
                         <dt className="home-status-strip__term">{item.label}</dt>
                         <dd className="home-status-strip__value">{item.value}</dd>
-                        <p className="home-status-strip__detail">{item.detail}</p>
+                        <dd className="home-status-strip__detail">{item.detail}</dd>
                       </div>
                     ))}
                   </dl>
@@ -4431,13 +4782,14 @@ export default function App() {
                   </button>
                 </div>
               </div>
-            </motion.header>
+            </Card>
           ) : (
-            <motion.header
+            <Card
+              as={motion.header}
               key={`section-${view}`}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="panel section-header"
+              variant="panel"
+              className="section-header"
+              {...surfaceEnterMotion}
             >
               <div className="section-header__copy">
                 <p className="eyebrow">{currentViewLabel}</p>
@@ -4472,43 +4824,49 @@ export default function App() {
                   </button>
                 </div>
               </div>
-            </motion.header>
+            </Card>
           )}
           </div>
 
-          <main className="fieldnotes-main" aria-label="Contenido principal">
+          <main
+            ref={mainContentRef}
+            id="fieldnotes-main-content"
+            className="fieldnotes-main"
+            aria-label="Contenido principal"
+            tabIndex={-1}
+          >
 
           {shouldShowStatusStack ? (
             <section className="status-stack" aria-label="Avisos operativos">
               {shouldShowOperationalBanner ? (
-                <div className="panel status-banner">
+                <Card variant="state" className="status-banner">
                   <p className="eyebrow">Estado operativo</p>
                   <p className="module-copy text-sm">{statusNote}</p>
-                </div>
+                </Card>
               ) : null}
               {!isOnline ? (
-                <div className="panel status-banner status-banner--warning">
+                <Card variant="state" border="strong" className="status-banner status-banner--warning">
                   <p className="eyebrow">Conectividad</p>
                   <p className="module-copy text-sm">
                     Estás sin red. GPS, notas, fotos y guardado siguen activos; clima y lugar se completarán cuando vuelva la conexión.
                   </p>
-                </div>
+                </Card>
               ) : null}
               {isCatalogApiUnavailable ? (
-                <div className="panel status-banner status-banner--warning">
+                <Card variant="state" border="strong" className="status-banner status-banner--warning">
                   <p className="eyebrow">Catálogo remoto</p>
                   <p className="module-copy text-sm">
                     Las rutas `/api/catalog` no están disponibles aquí. El guardado local y las exportaciones siguen funcionando, pero la sincronización remota queda desactivada.
                   </p>
-                </div>
+                </Card>
               ) : null}
               {storageMode === 'memory-only' ? (
-                <div className="panel status-banner status-banner--warning">
+                <Card variant="state" border="strong" className="status-banner status-banner--warning">
                   <p className="eyebrow">Almacenamiento</p>
                   <p className="module-copy text-sm">
                     No hay acceso al archivo local. La salida funciona, pero conviene exportar o reiniciar el almacenamiento antes de cerrar la app.
                   </p>
-                </div>
+                </Card>
               ) : null}
               {appError ? (
                 <ErrorState
@@ -4525,15 +4883,15 @@ export default function App() {
             {view === 'home' ? (
               <motion.section
                 key="home"
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -18 }}
                 className="layout-home"
+                {...viewTransitionMotion}
               >
                 <div className="home-primary-grid">
-                  <Surface
+                  <Card
                     as="section"
+                    variant="panel"
                     tone="sky"
+                    border="strong"
                     className="home-session-overview home-zone home-zone--session"
                     aria-labelledby="home-session-overview-title"
                     aria-describedby="home-session-overview-description"
@@ -4548,17 +4906,8 @@ export default function App() {
                           ? `${activeSessionProjectName} · ${activeSession.region || 'sin zona'} · ${captureDateLabel}`
                           : 'Empieza por crear o abrir una salida. Después la captura y el archivo quedan conectados.'
                       }
-                      action={
-                        activeSession ? (
-                          <Button
-                            variant="ghost"
-                            onClick={() => openSessionWorkspace(activeSession.id)}
-                            className="section-header-action"
-                          >
-                            Ver salida activa
-                          </Button>
-                        ) : undefined
-                      }
+                      actionLabel={activeSession ? 'Ver salida activa' : undefined}
+                      onAction={activeSession ? () => openSessionWorkspace(activeSession.id) : undefined}
                     />
 
                     {activeSession ? (
@@ -4602,17 +4951,8 @@ export default function App() {
                               }
                               titleAs="h3"
                               compact
-                              action={
-                                hasMoreActivePoints ? (
-                                  <Button
-                                    variant="ghost"
-                                    onClick={() => setView('point')}
-                                    className="section-header-action"
-                                  >
-                                    Ver todos
-                                  </Button>
-                                ) : undefined
-                              }
+                              actionLabel={hasMoreActivePoints ? 'Ver todos' : undefined}
+                              onAction={hasMoreActivePoints ? () => setView('point') : undefined}
                             />
                             <div className="structured-list-panel">
                               <ul className="structured-list structured-list--compact">
@@ -4657,10 +4997,11 @@ export default function App() {
                         }
                       />
                     )}
-                  </Surface>
+                  </Card>
 
-                  <Surface
+                  <Card
                     as="section"
+                    variant="preview"
                     tone="mint"
                     className="home-library-card home-zone home-zone--work"
                     aria-labelledby="home-projects-title"
@@ -4672,17 +5013,8 @@ export default function App() {
                       descriptionId="home-projects-description"
                       title="Trabajos y salidas"
                       description="Los proyectos y salidas recientes quedan agrupados en una sola zona para retomar trabajo sin buscar entre bloques dispersos."
-                      action={
-                        hasRecentWork ? (
-                          <Button
-                            variant="ghost"
-                            onClick={() => setView('session')}
-                            className="section-header-action"
-                          >
-                            Ver salidas
-                          </Button>
-                        ) : undefined
-                      }
+                      actionLabel={hasRecentWork ? 'Ver salidas' : undefined}
+                      onAction={hasRecentWork ? () => setView('session') : undefined}
                     />
 
                     {hasRecentWork ? (
@@ -4789,10 +5121,11 @@ export default function App() {
                         }
                       />
                     )}
-                  </Surface>
+                  </Card>
 
-                  <Surface
+                  <Card
                     as="section"
+                    variant="preview"
                     tone="amber"
                     className="home-library-card home-library-card--media home-zone home-zone--media"
                     aria-labelledby="home-media-title"
@@ -4804,35 +5137,22 @@ export default function App() {
                       descriptionId="home-media-description"
                       title="Fotos y audio recientes"
                       description="Una sola superficie de consulta rápida para revisar lo último capturado o importado sin fragmentar la atención entre módulos paralelos."
-                      action={
-                        hasRecentMedia ? (
-                          <Button
-                            variant="ghost"
-                            onClick={openMediaArchiveFromHome}
-                            className="section-header-action"
-                          >
-                            Abrir biblioteca de media
-                          </Button>
-                        ) : undefined
-                      }
+                      actionLabel={hasRecentMedia ? 'Abrir biblioteca de media' : undefined}
+                      onAction={hasRecentMedia ? openMediaArchiveFromHome : undefined}
                     />
 
                     {hasRecentMedia ? (
                       <div className="home-media-panel">
                         <div className="home-media-panel__controls">
-                          <div className="segment-switch" role="group" aria-label="Filtrar media reciente">
-                            {HOME_MEDIA_FILTERS.map((filterOption) => (
-                              <button
-                                key={filterOption.id}
-                                type="button"
-                                onClick={() => setHomeMediaFilter(filterOption.id)}
-                                aria-pressed={homeMediaFilter === filterOption.id}
-                                className={`segment-switch__button ${homeMediaFilter === filterOption.id ? 'is-active' : ''}`}
-                              >
-                                {filterOption.label}
-                              </button>
-                            ))}
-                          </div>
+                          <SegmentedControl
+                            label="Filtrar media reciente"
+                            value={homeMediaFilter}
+                            items={HOME_MEDIA_FILTERS.map((filterOption) => ({
+                              value: filterOption.id,
+                              label: filterOption.label,
+                            }))}
+                            onChange={setHomeMediaFilter}
+                          />
                           <p className="module-copy text-sm home-media-panel__summary">{homeMediaPreviewSummary}</p>
                         </div>
 
@@ -4965,7 +5285,7 @@ export default function App() {
                         }
                       />
                     )}
-                  </Surface>
+                  </Card>
                 </div>
               </motion.section>
             ) : null}
@@ -4973,12 +5293,10 @@ export default function App() {
             {view === 'session' ? (
               <motion.section
                 key="panel"
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -18 }}
                 className="layout-dashboard"
+                {...viewTransitionMotion}
               >
-                <div className="panel panel-primary dashboard-session-panel panel-tone panel-tone--sky">
+                <Card variant="hero" tone="sky" className="dashboard-session-panel">
                   <div className="panel-heading panel-heading--inverse">
                     <p className="eyebrow eyebrow-inverse">{activeSession ? 'Salida activa' : 'Preparar salida'}</p>
                     <h3 className="display-heading text-3xl panel-primary-title">
@@ -5117,9 +5435,9 @@ export default function App() {
                       </div>
                     </div>
                   )}
-                </div>
+                </Card>
 
-                <div className="panel dashboard-browser-panel panel-tone panel-tone--mint">
+                <Card variant="panel" tone="mint" className="dashboard-browser-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Proyectos</p>
                     <h3 className="display-heading text-3xl">Trabajos y salidas visibles</h3>
@@ -5193,9 +5511,9 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                </div>
+                </Card>
 
-                <div className="panel dashboard-search-panel panel-tone panel-tone--clay">
+                <Card variant="preview" tone="clay" className="dashboard-search-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Buscar registros</p>
                     <h3 className="display-heading text-3xl">Lugar, trabajo o referencia H6</h3>
@@ -5246,9 +5564,9 @@ export default function App() {
                       </p>
                     )}
                   </div>
-                </div>
+                </Card>
 
-                <div className="panel dashboard-map-panel panel-tone panel-tone--sky">
+                <Card variant="preview" tone="sky" className="dashboard-map-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Mapa de calor de grabaciones</p>
                     <h3 className="display-heading text-3xl">Actividad global de campo</h3>
@@ -5280,9 +5598,9 @@ export default function App() {
                         : null
                     }
                   />
-                </div>
+                </Card>
 
-                <div className="panel dashboard-insights-panel panel-tone panel-tone--amber">
+                <Card variant="preview" tone="amber" className="dashboard-insights-panel">
                   <div className="panel-heading">
                     <p className="eyebrow">Volumen y pendientes</p>
                     <h3 className="display-heading text-3xl">Estado del archivo y la sincronización</h3>
@@ -5354,17 +5672,15 @@ export default function App() {
                       Todavía no hay actividad archivada suficiente para construir el histórico.
                     </p>
                   )}
-                </div>
+                </Card>
               </motion.section>
             ) : null}
 
             {view === 'point' ? (
               <motion.section
                 key="log"
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -18 }}
                 className="layout-log"
+                {...viewTransitionMotion}
               >
                 {!activeSession ? (
                   <div className="panel empty-state-card">
@@ -5378,7 +5694,15 @@ export default function App() {
                   </div>
                 ) : (
                   <>
-                    <div className="panel panel-primary log-summary-card panel-tone panel-tone--sky">
+                    <div
+                      className="panel surface-level--panel surface-emphasis--hero surface-border--strong panel-primary log-summary-card panel-tone panel-tone--sky"
+                      aria-busy={
+                        isQuickCapturing ||
+                        soundscapeStatus === 'listening' ||
+                        locationStatus === 'loading' ||
+                        weatherStatus === 'loading'
+                      }
+                    >
                       <div className="panel-heading panel-heading--inverse">
                         <p className="eyebrow eyebrow-inverse">Registro activo</p>
                         <h3 className="display-heading text-3xl panel-primary-title">{activeSessionProjectName}</h3>
@@ -5449,6 +5773,7 @@ export default function App() {
                           onClick={() => void addQuickPointToSession()}
                           className="ui-button ui-button-primary"
                           disabled={isQuickCapturing}
+                          aria-busy={isQuickCapturing}
                         >
                           <Mic className="h-4 w-4" />
                           {isQuickCapturing ? 'Guardando...' : 'Guardar registro rápido'}
@@ -5457,6 +5782,7 @@ export default function App() {
                           type="button"
                           onClick={() => void listenAndClassifySoundscape()}
                           disabled={soundscapeStatus === 'listening'}
+                          aria-busy={soundscapeStatus === 'listening'}
                           className="listen-button capture-quick-tool"
                         >
                           <Sparkles className="h-5 w-5" />
@@ -5485,6 +5811,7 @@ export default function App() {
                           type="button"
                           onClick={refreshDetectedPlace}
                           disabled={!canRefreshDetectedPlace}
+                          aria-busy={locationStatus === 'loading'}
                           className="ui-button ui-button-secondary"
                         >
                           <MapPin className="h-4 w-4" />
@@ -5494,15 +5821,16 @@ export default function App() {
                           type="button"
                           onClick={refreshAutomaticWeather}
                           disabled={!canRefreshWeather || weatherStatus === 'loading'}
+                          aria-busy={weatherStatus === 'loading'}
                           className="ui-button ui-button-secondary"
                         >
-                          <CloudRain className={`h-4 w-4 ${weatherStatus === 'loading' ? 'animate-spin' : ''}`} />
+                          <CloudRain className={`h-4 w-4 ${weatherStatus === 'loading' ? 'busy-spin' : ''}`} />
                           Actualizar clima
                         </button>
                       </div>
                     </div>
 
-                    <div className="panel log-form-card panel-tone panel-tone--mint">
+                    <div className="panel surface-level--panel surface-emphasis--panel surface-border--default log-form-card panel-tone panel-tone--mint">
                       <div className="panel-heading">
                         <p className="eyebrow">Datos esenciales</p>
                         <h3 className="display-heading text-3xl">Lo mínimo para cerrar un buen registro</h3>
@@ -5648,7 +5976,7 @@ export default function App() {
                       </details>
                     </div>
 
-                    <div className="panel listen-panel panel-tone panel-tone--amber">
+                    <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle listen-panel panel-tone panel-tone--amber">
                       <div className="panel-heading">
                         <p className="eyebrow">Sección IA</p>
                         <h3 className="display-heading text-3xl">Detectar Elementos Del Ambiente</h3>
@@ -5657,7 +5985,13 @@ export default function App() {
                         </p>
                       </div>
 
-                      <div className="classification-card">
+                      <div
+                        className="classification-card"
+                        role="status"
+                        aria-live="polite"
+                        aria-atomic="true"
+                        aria-busy={soundscapeStatus === 'listening'}
+                      >
                         <p className="eyebrow">Resultado</p>
                         <p className="summary-value">
                           {draftSoundscapeClassification?.summary || 'Sin detección todavía'}
@@ -5679,6 +6013,7 @@ export default function App() {
                           type="button"
                           onClick={() => void listenAndClassifySoundscape()}
                           disabled={soundscapeStatus === 'listening'}
+                          aria-busy={soundscapeStatus === 'listening'}
                           className="ui-button ui-button-secondary"
                         >
                           <Sparkles className="h-4 w-4" />
@@ -5687,7 +6022,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="panel photos-panel panel-tone panel-tone--clay">
+                    <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle photos-panel panel-tone panel-tone--clay">
                       <div className="panel-heading">
                         <p className="eyebrow">Área de fotos</p>
                         <h3 className="display-heading text-3xl">Setup y entorno</h3>
@@ -5728,28 +6063,21 @@ export default function App() {
                       ) : null}
                     </div>
 
-                    <div className="panel log-map-panel panel-tone panel-tone--sky">
+                    <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle log-map-panel panel-tone panel-tone--sky">
                       <div className="panel-heading">
                         <p className="eyebrow">Exploración</p>
                         <h3 className="display-heading text-3xl">Mapa y registros previos</h3>
                       </div>
 
-                      <div className="segment-switch">
-                        <button
-                          type="button"
-                          onClick={() => setCaptureWorkspace('map')}
-                          className={`segment-switch__button ${captureWorkspace === 'map' ? 'is-active' : ''}`}
-                        >
-                          Mapa
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCaptureWorkspace('points')}
-                          className={`segment-switch__button ${captureWorkspace === 'points' ? 'is-active' : ''}`}
-                        >
-                          Lista
-                        </button>
-                      </div>
+                      <SegmentedControl
+                        label="Cambiar vista de exploración"
+                        value={captureWorkspace}
+                        items={[
+                          { value: 'map', label: 'Mapa' },
+                          { value: 'points', label: 'Lista' },
+                        ]}
+                        onChange={setCaptureWorkspace}
+                      />
 
                       {captureWorkspace === 'map' ? (
                         <SessionMap
@@ -5802,7 +6130,7 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="panel record-preview-card panel-tone panel-tone--amber">
+                    <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-preview-card panel-tone panel-tone--amber">
                       <div className="panel-heading">
                         <p className="eyebrow">Último registro visible</p>
                         <h3 className="display-heading text-3xl">
@@ -5845,10 +6173,8 @@ export default function App() {
             {view === 'export' ? (
               <motion.section
                 key="record"
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -18 }}
                 className="layout-record"
+                {...viewTransitionMotion}
               >
                 {!recordSession ? (
                   <div className="panel empty-state-card">
@@ -5859,7 +6185,7 @@ export default function App() {
                   </div>
                 ) : (
                   <>
-                    <div className="panel archive-browser-panel panel-tone panel-tone--mint">
+                    <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-browser-panel panel-tone panel-tone--mint">
                       <div className="panel-heading">
                         <p className="eyebrow">Proyectos</p>
                         <h3 className="display-heading text-3xl">Proyectos, trabajos y salidas</h3>
@@ -5895,7 +6221,10 @@ export default function App() {
                       </p>
 
                       {currentArchiveProject ? (
-                        <div className="soft-card project-admin-card">
+                        <div
+                          className="soft-card project-admin-card"
+                          aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
+                        >
                           <p className="eyebrow">Gestionar trabajo</p>
                           {canManageSelectedProject ? (
                             <>
@@ -5916,6 +6245,7 @@ export default function App() {
                                   type="button"
                                   onClick={() => void renameProject(currentArchiveProject.key)}
                                   disabled={isUpdatingProjectKey === currentArchiveProject.key}
+                                  aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
                                   className="ui-button ui-button-secondary"
                                 >
                                   {isUpdatingProjectKey === currentArchiveProject.key ? 'Guardando...' : 'Renombrar trabajo'}
@@ -5924,6 +6254,7 @@ export default function App() {
                                   type="button"
                                   onClick={() => void clearProject(currentArchiveProject.key)}
                                   disabled={isUpdatingProjectKey === currentArchiveProject.key}
+                                  aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
                                   className="ui-button ui-button-danger"
                                 >
                                   {isUpdatingProjectKey === currentArchiveProject.key ? 'Actualizando...' : 'Quitar trabajo'}
@@ -5967,7 +6298,7 @@ export default function App() {
                       )}
                     </div>
                     <div className="archive-detail-stack">
-                      <div className="panel archive-workspace-panel panel-tone panel-tone--sky">
+                      <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-workspace-panel panel-tone panel-tone--sky">
                         <div className="panel-heading">
                           <p className="eyebrow">Espacio de trabajo</p>
                           <h3 className="display-heading text-3xl">{recordSession.name}</h3>
@@ -5982,30 +6313,17 @@ export default function App() {
                           <span className="telemetry-chip">{recordSessionAudioLibrary.length} tomas H6</span>
                         </div>
 
-                        <div className="segment-switch archive-workspace-switch">
-                          <button
-                            type="button"
-                            onClick={() => setArchiveWorkspace('session')}
-                            className={`segment-switch__button ${archiveWorkspace === 'session' ? 'is-active' : ''}`}
-                          >
-                            Salida
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setArchiveWorkspace('media')}
-                            className={`segment-switch__button ${archiveWorkspace === 'media' ? 'is-active' : ''}`}
-                          >
-                            Biblioteca
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setArchiveWorkspace('record')}
-                            disabled={!recordPoint}
-                            className={`segment-switch__button ${archiveWorkspace === 'record' ? 'is-active' : ''}`}
-                          >
-                            Registro
-                          </button>
-                        </div>
+                        <SegmentedControl
+                          label="Cambiar área del espacio de trabajo"
+                          value={archiveWorkspace}
+                          items={[
+                            { value: 'session', label: 'Salida' },
+                            { value: 'media', label: 'Biblioteca' },
+                            { value: 'record', label: 'Registro', disabled: !recordPoint },
+                          ]}
+                          onChange={setArchiveWorkspace}
+                          className="archive-workspace-switch"
+                        />
                       </div>
 
                       {archiveWorkspace === 'session'
@@ -6020,6 +6338,7 @@ export default function App() {
             ) : null}
           </AnimatePresence>
           </main>
+        </div>
         </div>
 
         {showMobileDock ? (
@@ -6042,6 +6361,7 @@ export default function App() {
         ) : null}
       </div>
 
-    </div>
+      </div>
+    </MotionConfig>
   );
 }
