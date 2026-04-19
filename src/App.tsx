@@ -47,6 +47,7 @@ import {
   ListRow,
   SegmentedControl,
   SectionHeader,
+  StructuredList,
 } from './components/ui';
 import {
   getInteractiveMotion,
@@ -4954,33 +4955,31 @@ export default function App() {
                               actionLabel={hasMoreActivePoints ? 'Ver todos' : undefined}
                               onAction={hasMoreActivePoints ? () => setView('point') : undefined}
                             />
-                            <div className="structured-list-panel">
-                              <ul className="structured-list structured-list--compact">
-                                {latestActivePoints.map((point) => {
-                                  const hasLinkedAudio =
-                                    activeSession.audioTakes.some((take) => take.associatedPointId === point.id) ?? false;
+                            <StructuredList>
+                              {latestActivePoints.map((point) => {
+                                const hasLinkedAudio =
+                                  activeSession.audioTakes.some((take) => take.associatedPointId === point.id) ?? false;
 
-                                  return (
-                                    <li key={point.id}>
-                                      <ListRow
-                                        compact
-                                        onClick={() => openRecordView(activeSession.id, point.id)}
-                                        eyebrow="Registro reciente"
-                                        title={point.placeName}
-                                        meta={
-                                          <>
-                                            {formatDateTime(point.createdAt, "d MMM · HH:mm")} ·{' '}
-                                            {point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}
-                                          </>
-                                        }
-                                        stats={[`${point.photos.length} fotos`, hasLinkedAudio ? 'Con H6' : 'Sin H6']}
-                                        actionLabel="Ver registro"
-                                      />
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            </div>
+                                return (
+                                  <li key={point.id}>
+                                    <ListRow
+                                      compact
+                                      onClick={() => openRecordView(activeSession.id, point.id)}
+                                      eyebrow="Registro reciente"
+                                      title={point.placeName}
+                                      meta={
+                                        <>
+                                          {formatDateTime(point.createdAt, "d MMM · HH:mm")} ·{' '}
+                                          {point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}
+                                        </>
+                                      }
+                                      stats={[`${point.photos.length} fotos`, hasLinkedAudio ? 'Con H6' : 'Sin H6']}
+                                      actionLabel="Ver registro"
+                                    />
+                                  </li>
+                                );
+                              })}
+                            </StructuredList>
                           </section>
                         ) : null}
                       </>
@@ -5037,30 +5036,28 @@ export default function App() {
                             compact
                           />
                           {recentNamedProjectGroups.length > 0 ? (
-                            <div className="structured-list-panel">
-                              <ul className="structured-list">
-                                {recentNamedProjectGroups.map((group) => (
-                                  <li key={group.key}>
-                                    <ListRow
-                                      onClick={() => openProjectArchiveFromHome(group.key)}
-                                      eyebrow={group.activeSessionCount > 0 ? 'Con salida activa' : 'Trabajo'}
-                                      title={group.name}
-                                      meta={
-                                        group.activeSessionCount > 0
-                                          ? `${group.activeSessionCount} salida${group.activeSessionCount === 1 ? '' : 's'} activa${group.activeSessionCount === 1 ? '' : 's'} ahora.`
-                                          : 'Sin actividad abierta ahora.'
-                                      }
-                                      stats={[
-                                        `${group.sessionCount} salidas`,
-                                        `${group.pointCount} registros`,
-                                        `${group.audioTakeCount} H6`,
-                                      ]}
-                                      actionLabel="Abrir proyecto"
-                                    />
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
+                            <StructuredList>
+                              {recentNamedProjectGroups.map((group) => (
+                                <li key={group.key}>
+                                  <ListRow
+                                    onClick={() => openProjectArchiveFromHome(group.key)}
+                                    eyebrow={group.activeSessionCount > 0 ? 'Con salida activa' : 'Trabajo'}
+                                    title={group.name}
+                                    meta={
+                                      group.activeSessionCount > 0
+                                        ? `${group.activeSessionCount} salida${group.activeSessionCount === 1 ? '' : 's'} activa${group.activeSessionCount === 1 ? '' : 's'} ahora.`
+                                        : 'Sin actividad abierta ahora.'
+                                    }
+                                    stats={[
+                                      `${group.sessionCount} salidas`,
+                                      `${group.pointCount} registros`,
+                                      `${group.audioTakeCount} H6`,
+                                    ]}
+                                    actionLabel="Abrir proyecto"
+                                  />
+                                </li>
+                              ))}
+                            </StructuredList>
                           ) : (
                             <EmptyState
                               eyebrow="Trabajos"
@@ -5090,22 +5087,20 @@ export default function App() {
                             titleAs="h3"
                             compact
                           />
-                          <div className="structured-list-panel">
-                            <ul className="structured-list">
-                              {recentSessions.map((session) => (
-                                <li key={session.id}>
-                                  <ListRow
-                                    onClick={() => openSessionArchiveFromHome(session.id)}
-                                    eyebrow={session.status === 'active' ? 'Salida activa' : 'Salida cerrada'}
-                                    title={session.name}
-                                    meta={`${resolveProjectName(session.projectName)} · ${session.region || 'sin zona definida'}`}
-                                    stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
-                                    actionLabel="Ver salida"
-                                  />
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
+                          <StructuredList>
+                            {recentSessions.map((session) => (
+                              <li key={session.id}>
+                                <ListRow
+                                  onClick={() => openSessionArchiveFromHome(session.id)}
+                                  eyebrow={session.status === 'active' ? 'Salida activa' : 'Salida cerrada'}
+                                  title={session.name}
+                                  meta={`${resolveProjectName(session.projectName)} · ${session.region || 'sin zona definida'}`}
+                                  stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                                  actionLabel="Ver salida"
+                                />
+                              </li>
+                            ))}
+                          </StructuredList>
                         </section>
                       </div>
                     ) : (
@@ -5447,69 +5442,69 @@ export default function App() {
                   </div>
 
                   <div className="dashboard-browser-grid">
-                    <div className="dashboard-browser-column">
-                      <div className="dashboard-subsection">
-                        <p className="eyebrow">Trabajos</p>
-                        {recentProjectGroups.length > 0 ? (
-                          <div className="home-browser-list">
-                            {recentProjectGroups.map((group) => (
-                              <button
-                                key={group.key}
-                                type="button"
+                    <section className="dashboard-subsection" aria-labelledby="session-browser-projects-title">
+                      <SectionHeader
+                        titleId="session-browser-projects-title"
+                        title="Trabajos"
+                        description="Acceso directo a trabajos recientes sin salir del panel operativo."
+                        titleAs="h4"
+                        compact
+                      />
+                      {recentProjectGroups.length > 0 ? (
+                        <StructuredList>
+                          {recentProjectGroups.map((group) => (
+                            <li key={group.key}>
+                              <ListRow
                                 onClick={() => focusArchiveProject(group.key)}
-                                className="library-entry-card"
-                              >
-                                <span className="library-entry-card__copy">
-                                  <span className="library-entry-card__eyebrow">
-                                    {group.activeSessionCount > 0 ? 'Con salida activa' : 'Proyecto'}
-                                  </span>
-                                  <strong className="library-entry-card__title">{group.name}</strong>
-                                  <span className="library-entry-card__meta">
-                                    {group.sessionCount} salidas · {group.pointCount} registros · {group.audioTakeCount} tomas H6
-                                  </span>
-                                </span>
-                                <span className="library-entry-card__cta">Abrir proyectos</span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="module-copy text-sm">Todavía no hay trabajos archivados.</p>
-                        )}
-                      </div>
-                    </div>
+                                eyebrow={group.activeSessionCount > 0 ? 'Con salida activa' : 'Trabajo'}
+                                title={group.name}
+                                meta={
+                                  group.activeSessionCount > 0
+                                    ? `${group.activeSessionCount} salida${group.activeSessionCount === 1 ? '' : 's'} activa${group.activeSessionCount === 1 ? '' : 's'} ahora.`
+                                    : 'Sin actividad abierta ahora.'
+                                }
+                                stats={[
+                                  `${group.sessionCount} salidas`,
+                                  `${group.pointCount} registros`,
+                                  `${group.audioTakeCount} H6`,
+                                ]}
+                                actionLabel="Abrir trabajo"
+                              />
+                            </li>
+                          ))}
+                        </StructuredList>
+                      ) : (
+                        <p className="module-copy text-sm">Todavía no hay trabajos archivados.</p>
+                      )}
+                    </section>
 
-                    <div className="dashboard-browser-column">
-                      <div className="dashboard-subsection">
-                        <p className="eyebrow">Salidas</p>
-                        {sessions.length > 0 ? (
-                          <div className="home-browser-list">
-                            {sessions.slice(0, 6).map((session) => (
-                              <button
-                                key={session.id}
-                                type="button"
+                    <section className="dashboard-subsection" aria-labelledby="session-browser-sessions-title">
+                      <SectionHeader
+                        titleId="session-browser-sessions-title"
+                        title="Salidas"
+                        description="Últimas salidas con acceso directo al flujo de trabajo o al archivo."
+                        titleAs="h4"
+                        compact
+                      />
+                      {sessions.length > 0 ? (
+                        <StructuredList>
+                          {sessions.slice(0, 6).map((session) => (
+                            <li key={session.id}>
+                              <ListRow
                                 onClick={() => openSessionWorkspace(session.id)}
-                                className="library-entry-card"
-                              >
-                                <span className="library-entry-card__copy">
-                                  <span className="library-entry-card__eyebrow">
-                                    {session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
-                                  </span>
-                                  <strong className="library-entry-card__title">{session.name}</strong>
-                                  <span className="library-entry-card__meta">
-                                    {resolveProjectName(session.projectName)} · {session.points.length} registros · {session.audioTakes.length} tomas H6
-                                  </span>
-                                </span>
-                                <span className="library-entry-card__cta">
-                                  {session.status === 'active' ? 'Abrir panel' : 'Abrir proyectos'}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="module-copy text-sm">No hay salidas creadas todavía.</p>
-                        )}
-                      </div>
-                    </div>
+                                eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
+                                title={session.name}
+                                meta={`${resolveProjectName(session.projectName)} · ${session.region || 'sin zona definida'}`}
+                                stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                                actionLabel={session.status === 'active' ? 'Abrir salida' : 'Ver salida'}
+                              />
+                            </li>
+                          ))}
+                        </StructuredList>
+                      ) : (
+                        <p className="module-copy text-sm">No hay salidas creadas todavía.</p>
+                      )}
+                    </section>
                   </div>
                 </Card>
 
