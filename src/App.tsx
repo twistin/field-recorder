@@ -36,6 +36,16 @@ import { FieldActivityMap } from './components/FieldActivityMap';
 import { SessionMap } from './components/SessionMap';
 import { SessionPointCard } from './components/SessionPointCard';
 import {
+  Badge,
+  Button,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  ListRow,
+  SectionHeader,
+  Surface,
+} from './components/ui';
+import {
   deleteFieldSession,
   listFieldSessions,
   saveFieldSession,
@@ -78,10 +88,19 @@ import type { PublishedSelection } from './types/publishedSelections';
 
 type View = 'home' | 'session' | 'point' | 'export';
 type DisplayMode = 'night' | 'sun';
+type HomeMediaFilter = 'all' | 'photos' | 'audio';
 
 const DISPLAY_MODE_STORAGE_KEY = 'fieldnotes-display-mode';
 const REMOTE_CATALOG_REFRESH_INTERVAL_MS = 45_000;
 const REMOTE_CATALOG_REFRESH_MIN_GAP_MS = 12_000;
+const HOME_RECORD_PREVIEW_LIMIT = 3;
+const HOME_MEDIA_PREVIEW_LIMIT = 4;
+const HOME_AUDIO_PREVIEW_LIMIT = 3;
+const HOME_MEDIA_FILTERS: Array<{ id: HomeMediaFilter; label: string }> = [
+  { id: 'all', label: 'Todo' },
+  { id: 'photos', label: 'Fotos' },
+  { id: 'audio', label: 'Audio' },
+];
 
 interface SessionDraft {
   name: string;
@@ -813,9 +832,10 @@ function ViewButton({
     <button
       type="button"
       onClick={onClick}
+      aria-current={active ? 'page' : undefined}
       className={`dock-button ${active ? 'is-active' : ''} ${compact ? 'is-compact' : ''}`}
     >
-      <span className="dock-button__icon">
+      <span className="dock-button__icon" aria-hidden="true">
         <Icon className="h-4 w-4" />
       </span>
       <span className="dock-button__text">
@@ -927,6 +947,7 @@ export default function App() {
   const [projectDraftName, setProjectDraftName] = useState('');
   const [captureWorkspace, setCaptureWorkspace] = useState<'map' | 'points'>('map');
   const [archiveWorkspace, setArchiveWorkspace] = useState<'session' | 'media' | 'record'>('session');
+  const [homeMediaFilter, setHomeMediaFilter] = useState<HomeMediaFilter>('all');
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => {
     if (typeof window === 'undefined') {
       return 'night';
@@ -2633,7 +2654,7 @@ export default function App() {
     setView('export');
   }
 
-  function focusArchiveSession(sessionId: string) {
+  function focusArchiveSession(sessionId: string, workspace: 'session' | 'media' = 'session') {
     const session = sessionsRef.current.find((entry) => entry.id === sessionId);
     if (!session) {
       return;
@@ -2646,7 +2667,7 @@ export default function App() {
     setSelectedArchiveProjectKey(buildProjectKey(session.projectName));
     setRecordSessionId(session.id);
     setRecordPointId(latestPoint?.id ?? null);
-    setArchiveWorkspace('session');
+    setArchiveWorkspace(workspace);
 
     if (session.status === 'active') {
       setActiveSessionId(session.id);
@@ -2692,6 +2713,43 @@ export default function App() {
 
   function openSessionArchiveFromHome(sessionId: string) {
     focusArchiveSession(sessionId);
+  }
+
+  function openSessionMediaArchiveFromHome(sessionId: string) {
+    focusArchiveSession(sessionId, 'media');
+  }
+
+  function openMediaArchiveFromHome() {
+    const latestMediaEntry = sessionsRef.current
+      .flatMap((session) => [
+        ...session.points
+          .filter((point) => point.photos.some((photo) => photo.previewUrl))
+          .map((point) => ({
+            sessionId: session.id,
+            createdAt: point.createdAt,
+          })),
+        ...session.audioTakes.map((take) => ({
+          sessionId: session.id,
+          createdAt: take.inferredRecordedAt,
+        })),
+      ])
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0];
+
+    if (latestMediaEntry) {
+      focusArchiveSession(latestMediaEntry.sessionId, 'media');
+      return;
+    }
+
+    const fallbackSession =
+      [...sessionsRef.current].sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime())[0] ??
+      null;
+
+    if (fallbackSession) {
+      focusArchiveSession(fallbackSession.id, 'media');
+      return;
+    }
+
+    setView('export');
   }
 
   function openProjectArchiveFromHome(projectKey: string) {
@@ -2792,8 +2850,9 @@ export default function App() {
     ? activeSession.points.reduce((count, point) => count + point.photos.length, 0)
     : 0;
   const recentProjectGroups = archiveProjectGroups.slice(0, 4);
+  const recentNamedProjectGroups = archiveProjectGroups.filter((group) => group.key !== 'sin-trabajo').slice(0, 4);
   const recentSessions = sessions.slice(0, 5);
-  const recentPhotoLibrary = allRecords
+  const recentPhotoLibraryItems = allRecords
     .flatMap((record) =>
       record.point.photos
         .filter((photo) => photo.previewUrl)
@@ -2807,8 +2866,9 @@ export default function App() {
           createdAt: record.point.createdAt,
         })),
     )
-    .slice(0, 6);
-  const recentAudioLibrary = sessions
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const recentPhotoLibrary = recentPhotoLibraryItems.slice(0, HOME_MEDIA_PREVIEW_LIMIT);
+  const recentAudioLibraryItems = sessions
     .flatMap((session) =>
       session.audioTakes.map((take) => ({
         id: take.id,
@@ -2820,8 +2880,31 @@ export default function App() {
         projectName: resolveProjectName(session.projectName),
       })),
     )
-    .sort((left, right) => new Date(right.inferredRecordedAt).getTime() - new Date(left.inferredRecordedAt).getTime())
-    .slice(0, 5);
+    .sort((left, right) => new Date(right.inferredRecordedAt).getTime() - new Date(left.inferredRecordedAt).getTime());
+  const recentAudioLibrary = recentAudioLibraryItems.slice(0, HOME_AUDIO_PREVIEW_LIMIT);
+  const recentMediaLibraryItems = [
+    ...recentPhotoLibraryItems.map((photo) => ({
+      id: `photo-${photo.id}`,
+      kind: 'photo' as const,
+      sessionId: photo.sessionId,
+      pointId: photo.pointId,
+      pointName: photo.pointName,
+      sessionName: photo.sessionName,
+      previewUrl: photo.previewUrl,
+      createdAt: photo.createdAt,
+    })),
+    ...recentAudioLibraryItems.map((take) => ({
+      id: `audio-${take.id}`,
+      kind: 'audio' as const,
+      sessionId: take.sessionId,
+      associatedPointId: take.associatedPointId,
+      fileName: take.fileName,
+      inferredRecordedAt: take.inferredRecordedAt,
+      pointName: take.pointName,
+      createdAt: take.inferredRecordedAt,
+    })),
+  ].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const recentMediaLibrary = recentMediaLibraryItems.slice(0, HOME_MEDIA_PREVIEW_LIMIT);
   const visibleArchiveSessions = visibleArchiveProjectGroups
     .flatMap((group) => group.sessions)
     .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
@@ -2916,7 +2999,31 @@ export default function App() {
   const selectedPublishPhoto = recordPointPhotoOptions.find((photo) => photo.id === publishPhotoId) ?? null;
   const selectedPublishAudioTake =
     recordPointAudioOptions.find((take) => take.id === publishAudioTakeId) ?? null;
-  const latestActivePoints = sortedActiveSessionPoints.slice(0, 4);
+  const latestActivePoints = sortedActiveSessionPoints.slice(0, HOME_RECORD_PREVIEW_LIMIT);
+  const hasMoreActivePoints = sortedActiveSessionPoints.length > HOME_RECORD_PREVIEW_LIMIT;
+  const hasRecentWork = recentSessions.length > 0;
+  const hasRecentMedia = recentMediaLibraryItems.length > 0;
+  const hasMoreRecentMedia = recentMediaLibraryItems.length > HOME_MEDIA_PREVIEW_LIMIT;
+  const hasMoreRecentPhotos = recentPhotoLibraryItems.length > HOME_MEDIA_PREVIEW_LIMIT;
+  const hasMoreRecentAudio = recentAudioLibraryItems.length > HOME_AUDIO_PREVIEW_LIMIT;
+  const homeMediaPreviewSummary =
+    homeMediaFilter === 'all'
+      ? hasMoreRecentMedia
+        ? `Mostrando ${recentMediaLibrary.length} de ${recentMediaLibraryItems.length} elementos recientes entre fotos y audio.`
+        : `${recentMediaLibrary.length} elementos recientes listos para abrir sin entrar todavía en la biblioteca completa.`
+      : homeMediaFilter === 'photos'
+        ? hasMoreRecentPhotos
+          ? `Mostrando ${recentPhotoLibrary.length} de ${recentPhotoLibraryItems.length} fotos recientes.`
+          : `${recentPhotoLibrary.length} fotos recientes disponibles para revisión rápida.`
+        : hasMoreRecentAudio
+          ? `Mostrando ${recentAudioLibrary.length} de ${recentAudioLibraryItems.length} tomas H6 recientes.`
+          : `${recentAudioLibrary.length} tomas H6 recientes listas para abrir desde la biblioteca o el registro asociado.`;
+  const homeMediaEmptyMessage =
+    homeMediaFilter === 'all'
+      ? 'Todavía no hay fotos ni tomas H6 recientes para revisar en el resumen.'
+      : homeMediaFilter === 'photos'
+        ? 'No hay fotos recientes para revisar en el resumen.'
+        : 'Todavía no hay tomas H6 recientes para revisar desde el resumen.';
   const livePlaceLabel = detectedPlace?.placeName || 'Lugar pendiente';
   const liveClimateLabel = weatherSnapshot?.summary || 'Clima pendiente';
   const greetingLabel = getGreetingLabel(now);
@@ -3293,12 +3400,12 @@ export default function App() {
               <Download className="h-4 w-4" />
               {isExportingSessionId === session.id ? 'Exportando' : 'Exportar salida'}
             </button>
-            <button
+            <IconButton
+              label="Eliminar salida"
               onClick={() => void removeSession(session.id)}
-              className="icon-button"
             >
               <Trash2 className="h-4 w-4" />
-            </button>
+            </IconButton>
           </div>
         </div>
 
@@ -4142,54 +4249,71 @@ export default function App() {
 
       <div className="fieldnotes-app">
         {showSidebar ? (
-          <aside className="fieldnotes-sidebar">
-            <div className="panel sidebar-nav-panel">
-              <p className="eyebrow">FieldNotes AI</p>
-              <nav className="sidebar-nav">
-                {navigationItems.map((item) => (
-                  <React.Fragment key={item.view}>
-                    <ViewButton
-                      active={view === item.view}
-                      label={item.label}
-                      description={item.description}
-                      icon={item.icon}
-                      onClick={item.onClick}
-                    />
-                  </React.Fragment>
-                ))}
+          <aside className="fieldnotes-sidebar" aria-label="Panel lateral">
+            <section className="panel sidebar-nav-panel" aria-labelledby="sidebar-nav-title">
+              <div className="sidebar-brand">
+                <p className="eyebrow sidebar-brand__eyebrow">FieldNotes AI</p>
+                <h2 id="sidebar-nav-title" className="sidebar-brand__title">
+                  Centro de trabajo
+                </h2>
+                <p className="sidebar-brand__copy">
+                  Resumen, salidas, captura y archivo dentro de una navegación estable.
+                </p>
+              </div>
+              <nav className="sidebar-nav" aria-label="Navegación principal">
+                <ul className="sidebar-nav__list">
+                  {navigationItems.map((item) => (
+                    <li key={item.view} className="sidebar-nav__item">
+                      <ViewButton
+                        active={view === item.view}
+                        label={item.label}
+                        description={item.description}
+                        icon={item.icon}
+                        onClick={item.onClick}
+                      />
+                    </li>
+                  ))}
+                </ul>
               </nav>
-            </div>
+            </section>
 
             {view !== 'home' ? (
-              <div className="panel sidebar-session-card sidebar-session-card--compact">
+              <section
+                className="panel sidebar-session-card sidebar-session-card--compact"
+                aria-labelledby="sidebar-current-session-title"
+              >
                 <p className="eyebrow">Salida actual</p>
-                <p className="sidebar-session-card__title">
+                <h2 id="sidebar-current-session-title" className="sidebar-session-card__title">
                   {activeSession ? activeSession.name : 'No hay salida activa'}
-                </p>
+                </h2>
                 {activeSession ? (
-                  <div className="session-meta-list session-meta-list--compact">
+                  <dl className="session-meta-list session-meta-list--compact">
                     <div className="session-meta-row">
-                      <span className="session-meta-label">Trabajo</span>
-                      <span>{activeSessionProjectName}</span>
+                      <dt className="session-meta-label">Trabajo</dt>
+                      <dd>{activeSessionProjectName}</dd>
                     </div>
                     <div className="session-meta-row">
-                      <span className="session-meta-label">Zona</span>
-                      <span>{activeSession.region || 'sin definir'}</span>
+                      <dt className="session-meta-label">Zona</dt>
+                      <dd>{activeSession.region || 'sin definir'}</dd>
                     </div>
-                  </div>
+                  </dl>
                 ) : (
                   <p className="module-copy text-sm">
                     Crea una salida para poder lanzar nuevos registros desde el terreno.
                   </p>
                 )}
-                <div className="sidebar-session-card__stats">
-                  <span className="telemetry-chip">
-                    {activeSession ? `${activeSession.points.length} registros` : '0 registros'}
-                  </span>
-                  <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
-                    {isOnline ? 'En línea' : 'Offline'}
-                  </span>
-                </div>
+                <ul className="sidebar-session-card__stats" aria-label="Estado de la salida actual">
+                  <li>
+                    <span className="telemetry-chip">
+                      {activeSession ? `${activeSession.points.length} registros` : '0 registros'}
+                    </span>
+                  </li>
+                  <li>
+                    <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
+                      {isOnline ? 'En línea' : 'Offline'}
+                    </span>
+                  </li>
+                </ul>
                 {activeSession ? (
                   <div className="action-row action-row--compact action-row--support">
                     <button type="button" onClick={() => setView('export')} className="ui-button ui-button-secondary">
@@ -4206,49 +4330,54 @@ export default function App() {
                     </button>
                   </div>
                 ) : null}
-              </div>
+              </section>
             ) : null}
           </aside>
         ) : null}
 
-        <main className="fieldnotes-main">
+        <div className="fieldnotes-workspace">
+          <div className="fieldnotes-contextbar">
           {view === 'home' ? (
-            <motion.section
+            <motion.header
               key="home-topbar"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className="panel home-topbar panel-tone panel-tone--sky"
+              aria-labelledby="dashboard-home-title"
+              aria-describedby="dashboard-home-description"
             >
               <div className="home-topbar__brand">
                 <p className="eyebrow">Entrada principal</p>
-                <h1 className="display-heading home-topbar__title">{homeLauncherTitle}</h1>
-                <p className="module-copy text-sm md:text-base">
+                <h1 id="dashboard-home-title" className="display-heading home-topbar__title">{homeLauncherTitle}</h1>
+                <p id="dashboard-home-description" className="module-copy text-sm md:text-base">
                   {homeLauncherCopy}
                 </p>
                 <div className="home-topbar__actions" role="group" aria-label="Acciones principales del resumen">
-                  <button
-                    type="button"
+                  <Button
+                    variant="primary"
                     onClick={() => setView(activeSession ? 'point' : 'session')}
-                    className="ui-button ui-button-primary home-topbar__primary-action"
+                    className="home-topbar__primary-action"
+                    leadingIcon={<Mic className="h-4 w-4" />}
                   >
-                    <Mic className="h-4 w-4" />
                     {homePrimaryActionLabel}
-                  </button>
+                  </Button>
                   <div className="home-topbar__support-actions">
-                    <button type="button" onClick={() => setView('session')} className="ui-button ui-button-secondary">
-                      <MapPinned className="h-4 w-4" />
+                    <Button
+                      variant="secondary"
+                      onClick={() => setView('session')}
+                      leadingIcon={<MapPinned className="h-4 w-4" />}
+                    >
                       Ver salidas
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <Button
+                      variant="ghost"
                       onClick={() =>
                         recordPoint && recordSession ? openRecordView(recordSession.id, recordPoint.id) : setView('export')
                       }
-                      className="ui-button ui-button-ghost"
+                      leadingIcon={<History className="h-4 w-4" />}
                     >
-                      <History className="h-4 w-4" />
                       {homeArchiveActionLabel}
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 <section className="home-status-strip" aria-label="Estado operativo del resumen">
@@ -4265,25 +4394,30 @@ export default function App() {
                 </section>
               </div>
               <div className="home-topbar__controls">
-                <div className="status-inline-group">
-                  <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
-                    {isOnline ? 'En línea' : 'Offline'}
-                  </span>
-                  <span className="telemetry-chip telemetry-chip--muted">{storageSummary}</span>
-                  <span className="telemetry-chip telemetry-chip--muted">
-                    {activeSession ? `${activeSession.points.length} registros activos` : 'Sin salida activa'}
-                  </span>
-                </div>
+                <ul className="status-inline-group" aria-label="Estado rápido del resumen">
+                  <li>
+                    <Badge variant={isOnline ? 'default' : 'offline'}>
+                      {isOnline ? 'En línea' : 'Offline'}
+                    </Badge>
+                  </li>
+                  <li>
+                    <Badge variant="muted">{storageSummary}</Badge>
+                  </li>
+                  <li>
+                    <Badge variant="muted">
+                      {activeSession ? `${activeSession.points.length} registros activos` : 'Sin salida activa'}
+                    </Badge>
+                  </li>
+                </ul>
                 <div className="utility-inline-group">
                   {activeSession ? (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
                       onClick={() => openZoomImportPicker(activeSession.id)}
-                      className="ui-button ui-button-ghost"
+                      leadingIcon={<AudioWaveform className="h-4 w-4" />}
                     >
-                      <AudioWaveform className="h-4 w-4" />
                       Importar H6
-                    </button>
+                    </Button>
                   ) : null}
                   <button
                     type="button"
@@ -4297,7 +4431,7 @@ export default function App() {
                   </button>
                 </div>
               </div>
-            </motion.section>
+            </motion.header>
           ) : (
             <motion.header
               key={`section-${view}`}
@@ -4307,22 +4441,25 @@ export default function App() {
             >
               <div className="section-header__copy">
                 <p className="eyebrow">{currentViewLabel}</p>
-                <h2 className="display-heading text-3xl md:text-5xl">{currentViewTitle}</h2>
+                <h1 className="display-heading text-3xl md:text-5xl">{currentViewTitle}</h1>
                 <p className="module-copy text-sm md:text-base">{currentViewDescription}</p>
               </div>
 
               <div className="section-header__rail">
-                <div className="section-header__meta">
-                  <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
-                    {isOnline ? 'En línea' : 'Offline'}
-                  </span>
-                  <span className="telemetry-chip telemetry-chip--muted">{storageSummary}</span>
-                </div>
+                <ul className="section-header__meta" aria-label="Estado de la vista actual">
+                  <li>
+                    <Badge variant={isOnline ? 'default' : 'offline'}>
+                      {isOnline ? 'En línea' : 'Offline'}
+                    </Badge>
+                  </li>
+                  <li>
+                    <Badge variant="muted">{storageSummary}</Badge>
+                  </li>
+                </ul>
                 <div className="section-header__utility">
-                  <button type="button" onClick={() => setView('home')} className="ui-button ui-button-ghost">
-                    <House className="h-4 w-4" />
+                  <Button variant="ghost" onClick={() => setView('home')} leadingIcon={<House className="h-4 w-4" />}>
                     Inicio
-                  </button>
+                  </Button>
                   <button
                     type="button"
                     onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
@@ -4337,9 +4474,12 @@ export default function App() {
               </div>
             </motion.header>
           )}
+          </div>
+
+          <main className="fieldnotes-main" aria-label="Contenido principal">
 
           {shouldShowStatusStack ? (
-            <div className="status-stack">
+            <section className="status-stack" aria-label="Avisos operativos">
               {shouldShowOperationalBanner ? (
                 <div className="panel status-banner">
                   <p className="eyebrow">Estado operativo</p>
@@ -4371,29 +4511,14 @@ export default function App() {
                 </div>
               ) : null}
               {appError ? (
-                <div className="panel status-banner status-banner--error">
-                  <p className="eyebrow">Aviso</p>
-                  <p className="module-copy text-sm">{appError}</p>
-                </div>
+                <ErrorState
+                  compact
+                  eyebrow="Aviso"
+                  title="No pude completar la acción"
+                  description={appError}
+                />
               ) : null}
-            </div>
-          ) : null}
-
-          {showMobileDock ? (
-            <nav className="menu-shell mobile-dock">
-              {navigationItems.map((item) => (
-                <React.Fragment key={item.view}>
-                  <ViewButton
-                    active={view === item.view}
-                    label={item.label}
-                    description={item.description}
-                    icon={item.icon}
-                    compact
-                    onClick={item.onClick}
-                  />
-                </React.Fragment>
-              ))}
-            </nav>
+            </section>
           ) : null}
 
           <AnimatePresence mode="wait">
@@ -4406,205 +4531,441 @@ export default function App() {
                 className="layout-home"
               >
                 <div className="home-primary-grid">
-              <div className="panel home-session-overview panel-tone panel-tone--sky">
-                    <div className="panel-heading">
-                      <p className="eyebrow">Salida actual</p>
-                      <h3 className="display-heading text-3xl">
-                        {activeSession ? activeSession.name : 'Prepara la próxima salida'}
-                      </h3>
-                      <p className="module-copy text-sm">
-                        {activeSession
+                  <Surface
+                    as="section"
+                    tone="sky"
+                    className="home-session-overview home-zone home-zone--session"
+                    aria-labelledby="home-session-overview-title"
+                    aria-describedby="home-session-overview-description"
+                  >
+                    <SectionHeader
+                      eyebrow="Salida actual"
+                      titleId="home-session-overview-title"
+                      descriptionId="home-session-overview-description"
+                      title={activeSession ? activeSession.name : 'Prepara la próxima salida'}
+                      description={
+                        activeSession
                           ? `${activeSessionProjectName} · ${activeSession.region || 'sin zona'} · ${captureDateLabel}`
-                          : 'Empieza por crear o abrir una salida. Después la captura y el archivo quedan conectados.'}
-                      </p>
-                    </div>
-
-                    <div className="stats-grid">
-                      <div className="soft-card">
-                        <p className="eyebrow">Hora</p>
-                        <p className="summary-value">{captureTimeLabel}</p>
-                        <p className="module-copy text-sm">{captureDateLabel}</p>
-                      </div>
-                      <div className="soft-card">
-                        <p className="eyebrow">Registros</p>
-                        <p className="summary-value">{activeSession ? activeSession.points.length : 0}</p>
-                        <p className="module-copy text-sm">Puntos guardados en la salida activa.</p>
-                      </div>
-                      <div className="soft-card">
-                        <p className="eyebrow">Fotos</p>
-                        <p className="summary-value">{activeSessionPhotoCount}</p>
-                        <p className="module-copy text-sm">Fotos asociadas a la salida actual.</p>
-                      </div>
-                      <div className="soft-card">
-                        <p className="eyebrow">Tomas H6</p>
-                        <p className="summary-value">{activeSession ? activeSession.audioTakes.length : 0}</p>
-                        <p className="module-copy text-sm">Tomas importadas en esta salida.</p>
-                      </div>
-                    </div>
-
-                    {latestActivePoints.length > 0 ? (
-                      <div className="home-browser-list">
-                        {latestActivePoints.map((point) => (
-                          <button
-                            key={point.id}
-                            type="button"
-                            onClick={() => openRecordView(activeSession!.id, point.id)}
-                            className="library-entry-card"
+                          : 'Empieza por crear o abrir una salida. Después la captura y el archivo quedan conectados.'
+                      }
+                      action={
+                        activeSession ? (
+                          <Button
+                            variant="ghost"
+                            onClick={() => openSessionWorkspace(activeSession.id)}
+                            className="section-header-action"
                           >
-                            <span className="library-entry-card__copy">
-                              <span className="library-entry-card__eyebrow">Registro reciente</span>
-                              <strong className="library-entry-card__title">{point.placeName}</strong>
-                              <span className="library-entry-card__meta">
-                                {formatDateTime(point.createdAt, "d MMM yyyy · HH:mm")} · {point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}
-                              </span>
-                            </span>
-                            <span className="library-entry-card__cta">Ver registro</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
+                            Ver salida activa
+                          </Button>
+                        ) : undefined
+                      }
+                    />
 
-                  <div className="home-library-stack">
-                    <div className="panel home-library-card panel-tone panel-tone--mint">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Trabajo reciente</p>
-                        <h3 className="display-heading text-3xl">Trabajos y salidas</h3>
-                        <p className="module-copy text-sm">
-                          Los trabajos recientes quedan siempre a la vista con acceso directo a sus proyectos y salidas.
-                        </p>
-                      </div>
+                    {activeSession ? (
+                      <>
+                        <ul className="stats-grid" aria-label="Métricas de la salida actual">
+                          <li className="soft-card">
+                            <p className="eyebrow">Hora</p>
+                            <p className="summary-value">{captureTimeLabel}</p>
+                            <p className="module-copy text-sm">{captureDateLabel}</p>
+                          </li>
+                          <li className="soft-card">
+                            <p className="eyebrow">Registros</p>
+                            <p className="summary-value">{activeSession.points.length}</p>
+                            <p className="module-copy text-sm">Puntos guardados en la salida activa.</p>
+                          </li>
+                          <li className="soft-card">
+                            <p className="eyebrow">Fotos</p>
+                            <p className="summary-value">{activeSessionPhotoCount}</p>
+                            <p className="module-copy text-sm">Fotos asociadas a la salida actual.</p>
+                          </li>
+                          <li className="soft-card">
+                            <p className="eyebrow">Tomas H6</p>
+                            <p className="summary-value">{activeSession.audioTakes.length}</p>
+                            <p className="module-copy text-sm">Tomas importadas en esta salida.</p>
+                          </li>
+                        </ul>
 
+                        {latestActivePoints.length > 0 ? (
+                          <section
+                            aria-labelledby="home-recent-records-title"
+                            aria-describedby="home-recent-records-description"
+                          >
+                            <SectionHeader
+                              titleId="home-recent-records-title"
+                              descriptionId="home-recent-records-description"
+                              title="Registros recientes"
+                              description={
+                                hasMoreActivePoints
+                                  ? `Mostrando ${latestActivePoints.length} de ${sortedActiveSessionPoints.length} registros recientes de la salida activa.`
+                                  : `${latestActivePoints.length} registros recientes visibles en la salida activa.`
+                              }
+                              titleAs="h3"
+                              compact
+                              action={
+                                hasMoreActivePoints ? (
+                                  <Button
+                                    variant="ghost"
+                                    onClick={() => setView('point')}
+                                    className="section-header-action"
+                                  >
+                                    Ver todos
+                                  </Button>
+                                ) : undefined
+                              }
+                            />
+                            <div className="structured-list-panel">
+                              <ul className="structured-list structured-list--compact">
+                                {latestActivePoints.map((point) => {
+                                  const hasLinkedAudio =
+                                    activeSession.audioTakes.some((take) => take.associatedPointId === point.id) ?? false;
+
+                                  return (
+                                    <li key={point.id}>
+                                      <ListRow
+                                        compact
+                                        onClick={() => openRecordView(activeSession.id, point.id)}
+                                        eyebrow="Registro reciente"
+                                        title={point.placeName}
+                                        meta={
+                                          <>
+                                            {formatDateTime(point.createdAt, "d MMM · HH:mm")} ·{' '}
+                                            {point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}
+                                          </>
+                                        }
+                                        stats={[`${point.photos.length} fotos`, hasLinkedAudio ? 'Con H6' : 'Sin H6']}
+                                        actionLabel="Ver registro"
+                                      />
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          </section>
+                        ) : null}
+                      </>
+                    ) : (
+                      <EmptyState
+                        eyebrow="Salida"
+                        title="No hay una salida activa"
+                        description="Crea o abre una salida para empezar a registrar puntos con GPS, fotos, clima y tomas H6 desde el flujo principal."
+                        icon={<MapPinned className="h-5 w-5" />}
+                        action={
+                          <Button variant="secondary" onClick={() => setView('session')}>
+                            Preparar salida
+                          </Button>
+                        }
+                      />
+                    )}
+                  </Surface>
+
+                  <Surface
+                    as="section"
+                    tone="mint"
+                    className="home-library-card home-zone home-zone--work"
+                    aria-labelledby="home-projects-title"
+                    aria-describedby="home-projects-description"
+                  >
+                    <SectionHeader
+                      eyebrow="Trabajo reciente"
+                      titleId="home-projects-title"
+                      descriptionId="home-projects-description"
+                      title="Trabajos y salidas"
+                      description="Los proyectos y salidas recientes quedan agrupados en una sola zona para retomar trabajo sin buscar entre bloques dispersos."
+                      action={
+                        hasRecentWork ? (
+                          <Button
+                            variant="ghost"
+                            onClick={() => setView('session')}
+                            className="section-header-action"
+                          >
+                            Ver salidas
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+
+                    {hasRecentWork ? (
                       <div className="dashboard-browser-grid">
-                        <div className="dashboard-subsection">
-                          <p className="eyebrow">Trabajos</p>
-                          {recentProjectGroups.length > 0 ? (
-                            <div className="home-browser-list">
-                              {recentProjectGroups.map((group) => (
-                                <button
-                                  key={group.key}
-                                  type="button"
-                                  onClick={() => openProjectArchiveFromHome(group.key)}
-                                  className="library-entry-card"
-                                >
-                                  <span className="library-entry-card__copy">
-                                    <span className="library-entry-card__eyebrow">Trabajo</span>
-                                    <strong className="library-entry-card__title">{group.name}</strong>
-                                    <span className="library-entry-card__meta">
-                                      {group.sessionCount} salidas · {group.pointCount} registros · {group.audioTakeCount} tomas H6
-                                    </span>
-                                  </span>
-                                  <span className="library-entry-card__cta">Abrir proyecto</span>
-                                </button>
-                              ))}
+                        <section
+                          className="dashboard-subsection"
+                          aria-labelledby="home-project-groups-title"
+                          aria-describedby="home-project-groups-description"
+                        >
+                          <SectionHeader
+                            titleId="home-project-groups-title"
+                            descriptionId="home-project-groups-description"
+                            title="Trabajos recientes"
+                            description={
+                              recentNamedProjectGroups.length > 0
+                                ? `${recentNamedProjectGroups.length} trabajos visibles ahora en el resumen.`
+                                : 'Aún no hay trabajos con nombre visibles en el resumen.'
+                            }
+                            titleAs="h3"
+                            compact
+                          />
+                          {recentNamedProjectGroups.length > 0 ? (
+                            <div className="structured-list-panel">
+                              <ul className="structured-list">
+                                {recentNamedProjectGroups.map((group) => (
+                                  <li key={group.key}>
+                                    <ListRow
+                                      onClick={() => openProjectArchiveFromHome(group.key)}
+                                      eyebrow={group.activeSessionCount > 0 ? 'Con salida activa' : 'Trabajo'}
+                                      title={group.name}
+                                      meta={
+                                        group.activeSessionCount > 0
+                                          ? `${group.activeSessionCount} salida${group.activeSessionCount === 1 ? '' : 's'} activa${group.activeSessionCount === 1 ? '' : 's'} ahora.`
+                                          : 'Sin actividad abierta ahora.'
+                                      }
+                                      stats={[
+                                        `${group.sessionCount} salidas`,
+                                        `${group.pointCount} registros`,
+                                        `${group.audioTakeCount} H6`,
+                                      ]}
+                                      actionLabel="Abrir proyecto"
+                                    />
+                                  </li>
+                                ))}
+                              </ul>
                             </div>
                           ) : (
-                            <p className="module-copy text-sm">Todavía no hay trabajos archivados.</p>
+                            <EmptyState
+                              eyebrow="Trabajos"
+                              title="Todavía no hay trabajos"
+                              description="Tus salidas pueden existir sin trabajo. El primer trabajo aparecerá cuando crees o edites una salida con nombre de trabajo."
+                              icon={<FileSpreadsheet className="h-5 w-5" />}
+                              action={
+                                <Button variant="ghost" onClick={() => setView('session')}>
+                                  Ir a salidas
+                                </Button>
+                              }
+                              compact
+                            />
                           )}
-                        </div>
+                        </section>
 
-                        <div className="dashboard-subsection">
-                          <p className="eyebrow">Salidas</p>
-                          {recentSessions.length > 0 ? (
-                            <div className="home-browser-list">
+                        <section
+                          className="dashboard-subsection"
+                          aria-labelledby="home-recent-sessions-title"
+                          aria-describedby="home-recent-sessions-description"
+                        >
+                          <SectionHeader
+                            titleId="home-recent-sessions-title"
+                            descriptionId="home-recent-sessions-description"
+                            title="Salidas recientes"
+                            description={`${recentSessions.length} salidas recientes con acceso directo.`}
+                            titleAs="h3"
+                            compact
+                          />
+                          <div className="structured-list-panel">
+                            <ul className="structured-list">
                               {recentSessions.map((session) => (
+                                <li key={session.id}>
+                                  <ListRow
+                                    onClick={() => openSessionArchiveFromHome(session.id)}
+                                    eyebrow={session.status === 'active' ? 'Salida activa' : 'Salida cerrada'}
+                                    title={session.name}
+                                    meta={`${resolveProjectName(session.projectName)} · ${session.region || 'sin zona definida'}`}
+                                    stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                                    actionLabel="Ver salida"
+                                  />
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </section>
+                      </div>
+                    ) : (
+                      <EmptyState
+                        eyebrow="Trabajo"
+                        title="Todavía no hay trabajo reciente"
+                        description="Cuando guardes la primera salida, esta zona mostrará trabajos, salidas y accesos directos para retomarlos sin buscar."
+                        icon={<History className="h-5 w-5" />}
+                        action={
+                          <Button variant="secondary" onClick={() => setView('session')}>
+                            Preparar primera salida
+                          </Button>
+                        }
+                      />
+                    )}
+                  </Surface>
+
+                  <Surface
+                    as="section"
+                    tone="amber"
+                    className="home-library-card home-library-card--media home-zone home-zone--media"
+                    aria-labelledby="home-media-title"
+                    aria-describedby="home-media-description"
+                  >
+                    <SectionHeader
+                      eyebrow="Media reciente"
+                      titleId="home-media-title"
+                      descriptionId="home-media-description"
+                      title="Fotos y audio recientes"
+                      description="Una sola superficie de consulta rápida para revisar lo último capturado o importado sin fragmentar la atención entre módulos paralelos."
+                      action={
+                        hasRecentMedia ? (
+                          <Button
+                            variant="ghost"
+                            onClick={openMediaArchiveFromHome}
+                            className="section-header-action"
+                          >
+                            Abrir biblioteca de media
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+
+                    {hasRecentMedia ? (
+                      <div className="home-media-panel">
+                        <div className="home-media-panel__controls">
+                          <div className="segment-switch" role="group" aria-label="Filtrar media reciente">
+                            {HOME_MEDIA_FILTERS.map((filterOption) => (
+                              <button
+                                key={filterOption.id}
+                                type="button"
+                                onClick={() => setHomeMediaFilter(filterOption.id)}
+                                aria-pressed={homeMediaFilter === filterOption.id}
+                                className={`segment-switch__button ${homeMediaFilter === filterOption.id ? 'is-active' : ''}`}
+                              >
+                                {filterOption.label}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="module-copy text-sm home-media-panel__summary">{homeMediaPreviewSummary}</p>
+                        </div>
+
+                        {homeMediaFilter === 'all' ? (
+                          recentMediaLibrary.length > 0 ? (
+                            <ul className="home-media-mixed-list">
+                              {recentMediaLibrary.map((item) => {
+                                const actionLabel =
+                                  item.kind === 'photo'
+                                    ? 'Ver registro'
+                                    : item.associatedPointId
+                                      ? 'Abrir registro'
+                                      : 'Abrir media';
+                                const handleOpen =
+                                  item.kind === 'photo'
+                                    ? () => openRecordView(item.sessionId, item.pointId)
+                                    : item.associatedPointId
+                                      ? () => openRecordView(item.sessionId, item.associatedPointId)
+                                      : () => openSessionMediaArchiveFromHome(item.sessionId);
+
+                                return (
+                                  <li key={item.id}>
+                                    <button
+                                      type="button"
+                                      onClick={handleOpen}
+                                      className="home-media-preview-card"
+                                    >
+                                      <span className="home-media-preview-card__visual" aria-hidden="true">
+                                        {item.kind === 'photo' ? (
+                                          <img
+                                            src={item.previewUrl}
+                                            alt=""
+                                            className="home-media-preview-card__thumb"
+                                          />
+                                        ) : (
+                                          <span className="home-media-preview-card__icon">
+                                            <AudioWaveform className="h-4 w-4" />
+                                          </span>
+                                        )}
+                                      </span>
+                                      <span className="home-media-preview-card__copy">
+                                        <span className="library-entry-card__eyebrow">
+                                          {item.kind === 'photo' ? 'Foto' : 'Toma H6'}
+                                        </span>
+                                        <strong className="library-entry-card__title">
+                                          {item.kind === 'photo' ? item.pointName : item.fileName}
+                                        </strong>
+                                        <span className="library-entry-card__meta">
+                                          {item.kind === 'photo'
+                                            ? `${item.sessionName} · ${formatDateTime(item.createdAt, "d MMM · HH:mm")}`
+                                            : `${item.pointName || 'Sin punto asociado'} · ${formatDateTime(item.inferredRecordedAt, "d MMM · HH:mm")}`}
+                                        </span>
+                                      </span>
+                                      <span className="library-entry-card__cta">{actionLabel}</span>
+                                    </button>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : (
+                            <p className="module-copy text-sm">{homeMediaEmptyMessage}</p>
+                          )
+                        ) : homeMediaFilter === 'photos' ? (
+                          recentPhotoLibrary.length > 0 ? (
+                            <ul className="home-media-grid">
+                              {recentPhotoLibrary.map((photo) => (
+                                <li key={photo.id}>
+                                  <button
+                                    type="button"
+                                    onClick={() => openRecordView(photo.sessionId, photo.pointId)}
+                                    className="media-thumb-card media-thumb-card--preview"
+                                  >
+                                    <img src={photo.previewUrl} alt={photo.pointName} className="media-thumb-card__image" />
+                                    <span className="media-thumb-card__caption">
+                                      <strong>{photo.pointName}</strong>
+                                      <small>{formatDateTime(photo.createdAt, "d MMM · HH:mm")}</small>
+                                    </span>
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="module-copy text-sm">{homeMediaEmptyMessage}</p>
+                          )
+                        ) : recentAudioLibrary.length > 0 ? (
+                          <ul className="home-audio-list home-audio-list--preview">
+                            {recentAudioLibrary.map((take) => (
+                              <li key={take.id}>
                                 <button
-                                  key={session.id}
                                   type="button"
-                                  onClick={() => openSessionArchiveFromHome(session.id)}
-                                  className="library-entry-card"
+                                  onClick={() =>
+                                    take.associatedPointId
+                                      ? openRecordView(take.sessionId, take.associatedPointId)
+                                      : openSessionMediaArchiveFromHome(take.sessionId)
+                                  }
+                                  className="library-entry-card library-entry-card--preview"
                                 >
                                   <span className="library-entry-card__copy">
-                                    <span className="library-entry-card__eyebrow">
-                                      {session.status === 'active' ? 'Salida activa' : 'Salida cerrada'}
-                                    </span>
-                                    <strong className="library-entry-card__title">{session.name}</strong>
+                                    <span className="library-entry-card__eyebrow">Toma H6</span>
+                                    <strong className="library-entry-card__title">{take.fileName}</strong>
                                     <span className="library-entry-card__meta">
-                                      {resolveProjectName(session.projectName)} · {session.points.length} registros · {session.audioTakes.length} tomas H6
+                                      {take.pointName || 'Sin punto asociado'} · {take.projectName} · {formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}
                                     </span>
                                   </span>
-                                  <span className="library-entry-card__cta">Ver salida</span>
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="module-copy text-sm">No hay salidas guardadas todavía.</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="panel home-library-card home-library-card--media panel-tone panel-tone--amber">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Media</p>
-                        <h3 className="display-heading text-3xl">Media reciente</h3>
-                        <p className="module-copy text-sm">
-                          Revisa las últimas fotos y tomas H6 sin salir del resumen.
-                        </p>
-                      </div>
-
-                      <div className="home-media-section">
-                        <div className="home-media-section__header">
-                          <span className="telemetry-chip">
-                            <Camera className="h-3.5 w-3.5" />
-                            {recentPhotoLibrary.length} fotos recientes
-                          </span>
-                        </div>
-                        {recentPhotoLibrary.length > 0 ? (
-                          <div className="home-media-grid">
-                            {recentPhotoLibrary.map((photo) => (
-                              <button
-                                key={photo.id}
-                                type="button"
-                                onClick={() => openRecordView(photo.sessionId, photo.pointId)}
-                                className="media-thumb-card"
-                              >
-                                <img src={photo.previewUrl} alt={photo.pointName} className="media-thumb-card__image" />
-                                <span className="media-thumb-card__caption">
-                                  <strong>{photo.pointName}</strong>
-                                  <small>{formatDateTime(photo.createdAt, "d MMM · HH:mm")}</small>
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="module-copy text-sm">No hay fotos recientes para revisar en el resumen.</p>
-                        )}
-                      </div>
-
-                      <div className="home-media-section">
-                        <div className="home-media-section__header">
-                          <span className="telemetry-chip">
-                            <AudioWaveform className="h-3.5 w-3.5" />
-                            {recentAudioLibrary.length} tomas H6 recientes
-                          </span>
-                        </div>
-                        {recentAudioLibrary.length > 0 ? (
-                          <div className="home-audio-list">
-                            {recentAudioLibrary.map((take) => (
-                              <button
-                                key={take.id}
-                                type="button"
-                                onClick={() => openSessionArchiveFromHome(take.sessionId)}
-                                className="library-entry-card"
-                              >
-                                <span className="library-entry-card__copy">
-                                  <span className="library-entry-card__eyebrow">Toma H6</span>
-                                  <strong className="library-entry-card__title">{take.fileName}</strong>
-                                  <span className="library-entry-card__meta">
-                                    {take.pointName || 'Sin punto asociado'} · {take.projectName} · {formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}
+                                  <span className="library-entry-card__cta">
+                                    {take.associatedPointId ? 'Abrir registro' : 'Abrir media'}
                                   </span>
-                                </span>
-                                <span className="library-entry-card__cta">Ver salida</span>
-                              </button>
+                                </button>
+                              </li>
                             ))}
-                          </div>
+                          </ul>
                         ) : (
-                          <p className="module-copy text-sm">Todavía no hay tomas H6 recientes para revisar desde el resumen.</p>
+                          <p className="module-copy text-sm">{homeMediaEmptyMessage}</p>
                         )}
                       </div>
-                    </div>
-                  </div>
+                    ) : (
+                      <EmptyState
+                        eyebrow="Media"
+                        title="Todavía no hay media reciente"
+                        description={
+                          activeSession
+                            ? 'Las fotos y tomas H6 aparecerán aquí en cuanto guardes el primer registro o importes audio a la salida activa.'
+                            : 'Las fotos y tomas H6 aparecerán aquí cuando empieces una salida y registres el primer punto.'
+                        }
+                        icon={<ImagePlus className="h-5 w-5" />}
+                        action={
+                          <Button variant="secondary" onClick={() => setView(activeSession ? 'point' : 'session')}>
+                            {activeSession ? 'Ir a captura' : 'Preparar salida'}
+                          </Button>
+                        }
+                      />
+                    )}
+                  </Surface>
                 </div>
               </motion.section>
             ) : null}
@@ -5357,9 +5718,9 @@ export default function App() {
                               <img src={photo.previewUrl} alt={photo.fileName} className="h-40 w-full object-cover" />
                               <div className="action-row action-row--compact mt-3">
                                 <p className="module-copy text-sm">{photo.fileName}</p>
-                                <button type="button" onClick={() => removeDraftPhoto(photo.id)} className="icon-button">
+                                <IconButton label={`Quitar ${photo.fileName}`} onClick={() => removeDraftPhoto(photo.id)}>
                                   <Trash2 className="h-4 w-4" />
-                                </button>
+                                </IconButton>
                               </div>
                             </div>
                           ))}
@@ -5658,7 +6019,27 @@ export default function App() {
               </motion.section>
             ) : null}
           </AnimatePresence>
-        </main>
+          </main>
+        </div>
+
+        {showMobileDock ? (
+          <nav className="menu-shell mobile-dock" aria-label="Navegación principal móvil">
+            <ul className="mobile-dock__list">
+              {navigationItems.map((item) => (
+                <li key={item.view} className="mobile-dock__item">
+                  <ViewButton
+                    active={view === item.view}
+                    label={item.label}
+                    description={item.description}
+                    icon={item.icon}
+                    compact
+                    onClick={item.onClick}
+                  />
+                </li>
+              ))}
+            </ul>
+          </nav>
+        ) : null}
       </div>
 
     </div>
