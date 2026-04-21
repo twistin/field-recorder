@@ -8,12 +8,14 @@ import { classNames } from './classNames';
  * or a lot of bespoke layout, prefer a `preview` card instead.
  */
 type ListRowOwnProps = {
+  leadingVisual?: ReactNode;
   eyebrow?: ReactNode;
   title: ReactNode;
   meta?: ReactNode;
   stats?: ReactNode[];
   actionLabel?: ReactNode;
   compact?: boolean;
+  dense?: boolean;
   className?: string;
 };
 
@@ -40,12 +42,14 @@ export type ListRowProps = ListRowAsButton | ListRowAsAnchor | ListRowStatic;
  */
 export function ListRow(props: ListRowProps) {
   const {
+    leadingVisual,
     eyebrow,
     title,
     meta,
     stats,
     actionLabel,
     compact = false,
+    dense = false,
     className,
     ...rest
   } = props;
@@ -53,11 +57,14 @@ export function ListRow(props: ListRowProps) {
   const classes = classNames(
     'structured-list-row',
     compact ? 'structured-list-row--compact' : null,
+    dense ? 'structured-list-row--dense' : null,
+    leadingVisual ? 'structured-list-row--with-visual' : null,
     className,
   );
 
   const content = (
     <>
+      {leadingVisual ? <span className="structured-list-row__visual" aria-hidden="true">{leadingVisual}</span> : null}
       <span className="structured-list-row__main">
         {eyebrow ? <span className="structured-list-row__eyebrow">{eyebrow}</span> : null}
         <strong className="structured-list-row__title">{title}</strong>
