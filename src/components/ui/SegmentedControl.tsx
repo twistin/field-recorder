@@ -15,6 +15,7 @@ export type SegmentedControlProps<T extends string> = {
   value: T;
   items: readonly SegmentedControlItem<T>[];
   onChange: (value: T) => void;
+  panelIdBase?: string;
   size?: 'md' | 'sm';
   fill?: boolean;
   className?: string;
@@ -30,6 +31,7 @@ export function SegmentedControl<T extends string>({
   value,
   items,
   onChange,
+  panelIdBase,
   size = 'md',
   fill = false,
   className,
@@ -92,11 +94,13 @@ export function SegmentedControl<T extends string>({
         fill ? 'segment-switch--fill' : null,
         className,
       )}
-      role="group"
+      role="tablist"
       aria-label={label}
     >
       {items.map((item, index) => {
         const isActive = item.value === value;
+        const tabId = panelIdBase ? `${panelIdBase}-tab-${item.value}` : undefined;
+        const panelId = panelIdBase ? `${panelIdBase}-panel-${item.value}` : undefined;
 
         return (
           <button
@@ -107,8 +111,13 @@ export function SegmentedControl<T extends string>({
             }}
             onClick={() => onChange(item.value)}
             onKeyDown={(event) => handleKeyDown(event, index)}
-            aria-pressed={isActive}
+            id={tabId}
+            role="tab"
+            aria-selected={isActive}
+            aria-controls={panelId}
+            tabIndex={isActive ? 0 : -1}
             disabled={item.disabled}
+            data-state={isActive ? 'active' : 'inactive'}
             className={classNames('segment-switch__button', isActive ? 'is-active' : null)}
           >
             <span className="segment-switch__button-content">

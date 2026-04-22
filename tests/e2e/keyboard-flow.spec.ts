@@ -31,7 +31,7 @@ test.describe('keyboard flow', () => {
     await tabUntilFocused(page, primaryAction);
 
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('heading', { name: /Trabajos, salidas y actividad de campo/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Salidas y trabajo de campo/i })).toBeVisible();
   });
 
   test.describe('tablet shell', () => {

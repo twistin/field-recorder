@@ -13,9 +13,9 @@ export function getSurfaceEnterMotion(reducedMotion: boolean) {
         transition: { duration: 0.12, ease: 'linear' as const },
       }
     : {
-        initial: { opacity: 0, y: 12 },
+        initial: { opacity: 0, y: 8 },
         animate: { opacity: 1, y: 0 },
-        transition: { duration: 0.22, ease: ENTER_EASE },
+        transition: { duration: 0.18, ease: ENTER_EASE },
       };
 }
 
@@ -28,19 +28,43 @@ export function getViewTransitionMotion(reducedMotion: boolean) {
         transition: { duration: 0.14, ease: 'linear' as const },
       }
     : {
-        initial: { opacity: 0, y: 14 },
+        initial: { opacity: 0, y: 8 },
         animate: { opacity: 1, y: 0 },
-        exit: { opacity: 0, y: -10 },
-        transition: { duration: 0.24, ease: ENTER_EASE },
+        exit: { opacity: 0, y: -6 },
+        transition: { duration: 0.2, ease: ENTER_EASE },
       };
 }
 
-export function getInteractiveMotion(reducedMotion: boolean) {
+export function getProminentInteractiveMotion(reducedMotion: boolean) {
   return reducedMotion
     ? {}
     : {
-        whileHover: { y: -2 },
-        whileTap: { scale: 0.995 },
+        whileTap: { scale: 0.985 },
+        transition: { duration: 0.14, ease: ENTER_EASE },
+      };
+}
+
+export function getOperationalInteractiveMotion(reducedMotion: boolean) {
+  return reducedMotion
+    ? {}
+    : {
+        whileTap: { scale: 0.992 },
+        transition: { duration: 0.12, ease: ENTER_EASE },
+      };
+}
+
+export function getContentSwapMotion(reducedMotion: boolean) {
+  return reducedMotion
+    ? {
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+        transition: { duration: 0.1, ease: 'linear' as const },
+      }
+    : {
+        initial: { opacity: 0, y: 6 },
+        animate: { opacity: 1, y: 0 },
+        exit: { opacity: 0, y: -4 },
         transition: { duration: 0.16, ease: ENTER_EASE },
       };
 }

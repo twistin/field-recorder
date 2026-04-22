@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AudioWaveform,
+  CheckCircle2,
   Bird,
   Camera,
   CarFront,
@@ -11,6 +12,7 @@ import {
   House,
   History,
   ImagePlus,
+  Info,
   LocateFixed,
   Menu,
   Map as MapIcon,
@@ -22,6 +24,7 @@ import {
   Search,
   Sparkles,
   SunMedium,
+  TriangleAlert,
   Trash2,
   Upload,
   Waves,
@@ -51,7 +54,8 @@ import {
   SummaryStrip,
 } from './components/ui';
 import {
-  getInteractiveMotion,
+  getContentSwapMotion,
+  getProminentInteractiveMotion,
   getSurfaceEnterMotion,
   getViewTransitionMotion,
 } from './components/ui/motion';
@@ -61,29 +65,11 @@ import {
   saveFieldSession,
 } from './lib/fieldSessionsDb';
 import {
-  exportFieldSessionPackage,
-  exportSessionPointCsv,
-  exportSessionPointKml,
-} from './lib/exportFieldSession';
-import { reverseGeocodePlace } from './lib/locationLookup';
-import { captureSoundscapeClassification } from './lib/soundscapeClassification';
-import { fetchAutomaticWeather } from './lib/weather';
-import {
-  buildImportedAudioTakes,
   isSupportedImportedAudioFileName,
   mergeSessionAudioTakes,
   reconcileSessionAudioTakes,
-} from './lib/zoomImport';
-import { syncSelectionToCloud, syncSessionToCloud } from './lib/cloudSync';
+} from './lib/zoomImportShared';
 import type { CatalogSessionPayload, CatalogSessionSummary } from './lib/catalogPayload';
-import {
-  CATALOG_API_UNAVAILABLE_MESSAGE,
-  fetchCatalogSessionRemote,
-  isCatalogApiUnavailableError,
-  listCatalogSessionsRemote,
-  syncSessionToCatalog,
-} from './lib/catalogSync';
-import { listPublishedSelections, publishSelection } from './lib/publishedSelections';
 import type {
   AutomaticWeatherSummary,
   DetectedPlaceSummary,
@@ -99,6 +85,11 @@ import type { PublishedSelection } from './types/publishedSelections';
 type View = 'home' | 'session' | 'point' | 'export';
 type DisplayMode = 'night' | 'sun';
 type HomeMediaFilter = 'all' | 'photos' | 'audio';
+type HomeSecondaryTab = 'work' | 'media';
+type SessionSupportTab = 'browser' | 'search' | 'map' | 'insights';
+type CaptureSupportTab = 'map' | 'photos' | 'ai' | 'record';
+type StatusTone = 'info' | 'success' | 'warning';
+type ViewportMode = 'mobile' | 'tablet' | 'desktop' | 'wide';
 type NavigationItem = {
   view: View;
   label: string;
@@ -110,11 +101,82 @@ type NavigationItem = {
 const DISPLAY_MODE_STORAGE_KEY = 'fieldnotes-display-mode';
 const REMOTE_CATALOG_REFRESH_INTERVAL_MS = 45_000;
 const REMOTE_CATALOG_REFRESH_MIN_GAP_MS = 12_000;
+const CATALOG_API_UNAVAILABLE_MESSAGE =
+  'La API del catálogo no está disponible en este entorno. Usa `vercel dev` o despliega la app con las rutas /api/catalog activas.';
 const HOME_RECORD_PREVIEW_LIMIT = 3;
 const HOME_MEDIA_OVERVIEW_PHOTO_LIMIT = 2;
 const HOME_MEDIA_OVERVIEW_AUDIO_LIMIT = 2;
 const HOME_MEDIA_PREVIEW_LIMIT = 4;
 const HOME_AUDIO_PREVIEW_LIMIT = 4;
+
+let exportFieldSessionLibPromise: Promise<typeof import('./lib/exportFieldSession')> | null = null;
+let locationLookupLibPromise: Promise<typeof import('./lib/locationLookup')> | null = null;
+let soundscapeClassificationLibPromise: Promise<typeof import('./lib/soundscapeClassification')> | null = null;
+let weatherLibPromise: Promise<typeof import('./lib/weather')> | null = null;
+let zoomImportLibPromise: Promise<typeof import('./lib/zoomImport')> | null = null;
+let cloudSyncLibPromise: Promise<typeof import('./lib/cloudSync')> | null = null;
+let catalogSyncLibPromise: Promise<typeof import('./lib/catalogSync')> | null = null;
+let publishedSelectionsLibPromise: Promise<typeof import('./lib/publishedSelections')> | null = null;
+
+function loadExportFieldSessionLib() {
+  exportFieldSessionLibPromise ??= import('./lib/exportFieldSession');
+  return exportFieldSessionLibPromise;
+}
+
+function loadLocationLookupLib() {
+  locationLookupLibPromise ??= import('./lib/locationLookup');
+  return locationLookupLibPromise;
+}
+
+function loadSoundscapeClassificationLib() {
+  soundscapeClassificationLibPromise ??= import('./lib/soundscapeClassification');
+  return soundscapeClassificationLibPromise;
+}
+
+function loadWeatherLib() {
+  weatherLibPromise ??= import('./lib/weather');
+  return weatherLibPromise;
+}
+
+function loadZoomImportLib() {
+  zoomImportLibPromise ??= import('./lib/zoomImport');
+  return zoomImportLibPromise;
+}
+
+function loadCloudSyncLib() {
+  cloudSyncLibPromise ??= import('./lib/cloudSync');
+  return cloudSyncLibPromise;
+}
+
+function loadCatalogSyncLib() {
+  catalogSyncLibPromise ??= import('./lib/catalogSync');
+  return catalogSyncLibPromise;
+}
+
+function loadPublishedSelectionsLib() {
+  publishedSelectionsLibPromise ??= import('./lib/publishedSelections');
+  return publishedSelectionsLibPromise;
+}
+
+function getViewportWidth() {
+  return typeof window === 'undefined' ? 1440 : window.innerWidth;
+}
+
+function getViewportMode(width: number): ViewportMode {
+  if (width < 760) {
+    return 'mobile';
+  }
+
+  if (width < 960) {
+    return 'tablet';
+  }
+
+  if (width < 1440) {
+    return 'desktop';
+  }
+
+  return 'wide';
+}
 const HOME_MEDIA_FILTERS: Array<{ id: HomeMediaFilter; label: string }> = [
   { id: 'all', label: 'Todo' },
   { id: 'photos', label: 'Fotos' },
@@ -891,7 +953,7 @@ function WorkflowCard({
     <motion.button
       type="button"
       onClick={onClick}
-      {...getInteractiveMotion(prefersReducedMotion)}
+      {...getProminentInteractiveMotion(prefersReducedMotion)}
       className={`workflow-card ${featured ? 'is-featured' : ''}`}
     >
       <span className="workflow-card__icon">
@@ -966,6 +1028,7 @@ function AppNavigationPanels({
   isOnline,
   onOpenProjects,
   onImportZoom,
+  showSessionSummary = true,
   onNavigate,
 }: {
   titleId: string;
@@ -976,6 +1039,7 @@ function AppNavigationPanels({
   isOnline: boolean;
   onOpenProjects: () => void;
   onImportZoom: () => void;
+  showSessionSummary?: boolean;
   onNavigate?: () => void;
 }) {
   return (
@@ -1010,7 +1074,7 @@ function AppNavigationPanels({
         </nav>
       </section>
 
-      {activeView !== 'home' ? (
+      {showSessionSummary && activeView !== 'home' ? (
         <section
           className="panel sidebar-session-card sidebar-session-card--compact"
           aria-labelledby={`${titleId}-current-session-title`}
@@ -1142,6 +1206,7 @@ function ShellHeader({
 export default function App() {
   const prefersReducedMotion = useReducedMotion();
   const [view, setView] = useState<View>('home');
+  const [viewportWidth, setViewportWidth] = useState(() => getViewportWidth());
   const [sessionDraft, setSessionDraft] = useState<SessionDraft>(buildSessionDraft());
   const [pointDraft, setPointDraft] = useState<PointDraft>(buildPointDraft());
   const [draftPhotos, setDraftPhotos] = useState<DraftPhoto[]>([]);
@@ -1149,10 +1214,14 @@ export default function App() {
   const [sessions, setSessions] = useState<UiFieldSession[]>([]);
   const [selectedArchiveProjectKey, setSelectedArchiveProjectKey] = useState<'all' | string>('all');
   const [projectDraftName, setProjectDraftName] = useState('');
+  const [sessionSupportTab, setSessionSupportTab] = useState<SessionSupportTab>('browser');
   const [captureWorkspace, setCaptureWorkspace] = useState<'map' | 'points'>('map');
+  const [captureSupportTab, setCaptureSupportTab] = useState<CaptureSupportTab>('map');
   const [archiveWorkspace, setArchiveWorkspace] = useState<'session' | 'media' | 'record'>('session');
   const [homeMediaFilter, setHomeMediaFilter] = useState<HomeMediaFilter>('all');
+  const [homeSecondaryTab, setHomeSecondaryTab] = useState<HomeSecondaryTab>('work');
   const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false);
+  const [isArchiveBrowserOpen, setIsArchiveBrowserOpen] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => {
     if (typeof window === 'undefined') {
       return 'night';
@@ -1182,6 +1251,7 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now());
   const [storageMode, setStorageMode] = useState<'loading' | 'ready' | 'memory-only'>('loading');
   const [statusNote, setStatusNote] = useState('Inicia una salida y ve registrando puntos con GPS, clima, notas y fotos.');
+  const [statusTone, setStatusTone] = useState<StatusTone>('info');
   const [appError, setAppError] = useState<string | null>(null);
   const [isExportingSessionId, setIsExportingSessionId] = useState<string | null>(null);
   const [isQuickCapturing, setIsQuickCapturing] = useState(false);
@@ -1223,6 +1293,15 @@ export default function App() {
   const drawerMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const drawerCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const wasNavDrawerOpenRef = useRef(false);
+  const archiveDrawerPanelRef = useRef<HTMLElement | null>(null);
+  const archiveDrawerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const archiveDrawerCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const wasArchiveBrowserOpenRef = useRef(false);
+
+  function announceStatus(message: string, tone: StatusTone = 'info') {
+    setStatusNote(message);
+    setStatusTone(tone);
+  }
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
   const sortedActiveSessionPoints = activeSession
@@ -1299,6 +1378,7 @@ export default function App() {
 
   useEffect(() => {
     setIsNavDrawerOpen(false);
+    setIsArchiveBrowserOpen(false);
   }, [view]);
 
   useEffect(() => {
@@ -1307,8 +1387,15 @@ export default function App() {
     }
 
     const handleResize = () => {
-      if (window.innerWidth < 760 || window.innerWidth >= 960) {
+      const nextWidth = window.innerWidth;
+      setViewportWidth(nextWidth);
+
+      if (nextWidth < 760 || nextWidth >= 960) {
         setIsNavDrawerOpen(false);
+      }
+
+       if (nextWidth >= 1120) {
+        setIsArchiveBrowserOpen(false);
       }
     };
 
@@ -1320,7 +1407,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (typeof document === 'undefined' || !isNavDrawerOpen) {
+    if (typeof document === 'undefined' || (!isNavDrawerOpen && !isArchiveBrowserOpen)) {
       return undefined;
     }
 
@@ -1329,7 +1416,7 @@ export default function App() {
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [isNavDrawerOpen]);
+  }, [isArchiveBrowserOpen, isNavDrawerOpen]);
 
   useEffect(() => {
     if (!isNavDrawerOpen) {
@@ -1386,6 +1473,62 @@ export default function App() {
 
     wasNavDrawerOpenRef.current = isNavDrawerOpen;
   }, [isNavDrawerOpen]);
+
+  useEffect(() => {
+    if (!isArchiveBrowserOpen) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsArchiveBrowserOpen(false);
+        return;
+      }
+
+      if (event.key !== 'Tab') {
+        return;
+      }
+
+      const drawer = archiveDrawerPanelRef.current;
+      if (!drawer) {
+        return;
+      }
+
+      const focusableElements = drawer.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+
+      if (focusableElements.length === 0) {
+        return;
+      }
+
+      const firstFocusableElement = focusableElements[0];
+      const lastFocusableElement = focusableElements[focusableElements.length - 1];
+
+      if (event.shiftKey && document.activeElement === firstFocusableElement) {
+        event.preventDefault();
+        lastFocusableElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastFocusableElement) {
+        event.preventDefault();
+        firstFocusableElement.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isArchiveBrowserOpen]);
+
+  useEffect(() => {
+    if (isArchiveBrowserOpen) {
+      archiveDrawerCloseButtonRef.current?.focus();
+    } else if (wasArchiveBrowserOpenRef.current) {
+      archiveDrawerTriggerRef.current?.focus();
+    }
+
+    wasArchiveBrowserOpenRef.current = isArchiveBrowserOpen;
+  }, [isArchiveBrowserOpen]);
 
   useEffect(() => {
     if (selectedArchiveProjectKey === 'all') {
@@ -1453,12 +1596,12 @@ export default function App() {
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      setStatusNote('Conexión recuperada. Reintentando sincronizar lugar y clima pendientes.');
+      announceStatus('Conexión recuperada. Reintentando sincronizar lugar y clima pendientes.', 'success');
     };
 
     const handleOffline = () => {
       setIsOnline(false);
-      setStatusNote('Modo offline activo. Los puntos se guardarán y se enriquecerán al volver la conexión.');
+      announceStatus('Modo offline activo. Los puntos se guardarán y se enriquecerán al volver la conexión.', 'warning');
     };
 
     window.addEventListener('online', handleOnline);
@@ -1498,7 +1641,7 @@ export default function App() {
 
         console.error('Loading sessions failed:', error);
         setStorageMode('memory-only');
-        setStatusNote('No se pudo abrir el archivo local. La salida actual quedará sólo en memoria.');
+        announceStatus('No se pudo abrir el archivo local. La salida actual quedará sólo en memoria.', 'warning');
       }
     }
 
@@ -1821,7 +1964,7 @@ export default function App() {
     } catch (error) {
       console.error('Saving session failed:', error);
       setStorageMode('memory-only');
-      setStatusNote('Falló la escritura local. La salida seguirá en memoria hasta recargar.');
+      announceStatus('Falló la escritura local. La salida seguirá en memoria hasta recargar.', 'warning');
     }
   }
 
@@ -1847,6 +1990,7 @@ export default function App() {
     setLocationMessage('Consultando nombre del lugar...');
 
     try {
+      const { reverseGeocodePlace } = await loadLocationLookupLib();
       const place = await reverseGeocodePlace(coordinates.lat, coordinates.lon, controller.signal);
       lastLocationKeyRef.current = requestKey;
       setDetectedPlace(place);
@@ -1932,6 +2076,7 @@ export default function App() {
     setWeatherMessage('Consultando clima automático...');
 
     try {
+      const { fetchAutomaticWeather } = await loadWeatherLib();
       const snapshot = await fetchAutomaticWeather(coordinates.lat, coordinates.lon, controller.signal);
       lastWeatherKeyRef.current = requestKey;
       setWeatherSnapshot(snapshot);
@@ -1997,11 +2142,12 @@ export default function App() {
     setSoundscapeMessage('Escuchando 15 segundos para detectar elementos del ambiente. No se guardará el audio.');
 
     try {
+      const { captureSoundscapeClassification } = await loadSoundscapeClassificationLib();
       const classification = await captureSoundscapeClassification({ durationMs: 15_000 });
       setDraftSoundscapeClassification(classification);
       setSoundscapeStatus('ready');
       setSoundscapeMessage(classification.details);
-      setStatusNote(`Detección acústica lista: ${classification.summary}.`);
+      announceStatus(`Detección acústica lista: ${classification.summary}.`, 'success');
     } catch (error) {
       console.error('Soundscape classification failed:', error);
       const errorMessage =
@@ -2117,7 +2263,7 @@ export default function App() {
     void persistSession(nextSession);
     setPointDraft(buildPointDraft(nextSession.equipmentPreset, currentGpsRef.current));
     setSessionDraft(buildSessionDraft());
-    setStatusNote('Salida iniciada. Empieza a registrar puntos de escucha.');
+    announceStatus('Salida iniciada. Empieza a registrar puntos de escucha.', 'success');
     setView('point');
   }
 
@@ -2148,7 +2294,7 @@ export default function App() {
     await persistSession(nextSession);
     setActiveSessionId(null);
     resetPointDraft(nextSession.equipmentPreset);
-    setStatusNote(`Salida "${nextSession.name}" cerrada y lista para exportación.`);
+    announceStatus(`Salida "${nextSession.name}" cerrada y lista para exportación.`, 'success');
     setView('export');
   }
 
@@ -2196,7 +2342,7 @@ export default function App() {
     setRecordSessionId(activeSession.id);
     setRecordPointId(point.id);
     setAppError(null);
-    setStatusNote(`Punto "${point.placeName}" guardado dentro de la salida.`);
+    announceStatus(`Punto "${point.placeName}" guardado dentro de la salida.`, 'success');
     resetPointDraft(activeSession.equipmentPreset);
   }
 
@@ -2252,7 +2398,7 @@ export default function App() {
       setSelectedPointId(point.id);
       setRecordSessionId(activeSession.id);
       setRecordPointId(point.id);
-      setStatusNote(`Punto rápido "${point.placeName}" creado con GPS, fecha, hora y clima.`);
+      announceStatus(`Punto rápido "${point.placeName}" creado con GPS, fecha, hora y clima.`, 'success');
       resetPointDraft(activeSession.equipmentPreset);
     } finally {
       setIsQuickCapturing(false);
@@ -2288,7 +2434,7 @@ export default function App() {
         setRecordSessionId(null);
       }
     }
-    setStatusNote('Punto eliminado de la salida activa.');
+    announceStatus('Punto eliminado de la salida activa.');
   }
 
   async function removeSession(sessionId: string) {
@@ -2338,7 +2484,7 @@ export default function App() {
       }
 
       setSelectedArchiveProjectKey(nextProjectName.trim() ? buildProjectKey(nextProjectName) : 'all');
-      setStatusNote(statusMessage);
+      announceStatus(statusMessage, 'success');
     } catch (error) {
       console.error('Updating project failed:', error);
       setAppError('No se pudo actualizar el trabajo en todas sus salidas.');
@@ -2355,7 +2501,7 @@ export default function App() {
     }
 
     if (buildProjectKey(nextProjectName) === projectKey) {
-      setStatusNote('El trabajo ya tiene ese nombre.');
+      announceStatus('El trabajo ya tiene ese nombre.');
       return;
     }
 
@@ -2375,19 +2521,51 @@ export default function App() {
     setAppError(null);
 
     try {
+      const { exportFieldSessionPackage } = await loadExportFieldSessionLib();
       const exportSummary = await exportFieldSessionPackage(dehydrateSession(session));
       if (exportSummary.missingAudioCount > 0) {
-        setStatusNote(
+        announceStatus(
           `Salida "${session.name}" exportada con ${exportSummary.exportedAudioCount}/${session.audioTakes.length} audios. Faltan ${exportSummary.missingAudioCount}; revisa takes/missing-audio.txt y reimporta la carpeta H6 si hace falta.`,
+          'warning',
         );
       } else {
-        setStatusNote(`Salida "${session.name}" exportada.`);
+        announceStatus(`Salida "${session.name}" exportada.`, 'success');
       }
     } catch (error) {
       console.error('Export session failed:', error);
       setAppError('No se pudo exportar la salida.');
     } finally {
       setIsExportingSessionId(null);
+    }
+  }
+
+  async function exportSelectedRecordCsv() {
+    if (!recordSession || !recordPoint) {
+      return;
+    }
+
+    try {
+      const { exportSessionPointCsv } = await loadExportFieldSessionLib();
+      exportSessionPointCsv(recordSession, recordPoint);
+      announceStatus(`CSV exportado para "${recordPoint.placeName}".`, 'success');
+    } catch (error) {
+      console.error('Export record CSV failed:', error);
+      setAppError('No se pudo exportar el registro en CSV.');
+    }
+  }
+
+  async function exportSelectedRecordKml() {
+    if (!recordSession || !recordPoint) {
+      return;
+    }
+
+    try {
+      const { exportSessionPointKml } = await loadExportFieldSessionLib();
+      exportSessionPointKml(recordSession, recordPoint);
+      announceStatus(`KML exportado para "${recordPoint.placeName}".`, 'success');
+    } catch (error) {
+      console.error('Export record KML failed:', error);
+      setAppError('No se pudo exportar el registro en KML.');
     }
   }
 
@@ -2420,6 +2598,13 @@ export default function App() {
     setAppError(null);
 
     try {
+      const { publishSelection, syncSelectionToCloud } = await Promise.all([
+        loadPublishedSelectionsLib(),
+        loadCloudSyncLib(),
+      ]).then(([publishedSelectionsLib, cloudSyncLib]) => ({
+        publishSelection: publishedSelectionsLib.publishSelection,
+        syncSelectionToCloud: cloudSyncLib.syncSelectionToCloud,
+      }));
       const syncedSelection = await syncSelectionToCloud(dehydrateSession(recordSession), {
         photoId: photo.id,
         audioTakeId: audioTake.id,
@@ -2455,7 +2640,7 @@ export default function App() {
       });
 
       setPublishedSelectionsForPoint((current) => [selection, ...current.filter((entry) => entry.id !== selection.id)]);
-      setStatusNote(`Selección web publicada para "${recordPoint.placeName}".`);
+      announceStatus(`Selección web publicada para "${recordPoint.placeName}".`, 'success');
     } catch (error) {
       console.error('Publish selection failed:', error);
       setAppError(error instanceof Error ? error.message : 'No se pudo publicar la selección web.');
@@ -2492,10 +2677,11 @@ export default function App() {
     replaceSessionInState(syncingSession);
 
     try {
+      const { syncSessionToCloud } = await loadCloudSyncLib();
       const cloudSession = await syncSessionToCloud(dehydrateSession(syncingSession));
       const nextUiSession = mergeCloudSyncedSessionIntoUi(cloudSession, syncingSession);
       await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
-      setStatusNote(`Salida "${nextUiSession.name}" respaldada en la nube.`);
+      announceStatus(`Salida "${nextUiSession.name}" respaldada en la nube.`, 'success');
     } catch (error) {
       console.error('Cloud backup failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'No se pudo respaldar en la nube.';
@@ -2545,7 +2731,8 @@ export default function App() {
     replaceSessionInState(syncingSession);
 
     try {
-      const catalogResult = await syncSessionToCatalog(dehydrateSession(syncingSession));
+      const catalogSync = await loadCatalogSyncLib();
+      const catalogResult = await catalogSync.syncSessionToCatalog(dehydrateSession(syncingSession));
       setCatalogApiStatus('available');
       const nextUiSession: UiFieldSession = {
         ...syncingSession,
@@ -2554,13 +2741,14 @@ export default function App() {
         catalogError: null,
       };
       await persistSession(nextUiSession, { markCloudPending: false, markCatalogPending: false });
-      setStatusNote(`Salida "${nextUiSession.name}" sincronizada con el catálogo remoto.`);
+      announceStatus(`Salida "${nextUiSession.name}" sincronizada con el catálogo remoto.`, 'success');
     } catch (error) {
       console.error('Catalog sync failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'No se pudo sincronizar el catálogo remoto.';
-      if (isCatalogApiUnavailableError(error)) {
+      const catalogSync = await loadCatalogSyncLib();
+      if (catalogSync.isCatalogApiUnavailableError(error)) {
         setCatalogApiStatus('unavailable');
-        setStatusNote('Catálogo remoto desactivado en este entorno. La salida sigue disponible en local y en exportación.');
+        announceStatus('Catálogo remoto desactivado en este entorno. La salida sigue disponible en local y en exportación.', 'warning');
       }
       const nextUiSession: UiFieldSession = {
         ...session,
@@ -2587,7 +2775,7 @@ export default function App() {
     );
 
     if (pendingSessions.length === 0) {
-      setStatusNote('No hay salidas pendientes de respaldo.');
+      announceStatus('No hay salidas pendientes de respaldo.');
       return;
     }
 
@@ -2608,7 +2796,7 @@ export default function App() {
     );
 
     if (pendingSessions.length === 0) {
-      setStatusNote('No hay salidas pendientes de catálogo remoto.');
+      announceStatus('No hay salidas pendientes de catálogo remoto.');
       return;
     }
 
@@ -2635,7 +2823,8 @@ export default function App() {
     lastRemoteCatalogRefreshAtRef.current = nowMs;
 
     try {
-      const summaries = await listCatalogSessionsRemote();
+      const catalogSync = await loadCatalogSyncLib();
+      const summaries = await catalogSync.listCatalogSessionsRemote();
       setCatalogApiStatus('available');
 
       const summariesToImport = summaries.filter((summary) => {
@@ -2668,7 +2857,7 @@ export default function App() {
           continue;
         }
 
-        const remoteSession = await fetchCatalogSessionRemote(summary.id);
+        const remoteSession = await catalogSync.fetchCatalogSessionRemote(summary.id);
         const nextSession = buildCatalogSessionForUi(remoteSession, summary, currentSession);
         await persistSession(nextSession, { markCloudPending: false, markCatalogPending: false });
         importedNames.push(nextSession.name);
@@ -2679,14 +2868,15 @@ export default function App() {
       }
 
       if (importedNames.length === 1) {
-        setStatusNote(`Salida "${importedNames[0]}" actualizada desde el catálogo remoto.`);
+        announceStatus(`Salida "${importedNames[0]}" actualizada desde el catálogo remoto.`, 'success');
       } else if (importedNames.length > 1) {
-        setStatusNote(`${importedNames.length} salidas actualizadas desde el catálogo remoto.`);
+        announceStatus(`${importedNames.length} salidas actualizadas desde el catálogo remoto.`, 'success');
       }
     } catch (error) {
       console.error('Remote catalog refresh failed:', error);
 
-      if (isCatalogApiUnavailableError(error)) {
+      const catalogSync = await loadCatalogSyncLib();
+      if (catalogSync.isCatalogApiUnavailableError(error)) {
         setCatalogApiStatus('unavailable');
         return;
       }
@@ -2701,6 +2891,7 @@ export default function App() {
 
     if (pointNeedsLocationEnrichment(nextPoint)) {
       try {
+        const { reverseGeocodePlace } = await loadLocationLookupLib();
         const detectedPlaceSummary = await reverseGeocodePlace(nextPoint.gps.lat, nextPoint.gps.lon);
         nextPoint = {
           ...nextPoint,
@@ -2717,6 +2908,7 @@ export default function App() {
 
     if (pointNeedsWeatherEnrichment(nextPoint)) {
       try {
+        const { fetchAutomaticWeather } = await loadWeatherLib();
         const automaticWeatherSummary = await fetchAutomaticWeather(nextPoint.gps.lat, nextPoint.gps.lon);
         nextPoint = {
           ...nextPoint,
@@ -2743,7 +2935,7 @@ export default function App() {
 
     if (sessionsWithPending.length === 0) {
       if (options?.force) {
-        setStatusNote('No hay metadatos pendientes por sincronizar.');
+        announceStatus('No hay metadatos pendientes por sincronizar.');
       }
       return;
     }
@@ -2791,11 +2983,12 @@ export default function App() {
       }
 
       if (updatedPoints > 0) {
-        setStatusNote(
+        announceStatus(
           `Sincronizados ${updatedPoints} puntos pendientes en ${updatedSessions} salida${updatedSessions === 1 ? '' : 's'}.`,
+          'success',
         );
       } else if (options?.force) {
-        setStatusNote('No pude enriquecer los puntos pendientes en este momento.');
+        announceStatus('No pude enriquecer los puntos pendientes en este momento.', 'warning');
       }
     } finally {
       isSyncingPendingMetadataRef.current = false;
@@ -2909,6 +3102,7 @@ export default function App() {
     setAppError(null);
 
     try {
+      const { buildImportedAudioTakes } = await loadZoomImportLib();
       if (audioCandidateCount === 0) {
         setAppError('No encontré archivos de audio compatibles en esa carpeta de Zoom H6.');
         return;
@@ -2929,8 +3123,9 @@ export default function App() {
       const linkedCount = importedTakes.filter((take) => take.associatedPointId).length;
       const unmatchedCount = importedTakes.length - linkedCount;
       const ignoredCount = files.length - audioCandidateCount;
-      setStatusNote(
+      announceStatus(
         `Importadas ${importedTakes.length} tomas de Zoom H6. ${linkedCount} asociadas, ${unmatchedCount} pendientes.${ignoredCount > 0 ? ` ${ignoredCount} archivos auxiliares ignorados.` : ''}`,
+        'success',
       );
       setView('export');
     } catch (error) {
@@ -3294,10 +3489,13 @@ export default function App() {
       };
     }
 
-    void listPublishedSelections({
-      sessionId: recordSession.id,
-      pointId: recordPoint.id,
-    })
+    void loadPublishedSelectionsLib()
+      .then(({ listPublishedSelections }) =>
+        listPublishedSelections({
+          sessionId: recordSession.id,
+          pointId: recordPoint.id,
+        }),
+      )
       .then((selections) => {
         if (active) {
           setPublishedSelectionsForPoint(selections);
@@ -3393,6 +3591,347 @@ export default function App() {
       : homeMediaFilter === 'photos'
         ? 'No hay fotos recientes para revisar en el resumen.'
         : 'No hay tomas H6 recientes para revisar en el resumen.';
+  const viewportMode = getViewportMode(viewportWidth);
+  const isMobileViewport = viewportMode === 'mobile';
+  const isCompactHomeLayout = viewportWidth < 980;
+  const isCompactSessionLayout = viewportWidth < 980;
+  const isCompactCaptureLayout = viewportWidth < 1120;
+  const isCompactArchiveLayout = viewportWidth < 1120;
+  const homeWorkPreviewGroups = isCompactHomeLayout ? recentNamedProjectGroups.slice(0, 3) : recentNamedProjectGroups;
+  const homeWorkPreviewSessions = isCompactHomeLayout ? recentSessions.slice(0, 4) : recentSessions;
+  const effectiveHomeSecondaryTab =
+    homeSecondaryTab === 'media' && !hasRecentMedia
+      ? 'work'
+      : homeSecondaryTab === 'work' && !hasRecentWork && hasRecentMedia
+        ? 'media'
+        : homeSecondaryTab;
+  const homeSecondaryActionLabel =
+    effectiveHomeSecondaryTab === 'work'
+      ? hasRecentWork
+        ? 'Ver salidas'
+        : undefined
+      : hasRecentMedia
+        ? 'Ver biblioteca'
+        : undefined;
+  const homeSecondaryAction = () => {
+    if (effectiveHomeSecondaryTab === 'work') {
+      setView('session');
+      return;
+    }
+
+    openMediaArchiveFromHome();
+  };
+  const renderHomeWorkPreview = (compact = false) =>
+    hasRecentWork ? (
+      <div className={`dashboard-browser-grid ${compact ? 'dashboard-browser-grid--stacked' : ''}`.trim()}>
+        <section
+          className="dashboard-subsection"
+          aria-labelledby="home-project-groups-title"
+          aria-describedby="home-project-groups-description"
+        >
+          <SectionHeader
+            titleId="home-project-groups-title"
+            descriptionId="home-project-groups-description"
+            title="Trabajos recientes"
+            description={
+              homeWorkPreviewGroups.length > 0
+                ? compact
+                  ? `${homeWorkPreviewGroups.length} trabajos visibles ahora.`
+                  : `${homeWorkPreviewGroups.length} trabajos visibles ahora en el resumen.`
+                : 'Aún no hay trabajos con nombre visibles en el resumen.'
+            }
+            titleAs="h3"
+            compact
+          />
+          {homeWorkPreviewGroups.length > 0 ? (
+            <StructuredList>
+              {homeWorkPreviewGroups.map((group) => (
+                <li key={group.key}>
+                  <ListRow
+                    onClick={() => openProjectArchiveFromHome(group.key)}
+                    eyebrow={group.activeSessionCount > 0 ? 'Con salida activa' : 'Trabajo'}
+                    title={group.name}
+                    meta={
+                      group.activeSessionCount > 0
+                        ? `${group.activeSessionCount} salida${group.activeSessionCount === 1 ? '' : 's'} activa${group.activeSessionCount === 1 ? '' : 's'} ahora.`
+                        : 'Sin actividad abierta ahora.'
+                    }
+                    stats={[
+                      `${group.sessionCount} salidas`,
+                      `${group.pointCount} registros`,
+                      `${group.audioTakeCount} H6`,
+                    ]}
+                    actionLabel="Abrir proyecto"
+                  />
+                </li>
+              ))}
+            </StructuredList>
+          ) : (
+            <EmptyState
+              eyebrow="Trabajos"
+              title="Todavía no hay trabajos"
+              description="Tus salidas pueden existir sin trabajo. El primer trabajo aparecerá cuando crees o edites una salida con nombre de trabajo."
+              icon={<FileSpreadsheet className="h-5 w-5" />}
+              action={
+                <Button variant="ghost" onClick={() => setView('session')}>
+                  Ir a salidas
+                </Button>
+              }
+              compact
+            />
+          )}
+        </section>
+
+        <section
+          className="dashboard-subsection"
+          aria-labelledby="home-recent-sessions-title"
+          aria-describedby="home-recent-sessions-description"
+        >
+          <SectionHeader
+            titleId="home-recent-sessions-title"
+            descriptionId="home-recent-sessions-description"
+            title="Salidas recientes"
+            description={`${homeWorkPreviewSessions.length} salidas recientes con acceso directo.`}
+            titleAs="h3"
+            compact
+          />
+          <StructuredList>
+            {homeWorkPreviewSessions.map((session) => (
+              <li key={session.id}>
+                <ListRow
+                  onClick={() => openSessionArchiveFromHome(session.id)}
+                  eyebrow={session.status === 'active' ? 'Salida activa' : 'Salida cerrada'}
+                  title={session.name}
+                  meta={`${resolveProjectName(session.projectName)} · ${session.region || 'sin zona definida'}`}
+                  stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                  actionLabel="Ver salida"
+                />
+              </li>
+            ))}
+          </StructuredList>
+        </section>
+      </div>
+    ) : (
+      <EmptyState
+        eyebrow="Trabajo"
+        title="Todavía no hay trabajo reciente"
+        description="Cuando guardes la primera salida, esta zona mostrará trabajos, salidas y accesos directos para retomarlos sin buscar."
+        icon={<History className="h-5 w-5" />}
+        action={
+          <Button variant="secondary" onClick={() => setView('session')}>
+            Preparar primera salida
+          </Button>
+        }
+        compact={compact}
+      />
+    );
+  const renderHomeMediaPreview = (compact = false) =>
+    hasRecentMedia ? (
+      <div className={`home-media-panel ${compact ? 'home-media-panel--compact' : ''}`.trim()}>
+        <div className="home-media-panel__controls">
+          <SegmentedControl
+            label="Filtrar media reciente"
+            value={homeMediaFilter}
+            items={HOME_MEDIA_FILTERS.map((filterOption) => ({
+              value: filterOption.id,
+              label: filterOption.label,
+              count:
+                filterOption.id === 'all'
+                  ? recentMediaLibraryItems.length
+                  : filterOption.id === 'photos'
+                    ? recentPhotoLibraryItems.length
+                    : recentAudioLibraryItems.length,
+            }))}
+            onChange={setHomeMediaFilter}
+            panelIdBase="home-media-filter"
+            size="sm"
+          />
+          <p className="module-copy text-sm home-media-panel__summary">{homeMediaPreviewSummary}</p>
+        </div>
+
+        <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            key={`home-media-${homeMediaFilter}`}
+            id={`home-media-filter-panel-${homeMediaFilter}`}
+            role="tabpanel"
+            aria-labelledby={`home-media-filter-tab-${homeMediaFilter}`}
+            className="content-swap-panel content-swap-panel--local"
+            {...contentSwapMotion}
+          >
+            {homeMediaFilter === 'all' ? (
+              recentMediaLibraryItems.length > 0 ? (
+                <div className="home-media-overview">
+                  <section className="home-media-overview__section" aria-labelledby="home-media-overview-photos-title">
+                    <div className="home-media-overview__header">
+                      <p id="home-media-overview-photos-title" className="home-media-overview__title">
+                        Últimas fotos
+                      </p>
+                      <span className="home-media-overview__count">
+                        {recentPhotoLibraryItems.length}
+                      </span>
+                    </div>
+
+                    {recentOverviewPhotos.length > 0 ? (
+                      <StructuredList>
+                        {recentOverviewPhotos.map((photo) => (
+                          <li key={photo.id}>
+                            <ListRow
+                              dense
+                              onClick={() => openRecordView(photo.sessionId, photo.pointId)}
+                              aria-label={`Ver registro de ${photo.pointName}`}
+                              leadingVisual={
+                                <span className="home-media-preview-card__visual home-media-preview-card__visual--compact">
+                                  <img src={photo.previewUrl} alt="" className="home-media-preview-card__thumb" />
+                                </span>
+                              }
+                              eyebrow="Foto"
+                              title={photo.pointName}
+                              meta={`${photo.sessionName} · ${formatDateTime(photo.createdAt, "d MMM · HH:mm")}`}
+                            />
+                          </li>
+                        ))}
+                      </StructuredList>
+                    ) : (
+                      <p className="module-copy text-sm">Sin fotos recientes.</p>
+                    )}
+                  </section>
+
+                  <section className="home-media-overview__section" aria-labelledby="home-media-overview-audio-title">
+                    <div className="home-media-overview__header">
+                      <p id="home-media-overview-audio-title" className="home-media-overview__title">
+                        Últimas tomas H6
+                      </p>
+                      <span className="home-media-overview__count">
+                        {recentAudioLibraryItems.length}
+                      </span>
+                    </div>
+
+                    {recentOverviewAudio.length > 0 ? (
+                      <StructuredList>
+                        {recentOverviewAudio.map((take) => (
+                          <li key={take.id}>
+                            <ListRow
+                              dense
+                              onClick={() =>
+                                take.associatedPointId
+                                  ? openRecordView(take.sessionId, take.associatedPointId)
+                                  : openSessionMediaArchiveFromHome(take.sessionId)
+                              }
+                              aria-label={
+                                take.associatedPointId
+                                  ? `Abrir registro asociado a ${take.fileName}`
+                                  : `Abrir biblioteca de la salida para ${take.fileName}`
+                              }
+                              leadingVisual={
+                                <span className="home-media-preview-card__visual home-media-preview-card__visual--audio">
+                                  <span className="home-media-preview-card__icon home-media-preview-card__icon--compact">
+                                    <AudioWaveform className="h-4 w-4" />
+                                  </span>
+                                </span>
+                              }
+                              eyebrow="Toma H6"
+                              title={take.fileName}
+                              meta={
+                                take.pointName
+                                  ? `${take.pointName} · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
+                                  : `${take.projectName} · sin punto asociado · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
+                              }
+                            />
+                          </li>
+                        ))}
+                      </StructuredList>
+                    ) : (
+                      <p className="module-copy text-sm">Sin tomas recientes.</p>
+                    )}
+                  </section>
+                </div>
+              ) : (
+                <p className="module-copy text-sm">{homeMediaEmptyMessage}</p>
+              )
+            ) : homeMediaFilter === 'photos' ? (
+              recentPhotoLibrary.length > 0 ? (
+                <ul className="home-media-grid">
+                  {recentPhotoLibrary.map((photo) => (
+                    <li key={photo.id}>
+                      <button
+                        type="button"
+                        onClick={() => openRecordView(photo.sessionId, photo.pointId)}
+                        aria-label={`Ver registro de ${photo.pointName}`}
+                        className="media-thumb-card media-thumb-card--preview"
+                      >
+                        <img src={photo.previewUrl} alt={photo.pointName} className="media-thumb-card__image" />
+                        <span className="media-thumb-card__caption">
+                          <strong>{photo.pointName}</strong>
+                          <small>
+                            {photo.sessionName} · {formatDateTime(photo.createdAt, "d MMM · HH:mm")}
+                          </small>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="module-copy text-sm">{homeMediaEmptyMessage}</p>
+              )
+            ) : recentAudioLibrary.length > 0 ? (
+              <StructuredList>
+                {recentAudioLibrary.map((take) => (
+                  <li key={take.id}>
+                    <ListRow
+                      dense
+                      onClick={() =>
+                        take.associatedPointId
+                          ? openRecordView(take.sessionId, take.associatedPointId)
+                          : openSessionMediaArchiveFromHome(take.sessionId)
+                      }
+                      aria-label={
+                        take.associatedPointId
+                          ? `Abrir registro asociado a ${take.fileName}`
+                          : `Abrir biblioteca de la salida para ${take.fileName}`
+                      }
+                      leadingVisual={
+                        <span className="home-media-preview-card__visual home-media-preview-card__visual--audio">
+                          <span className="home-media-preview-card__icon home-media-preview-card__icon--compact">
+                            <AudioWaveform className="h-4 w-4" />
+                          </span>
+                        </span>
+                      }
+                      eyebrow="Toma H6"
+                      title={take.fileName}
+                      meta={
+                        take.pointName
+                          ? `${take.pointName} · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
+                          : `${take.projectName} · sin punto asociado · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
+                      }
+                      actionLabel={take.associatedPointId ? 'Abrir registro' : 'Abrir biblioteca'}
+                    />
+                  </li>
+                ))}
+              </StructuredList>
+            ) : (
+              <p className="module-copy text-sm">{homeMediaEmptyMessage}</p>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    ) : (
+      <EmptyState
+        eyebrow="Media"
+        title="Todavía no hay media reciente"
+        description={
+          activeSession
+            ? 'Las fotos y tomas H6 aparecerán aquí en cuanto guardes el primer registro o importes audio a la salida activa.'
+            : 'Las fotos y tomas H6 aparecerán aquí cuando empieces una salida y registres el primer punto.'
+        }
+        icon={<ImagePlus className="h-5 w-5" />}
+        action={
+          <Button variant="secondary" onClick={() => setView(activeSession ? 'point' : 'session')}>
+            {activeSession ? 'Ir a captura' : 'Preparar salida'}
+          </Button>
+        }
+        compact={compact}
+      />
+    );
   const greetingLabel = getGreetingLabel(now);
   const homeLauncherTitle = activeSession ? 'Continuar salida' : 'Preparar salida';
   const homeLauncherCopy = activeSession
@@ -3461,6 +4000,26 @@ export default function App() {
           : 'El archivo deja visibles salidas, registros, fotos y tomas H6 para revisar y exportar sin esconder acciones.';
   const surfaceEnterMotion = getSurfaceEnterMotion(prefersReducedMotion);
   const viewTransitionMotion = getViewTransitionMotion(prefersReducedMotion);
+  const contentSwapMotion = getContentSwapMotion(prefersReducedMotion);
+  const operationalStatusMeta =
+    statusTone === 'success'
+      ? {
+          eyebrow: 'Acción completada',
+          className: 'status-banner--success',
+          icon: CheckCircle2,
+        }
+      : statusTone === 'warning'
+        ? {
+            eyebrow: 'Atención operativa',
+            className: 'status-banner--info status-banner--warning-soft',
+            icon: TriangleAlert,
+          }
+        : {
+            eyebrow: 'Estado operativo',
+            className: 'status-banner--info',
+            icon: Info,
+          };
+  const OperationalStatusIcon = operationalStatusMeta.icon;
   const syncingCloudSessionName =
     isSyncingCloudSessionId != null
       ? sessions.find((session) => session.id === isSyncingCloudSessionId)?.name ?? 'la salida seleccionada'
@@ -3575,7 +4134,7 @@ export default function App() {
   ];
   const isCatalogApiUnavailable = catalogApiStatus === 'unavailable';
   const showSidebar = true;
-  const showMobileDock = true;
+  const showMobileDock = isMobileViewport;
   const shouldShowOperationalBanner = view !== 'home';
   const shouldShowStatusStack =
     shouldShowOperationalBanner ||
@@ -4135,6 +4694,697 @@ export default function App() {
     );
   }
 
+  function renderSessionBrowserPanel() {
+    return (
+      <Card variant="preview" tone="mint" className="dashboard-browser-panel dashboard-support-panel">
+        <div className="panel-heading panel-heading--compact">
+          <p className="eyebrow">Visibles</p>
+          <h3 className="display-heading text-2xl">Trabajos y salidas</h3>
+          <p className="module-copy text-sm">Acceso directo a lo ya creado y a la salida activa.</p>
+        </div>
+
+        <div className="dashboard-browser-grid dashboard-browser-grid--stacked">
+          <section className="dashboard-subsection" aria-labelledby="session-browser-projects-title">
+            <SectionHeader
+              titleId="session-browser-projects-title"
+              title="Trabajos"
+              titleAs="h4"
+              compact
+            />
+            {recentProjectGroups.length > 0 ? (
+              <StructuredList>
+                {recentProjectGroups.map((group) => (
+                  <li key={group.key}>
+                    <ListRow
+                      dense
+                      onClick={() => focusArchiveProject(group.key)}
+                      eyebrow={group.activeSessionCount > 0 ? 'Trabajo activo' : 'Trabajo'}
+                      title={group.name}
+                      meta={`${group.sessionCount} salidas · ${group.pointCount} registros · ${group.audioTakeCount} H6${
+                        group.activeSessionCount > 0
+                          ? ` · ${group.activeSessionCount} activa${group.activeSessionCount === 1 ? '' : 's'}`
+                          : ''
+                      }`}
+                      actionLabel="Abrir trabajo"
+                    />
+                  </li>
+                ))}
+              </StructuredList>
+            ) : (
+              <p className="module-copy text-sm">Todavía no hay trabajos archivados.</p>
+            )}
+          </section>
+
+          <section className="dashboard-subsection" aria-labelledby="session-browser-sessions-title">
+            <SectionHeader
+              titleId="session-browser-sessions-title"
+              title="Salidas"
+              titleAs="h4"
+              compact
+            />
+            {sessions.length > 0 ? (
+              <StructuredList>
+                {sessions.slice(0, 6).map((session) => (
+                  <li key={session.id}>
+                    <ListRow
+                      dense
+                      onClick={() => openSessionWorkspace(session.id)}
+                      eyebrow={session.status === 'active' ? 'Activa' : 'Cerrada'}
+                      title={session.name}
+                      meta={`${resolveProjectName(session.projectName)} · ${session.points.length} registros · ${session.audioTakes.length} H6`}
+                      actionLabel={session.status === 'active' ? 'Abrir salida' : 'Ver salida'}
+                    />
+                  </li>
+                ))}
+              </StructuredList>
+            ) : (
+              <p className="module-copy text-sm">No hay salidas creadas todavía.</p>
+            )}
+          </section>
+        </div>
+      </Card>
+    );
+  }
+
+  function renderSessionSearchPanel() {
+    return (
+      <Card variant="preview" tone="clay" className="dashboard-search-panel dashboard-support-panel">
+        <div className="panel-heading panel-heading--compact">
+          <p className="eyebrow">Buscar registros</p>
+          <h3 className="display-heading text-2xl">Lugar, trabajo o referencia H6</h3>
+          <p className="module-copy text-sm">Busca por lugar, trabajo o referencia H6.</p>
+        </div>
+
+        <label className="search-shell">
+          <Search className="h-4 w-4" />
+          <input
+            value={dashboardQuery}
+            onChange={(event) => setDashboardQuery(event.target.value)}
+            placeholder="Ej. Vigo, lluvia ligera, H6-032..."
+            className="search-shell__input"
+          />
+        </label>
+
+        <div className="dashboard-search-results">
+          {recentRecords.length > 0 ? (
+            <StructuredList>
+              {recentRecords.map((record) => {
+                const badge = resolveSoundscapeBadge(record.point);
+                const BadgeIcon = badge.icon;
+
+                return (
+                  <li key={`${record.sessionId}:${record.point.id}`}>
+                    <ListRow
+                      dense
+                      onClick={() => openRecordView(record.sessionId, record.point.id)}
+                      leadingVisual={<BadgeIcon className="h-4 w-4" />}
+                      title={record.point.placeName}
+                      meta={`${formatDateTime(record.point.createdAt, "d MMM yyyy · HH:mm")} · ${record.projectName}`}
+                      stats={[record.point.soundscapeClassification?.summary || badge.label]}
+                    />
+                  </li>
+                );
+              })}
+            </StructuredList>
+          ) : (
+            <p className="module-copy text-sm">
+              No hay coincidencias para la búsqueda actual.
+            </p>
+          )}
+        </div>
+      </Card>
+    );
+  }
+
+  function renderSessionMapPanel() {
+    return (
+      <Card variant="preview" tone="sky" className="dashboard-map-panel dashboard-support-panel">
+        <div className="panel-heading panel-heading--compact">
+          <p className="eyebrow">Mapa</p>
+          <h3 className="display-heading text-2xl">Actividad global</h3>
+          <p className="module-copy text-sm">Mapa de salidas y registros.</p>
+        </div>
+
+        <p className="dashboard-support-summary">
+          {activityClusters.length} zonas · {currentLocationLabel}
+        </p>
+
+        <FieldActivityMap
+          clusters={activityClusters}
+          currentLocation={
+            currentGps
+              ? {
+                  lat: currentGps.lat,
+                  lon: currentGps.lon,
+                  label: currentLocationLabel,
+                }
+              : null
+          }
+        />
+      </Card>
+    );
+  }
+
+  function renderSessionInsightsPanel() {
+    return (
+      <Card
+        variant="preview"
+        emphasis="passive"
+        tone="amber"
+        className="dashboard-insights-panel dashboard-support-panel dashboard-support-panel--passive"
+      >
+        <div className="panel-heading panel-heading--compact">
+          <p className="eyebrow">Resumen</p>
+          <h3 className="display-heading text-2xl">Volumen y pendientes</h3>
+          <p className="module-copy text-sm">Resumen del archivo y la sincronización.</p>
+        </div>
+
+        <SummaryStrip
+          compact
+          className="dashboard-insights-summary-strip"
+          ariaLabel="Resumen general del archivo"
+          items={[
+            { label: 'Trabajos', value: projectCount },
+            { label: 'Salidas', value: sessions.length },
+            { label: 'Fotos', value: totalPhotoCount },
+            { label: 'Tomas H6', value: totalAudioTakeCount },
+          ]}
+        />
+
+        <section className="dashboard-insights-section" aria-labelledby="dashboard-insights-pending-title">
+          <SectionHeader
+            titleId="dashboard-insights-pending-title"
+            title="Pendientes"
+            titleAs="h4"
+            compact
+          />
+          <StructuredList>
+            <li>
+              <ListRow
+                dense
+                title="Pendiente nube"
+                meta="Salidas sin respaldo completo."
+                stats={[`${pendingCloudSessionCount}`]}
+              />
+            </li>
+            <li>
+              <ListRow
+                dense
+                title="Pendiente catálogo"
+                meta="Salidas aún no visibles en otros dispositivos."
+                stats={[`${pendingCatalogSessionCount}`]}
+              />
+            </li>
+            <li>
+              <ListRow
+                dense
+                title="Metadatos"
+                meta="Puntos pendientes de clima o lugar."
+                stats={[`${pendingEnrichmentCount}`]}
+              />
+            </li>
+            <li>
+              <ListRow
+                dense
+                title="Tomas por asociar"
+                meta="Audios H6 todavía sin punto asignado."
+                stats={[`${unassignedAudioTakeCount}`]}
+              />
+            </li>
+          </StructuredList>
+        </section>
+
+        {recentInsightProjectGroups.length > 0 ? (
+          <section className="dashboard-insights-section" aria-labelledby="dashboard-insights-projects-title">
+            <SectionHeader
+              titleId="dashboard-insights-projects-title"
+              title="Trabajos recientes"
+              titleAs="h4"
+              compact
+              actionLabel="Ver proyectos"
+              onAction={() => setView('export')}
+            />
+            <StructuredList>
+              {recentInsightProjectGroups.map((group) => (
+                <li key={group.key}>
+                  <ListRow
+                    dense
+                    onClick={() => focusArchiveProject(group.key)}
+                    title={group.name}
+                    meta={`${group.sessionCount} salidas · última salida ${formatDateTime(group.latestStartedAt, "d MMM")}`}
+                    stats={[`${group.pointCount} registros`, `${group.audioTakeCount} H6`]}
+                    actionLabel="Abrir"
+                  />
+                </li>
+              ))}
+            </StructuredList>
+          </section>
+        ) : (
+          <p className="module-copy text-sm">
+            Todavía no hay histórico suficiente.
+          </p>
+        )}
+      </Card>
+    );
+  }
+
+  function renderCaptureListenPanel() {
+    return (
+      <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle listen-panel panel-tone panel-tone--amber">
+        <div className="panel-heading">
+          <p className="eyebrow">Sección IA</p>
+          <h3 className="display-heading text-3xl">Detectar Elementos Del Ambiente</h3>
+          <p className="module-copy text-sm">
+            Escucha 15 segundos con el micro del dispositivo para estimar pájaros, personas hablando, música, pasos, río, mar, lluvia o tráfico. No guarda el audio y la detección es local y aproximada.
+          </p>
+        </div>
+
+        <div
+          className="classification-card"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          aria-busy={soundscapeStatus === 'listening'}
+        >
+          <p className="eyebrow">Resultado</p>
+          <p className="summary-value">
+            {draftSoundscapeClassification?.summary || 'Sin detección todavía'}
+          </p>
+          <p className="module-copy text-sm">{soundscapeMessage}</p>
+          {draftSoundscapeClassification ? (
+            <div className="tag-strip">
+              {draftSoundscapeClassification.tags.map((tag) => (
+                <span key={tag} className="tag-pill">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="action-row">
+          <button
+            type="button"
+            onClick={() => void listenAndClassifySoundscape()}
+            disabled={soundscapeStatus === 'listening'}
+            aria-busy={soundscapeStatus === 'listening'}
+            className="ui-button ui-button-secondary"
+          >
+            <Sparkles className="h-4 w-4" />
+            {soundscapeStatus === 'listening' ? 'Analizando...' : 'Volver a detectar'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderCapturePhotosPanel() {
+    return (
+      <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle photos-panel panel-tone panel-tone--clay">
+        <div className="panel-heading">
+          <p className="eyebrow">Área de fotos</p>
+          <h3 className="display-heading text-3xl">Setup y entorno</h3>
+        </div>
+
+        <label className="upload-zone upload-zone--large">
+          <ImagePlus className="h-8 w-8 text-[color:var(--signal-strong)]" />
+          <div>
+            <p className="display-heading text-2xl">Añadir fotos del punto</p>
+            <p className="module-copy text-sm">
+              Documenta micros, orientación, entorno o condiciones específicas del lugar.
+            </p>
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            multiple
+            className="hidden"
+            onChange={handleDraftPhotosInput}
+          />
+        </label>
+
+        {draftPhotos.length > 0 ? (
+          <div className="photo-grid">
+            {draftPhotos.map((photo) => (
+              <div key={photo.id} className="soft-card">
+                <img src={photo.previewUrl} alt={photo.fileName} className="h-40 w-full object-cover" />
+                <div className="action-row action-row--compact mt-3">
+                  <p className="module-copy text-sm">{photo.fileName}</p>
+                  <IconButton label={`Quitar ${photo.fileName}`} onClick={() => removeDraftPhoto(photo.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </IconButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderCaptureExplorePanel() {
+    return (
+      <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle log-map-panel panel-tone panel-tone--sky">
+        <div className="panel-heading">
+          <p className="eyebrow">Exploración</p>
+          <h3 className="display-heading text-3xl">Mapa y registros previos</h3>
+        </div>
+
+        <SegmentedControl
+          label="Cambiar vista de exploración"
+          value={captureWorkspace}
+          items={[
+            { value: 'map', label: 'Mapa' },
+            { value: 'points', label: 'Lista' },
+          ]}
+          onChange={setCaptureWorkspace}
+          panelIdBase="capture-workspace"
+          size="sm"
+        />
+
+        <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            key={`capture-workspace-${captureWorkspace}`}
+            id={`capture-workspace-panel-${captureWorkspace}`}
+            role="tabpanel"
+            aria-labelledby={`capture-workspace-tab-${captureWorkspace}`}
+            className="content-swap-panel content-swap-panel--local"
+            {...contentSwapMotion}
+          >
+            {captureWorkspace === 'map' ? (
+              <SessionMap
+                points={activeSessionMapPoints}
+                selectedPointId={selectedPointId}
+                onSelectPoint={(pointId) => {
+                  setSelectedPointId(pointId);
+                  setRecordSessionId(activeSession.id);
+                  setRecordPointId(pointId);
+                }}
+                draftPoint={
+                  draftPointCoordinates
+                    ? {
+                        lat: draftPointCoordinates.lat,
+                        lon: draftPointCoordinates.lon,
+                        label: draftPointLabel,
+                      }
+                    : null
+                }
+              />
+            ) : sortedActiveSessionPoints.length > 0 ? (
+              <div className="grid gap-3">
+                {sortedActiveSessionPoints.map((point) => (
+                  <React.Fragment key={point.id}>
+                    <SessionPointCard
+                      point={{
+                        id: point.id,
+                        placeName: point.placeName,
+                        createdAt: point.createdAt,
+                        observedWeather: point.observedWeather,
+                        zoomTakeReference: point.zoomTakeReference,
+                        microphoneSetup: point.microphoneSetup,
+                        tags: point.tags,
+                        photoPreviewUrl: point.photos[0]?.previewUrl ?? undefined,
+                      }}
+                      active={point.id === selectedPoint?.id}
+                      onSelect={() => {
+                        setSelectedPointId(point.id);
+                        setRecordSessionId(activeSession.id);
+                        setRecordPointId(point.id);
+                      }}
+                    />
+                  </React.Fragment>
+                ))}
+              </div>
+            ) : (
+              <p className="module-copy text-sm">
+                Todavía no hay registros guardados en esta salida.
+              </p>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  function renderCaptureRecordPreviewPanel() {
+    return (
+      <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-preview-card panel-tone panel-tone--amber">
+        <div className="panel-heading">
+          <p className="eyebrow">Último registro visible</p>
+          <h3 className="display-heading text-3xl">
+            {selectedPoint ? selectedPoint.placeName : 'Sin registro seleccionado'}
+          </h3>
+        </div>
+
+        {selectedPoint ? (
+          <>
+            <p className="module-copy text-sm">
+              {selectedPoint.soundscapeClassification?.summary || selectedPoint.observedWeather || 'Sin resumen todavía'}
+            </p>
+            <div className="action-row">
+              <button
+                type="button"
+                onClick={() => openRecordView(activeSession.id, selectedPoint.id)}
+                className="ui-button ui-button-secondary"
+              >
+                <History className="h-4 w-4" />
+                Ver registro completado
+              </button>
+              <button
+                type="button"
+                onClick={() => void removePointFromActiveSession(selectedPoint.id)}
+                className="ui-button ui-button-danger"
+              >
+                Eliminar
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="module-copy text-sm">Guarda un punto para abrir su ficha final.</p>
+        )}
+      </div>
+    );
+  }
+
+  function renderArchiveBrowserPanel() {
+    return (
+      <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-browser-panel panel-tone panel-tone--mint">
+        <div className="panel-heading panel-heading--compact archive-browser-panel__header">
+          <p className="eyebrow">Archivo</p>
+          <h3 className="display-heading text-3xl">Proyectos y salidas</h3>
+        </div>
+
+        <p className="archive-browser-panel__selection">
+          {currentArchiveProject
+            ? `Filtrando por ${currentArchiveProject.name}`
+            : 'Mostrando todas las salidas visibles'}
+        </p>
+
+        <div className="archive-filter-strip">
+          <button
+            type="button"
+            onClick={() => focusArchiveProject('all')}
+            className={`archive-filter-button ${selectedArchiveProjectKey === 'all' ? 'is-active' : ''}`}
+          >
+            Todos
+          </button>
+          {archiveProjectGroups.map((group) => (
+            <button
+              key={group.key}
+              type="button"
+              onClick={() => focusArchiveProject(group.key)}
+              className={`archive-filter-button ${selectedArchiveProjectKey === group.key ? 'is-active' : ''}`}
+            >
+              {group.name}
+            </button>
+          ))}
+        </div>
+
+        <SummaryStrip
+          compact
+          className="archive-browser-summary"
+          ariaLabel="Resumen del archivo filtrado"
+          items={archiveBrowserSummaryItems}
+        />
+
+        {currentArchiveProject ? (
+          canManageSelectedProject ? (
+            <details
+              className="manual-details archive-project-admin"
+              aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
+            >
+              <summary className="manual-details__summary">
+                <div>
+                  <p className="eyebrow">Gestionar trabajo</p>
+                  <p className="module-copy text-sm">Renombra o limpia la etiqueta del trabajo seleccionado.</p>
+                </div>
+                <span className="manual-details__hint">Abrir</span>
+              </summary>
+
+              <div className="manual-details__body archive-project-admin__body">
+                <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                  <span>Nombre del trabajo</span>
+                  <input
+                    value={projectDraftName}
+                    onChange={(event) => setProjectDraftName(event.target.value)}
+                    className="field-input"
+                    placeholder="Paisajes urbanos de Vigo"
+                  />
+                </label>
+                <div className="action-row">
+                  <button
+                    type="button"
+                    onClick={() => void renameProject(currentArchiveProject.key)}
+                    disabled={isUpdatingProjectKey === currentArchiveProject.key}
+                    aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
+                    className="ui-button ui-button-secondary"
+                  >
+                    {isUpdatingProjectKey === currentArchiveProject.key ? 'Guardando...' : 'Renombrar trabajo'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void clearProject(currentArchiveProject.key)}
+                    disabled={isUpdatingProjectKey === currentArchiveProject.key}
+                    aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
+                    className="ui-button ui-button-danger"
+                  >
+                    {isUpdatingProjectKey === currentArchiveProject.key ? 'Actualizando...' : 'Quitar trabajo'}
+                  </button>
+                </div>
+              </div>
+            </details>
+          ) : (
+            <p className="module-copy text-sm archive-browser-note">
+              <strong>Sin trabajo</strong> agrupa salidas sin etiqueta.
+            </p>
+          )
+        ) : null}
+
+        <section className="archive-session-browser" aria-labelledby="archive-session-browser-title">
+          <SectionHeader
+            titleId="archive-session-browser-title"
+            title={currentArchiveProject ? 'Salidas del trabajo' : 'Salidas visibles'}
+            description={`${visibleArchiveSessions.length} ${visibleArchiveSessions.length === 1 ? 'salida' : 'salidas'} en el filtro actual.`}
+            titleAs="h4"
+            compact
+          />
+          {visibleArchiveSessions.length > 0 ? (
+            <StructuredList className="archive-session-list">
+              {visibleArchiveSessions.map((session) => (
+                <li key={session.id}>
+                  <ListRow
+                    dense
+                    onClick={() => {
+                      focusArchiveSession(session.id);
+                      setIsArchiveBrowserOpen(false);
+                    }}
+                    className={`archive-session-row ${recordSession?.id === session.id ? 'is-active' : ''}`}
+                    eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
+                    title={session.name}
+                    meta={
+                      currentArchiveProject
+                        ? `${session.region || 'sin zona'} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`
+                        : `${resolveProjectName(session.projectName)} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`
+                    }
+                    stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                    actionLabel={recordSession?.id === session.id ? 'Abierta' : 'Abrir'}
+                  />
+                </li>
+              ))}
+            </StructuredList>
+          ) : (
+            <p className="module-copy text-sm">
+              No hay salidas en el filtro actual.
+            </p>
+          )}
+        </section>
+      </div>
+    );
+  }
+
+  function renderArchiveWorkspaceStack() {
+    return (
+      <div className="archive-detail-stack">
+        <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-workspace-panel panel-tone panel-tone--sky">
+          <div className="archive-workspace-panel__header">
+            <div className="archive-workspace-panel__copy">
+              <p className="eyebrow">Espacio de trabajo</p>
+              <h3 className="display-heading text-3xl">{recordSession?.name ?? 'Sin salida seleccionada'}</h3>
+            </div>
+
+            <div className="archive-workspace-panel__controls">
+              {isCompactArchiveLayout ? (
+                <div className="archive-workspace-panel__primary-actions">
+                  <button
+                    ref={archiveDrawerTriggerRef}
+                    type="button"
+                    onClick={() => setIsArchiveBrowserOpen(true)}
+                    className="ui-button ui-button-secondary"
+                  >
+                    <History className="h-4 w-4" />
+                    Cambiar salida
+                  </button>
+                </div>
+              ) : null}
+
+              {recordSession ? (
+                <ul className="archive-workspace-panel__stats" aria-label="Resumen de la salida abierta">
+                  <li>
+                    <span className="telemetry-chip">{resolveProjectName(recordSession.projectName)}</span>
+                  </li>
+                  <li>
+                    <span className="telemetry-chip">
+                      {recordSession.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
+                    </span>
+                  </li>
+                  <li>
+                    <span className="telemetry-chip">{recordSessionPoints.length} registros</span>
+                  </li>
+                  <li>
+                    <span className="telemetry-chip">{recordSessionAudioLibrary.length} tomas H6</span>
+                  </li>
+                </ul>
+              ) : null}
+
+              <SegmentedControl
+                label="Cambiar área del espacio de trabajo"
+                value={archiveWorkspace}
+                items={[
+                  { value: 'session', label: 'Salida' },
+                  { value: 'media', label: 'Biblioteca' },
+                  { value: 'record', label: 'Registro', disabled: !recordPoint },
+                ]}
+                onChange={setArchiveWorkspace}
+                panelIdBase="archive-workspace"
+                size="sm"
+                fill={isCompactArchiveLayout}
+                className="archive-workspace-switch"
+              />
+            </div>
+          </div>
+        </div>
+
+        <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            key={`archive-workspace-${archiveWorkspace}`}
+            id={`archive-workspace-panel-${archiveWorkspace}`}
+            role="tabpanel"
+            aria-labelledby={`archive-workspace-tab-${archiveWorkspace}`}
+            className="content-swap-panel content-swap-panel--workspace"
+            {...contentSwapMotion}
+          >
+            {archiveWorkspace === 'session'
+              ? renderArchiveSessionWorkspace()
+              : archiveWorkspace === 'media'
+                ? renderArchiveMediaWorkspace()
+                : renderArchiveRecordWorkspace()}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    );
+  }
+
   function renderArchiveSessionWorkspace() {
     if (!recordSession) {
       return null;
@@ -4522,7 +5772,7 @@ export default function App() {
           <div className="action-row action-row--compact record-header-card__actions">
             <button
               type="button"
-              onClick={() => exportSessionPointCsv(recordSession, recordPoint)}
+              onClick={() => void exportSelectedRecordCsv()}
               className="ui-button ui-button-primary"
             >
               <FileSpreadsheet className="h-4 w-4" />
@@ -4530,7 +5780,7 @@ export default function App() {
             </button>
             <button
               type="button"
-              onClick={() => exportSessionPointKml(recordSession, recordPoint)}
+              onClick={() => void exportSelectedRecordKml()}
               className="ui-button ui-button-secondary"
             >
               <MapIcon className="h-4 w-4" />
@@ -4768,6 +6018,9 @@ export default function App() {
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {activeBusyMessage}
       </div>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {statusNote}
+      </div>
       <input
         ref={zoomImportInputRef}
         type="file"
@@ -4810,7 +6063,7 @@ export default function App() {
           aria-hidden={!isNavDrawerOpen}
         >
           <p id="tablet-drawer-description" className="sr-only">
-            Navegación principal y estado de la salida actual.
+            Navegación principal para tablet.
           </p>
           <div className="fieldnotes-tablet-drawer__header">
             <p className="eyebrow">Navegación</p>
@@ -4835,10 +6088,52 @@ export default function App() {
               isOnline={isOnline}
               onOpenProjects={() => setView('export')}
               onImportZoom={() => activeSession ? openZoomImportPicker(activeSession.id) : undefined}
+              showSessionSummary={false}
               onNavigate={() => setIsNavDrawerOpen(false)}
             />
           </div>
         </aside>
+
+        {view === 'export' && isCompactArchiveLayout ? (
+          <>
+            <div
+              className={`archive-browser-drawer__backdrop ${isArchiveBrowserOpen ? 'is-open' : ''}`}
+              aria-hidden="true"
+              onClick={() => setIsArchiveBrowserOpen(false)}
+            />
+
+            <aside
+              ref={archiveDrawerPanelRef}
+              id="archive-browser-drawer"
+              className={`archive-browser-drawer ${isArchiveBrowserOpen ? 'is-open' : ''}`}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="archive-browser-drawer-title"
+              aria-describedby="archive-browser-drawer-description"
+              aria-hidden={!isArchiveBrowserOpen}
+            >
+              <p id="archive-browser-drawer-description" className="sr-only">
+                Selector compacto de proyectos y salidas.
+              </p>
+              <div className="archive-browser-drawer__header">
+                <p id="archive-browser-drawer-title" className="eyebrow">Archivo</p>
+                <button
+                  ref={archiveDrawerCloseButtonRef}
+                  type="button"
+                  className="icon-button"
+                  aria-label="Cerrar archivo"
+                  onClick={() => setIsArchiveBrowserOpen(false)}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="archive-browser-drawer__content">
+                {renderArchiveBrowserPanel()}
+              </div>
+            </aside>
+          </>
+        ) : null}
 
         <div className="fieldnotes-shell-body">
           {showSidebar ? (
@@ -5011,10 +6306,25 @@ export default function App() {
           {shouldShowStatusStack ? (
             <section className="status-stack" aria-label="Avisos operativos">
               {shouldShowOperationalBanner ? (
-                <Card variant="state" className="status-banner">
-                  <p className="eyebrow">Estado operativo</p>
-                  <p className="module-copy text-sm">{statusNote}</p>
-                </Card>
+                <AnimatePresence initial={false} mode="wait">
+                  <motion.div
+                    key={`${statusTone}:${statusNote}`}
+                    className="status-stack__item"
+                    {...contentSwapMotion}
+                  >
+                    <Card variant="state" className={`status-banner ${operationalStatusMeta.className}`}>
+                      <div className="status-banner__header">
+                        <span className="status-banner__icon" aria-hidden="true">
+                          <OperationalStatusIcon className="h-4 w-4" />
+                        </span>
+                        <div className="status-banner__copy">
+                          <p className="eyebrow">{operationalStatusMeta.eyebrow}</p>
+                          <p className="module-copy text-sm">{statusNote}</p>
+                        </div>
+                      </div>
+                    </Card>
+                  </motion.div>
+                </AnimatePresence>
               ) : null}
               {!isOnline ? (
                 <Card variant="state" border="strong" className="status-banner status-banner--warning">
@@ -5058,7 +6368,7 @@ export default function App() {
                 className="layout-home"
                 {...viewTransitionMotion}
               >
-                <div className="home-primary-grid">
+                <div className={isCompactHomeLayout ? 'home-primary-stack' : 'home-primary-grid'}>
                   <Card
                     as="section"
                     variant="panel"
@@ -5165,339 +6475,99 @@ export default function App() {
                       />
                     )}
                   </Card>
-
-                  <Card
-                    as="section"
-                    variant="preview"
-                    tone="mint"
-                    className="home-library-card home-zone home-zone--work"
-                    aria-labelledby="home-projects-title"
-                    aria-describedby="home-projects-description"
-                  >
-                    <SectionHeader
-                      eyebrow="Trabajo reciente"
-                      titleId="home-projects-title"
-                      descriptionId="home-projects-description"
-                      title="Trabajos y salidas"
-                      description="Los proyectos y salidas recientes quedan agrupados en una sola zona para retomar trabajo sin buscar entre bloques dispersos."
-                      actionLabel={hasRecentWork ? 'Ver salidas' : undefined}
-                      onAction={hasRecentWork ? () => setView('session') : undefined}
-                    />
-
-                    {hasRecentWork ? (
-                      <div className="dashboard-browser-grid">
-                        <section
-                          className="dashboard-subsection"
-                          aria-labelledby="home-project-groups-title"
-                          aria-describedby="home-project-groups-description"
-                        >
-                          <SectionHeader
-                            titleId="home-project-groups-title"
-                            descriptionId="home-project-groups-description"
-                            title="Trabajos recientes"
-                            description={
-                              recentNamedProjectGroups.length > 0
-                                ? `${recentNamedProjectGroups.length} trabajos visibles ahora en el resumen.`
-                                : 'Aún no hay trabajos con nombre visibles en el resumen.'
-                            }
-                            titleAs="h3"
-                            compact
-                          />
-                          {recentNamedProjectGroups.length > 0 ? (
-                            <StructuredList>
-                              {recentNamedProjectGroups.map((group) => (
-                                <li key={group.key}>
-                                  <ListRow
-                                    onClick={() => openProjectArchiveFromHome(group.key)}
-                                    eyebrow={group.activeSessionCount > 0 ? 'Con salida activa' : 'Trabajo'}
-                                    title={group.name}
-                                    meta={
-                                      group.activeSessionCount > 0
-                                        ? `${group.activeSessionCount} salida${group.activeSessionCount === 1 ? '' : 's'} activa${group.activeSessionCount === 1 ? '' : 's'} ahora.`
-                                        : 'Sin actividad abierta ahora.'
-                                    }
-                                    stats={[
-                                      `${group.sessionCount} salidas`,
-                                      `${group.pointCount} registros`,
-                                      `${group.audioTakeCount} H6`,
-                                    ]}
-                                    actionLabel="Abrir proyecto"
-                                  />
-                                </li>
-                              ))}
-                            </StructuredList>
-                          ) : (
-                            <EmptyState
-                              eyebrow="Trabajos"
-                              title="Todavía no hay trabajos"
-                              description="Tus salidas pueden existir sin trabajo. El primer trabajo aparecerá cuando crees o edites una salida con nombre de trabajo."
-                              icon={<FileSpreadsheet className="h-5 w-5" />}
-                              action={
-                                <Button variant="ghost" onClick={() => setView('session')}>
-                                  Ir a salidas
-                                </Button>
-                              }
-                              compact
-                            />
-                          )}
-                        </section>
-
-                        <section
-                          className="dashboard-subsection"
-                          aria-labelledby="home-recent-sessions-title"
-                          aria-describedby="home-recent-sessions-description"
-                        >
-                          <SectionHeader
-                            titleId="home-recent-sessions-title"
-                            descriptionId="home-recent-sessions-description"
-                            title="Salidas recientes"
-                            description={`${recentSessions.length} salidas recientes con acceso directo.`}
-                            titleAs="h3"
-                            compact
-                          />
-                          <StructuredList>
-                            {recentSessions.map((session) => (
-                              <li key={session.id}>
-                                <ListRow
-                                  onClick={() => openSessionArchiveFromHome(session.id)}
-                                  eyebrow={session.status === 'active' ? 'Salida activa' : 'Salida cerrada'}
-                                  title={session.name}
-                                  meta={`${resolveProjectName(session.projectName)} · ${session.region || 'sin zona definida'}`}
-                                  stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
-                                  actionLabel="Ver salida"
-                                />
-                              </li>
-                            ))}
-                          </StructuredList>
-                        </section>
-                      </div>
-                    ) : (
-                      <EmptyState
-                        eyebrow="Trabajo"
-                        title="Todavía no hay trabajo reciente"
-                        description="Cuando guardes la primera salida, esta zona mostrará trabajos, salidas y accesos directos para retomarlos sin buscar."
-                        icon={<History className="h-5 w-5" />}
-                        action={
-                          <Button variant="secondary" onClick={() => setView('session')}>
-                            Preparar primera salida
-                          </Button>
-                        }
-                      />
-                    )}
-                  </Card>
-
-                  <Card
-                    as="section"
-                    variant="preview"
-                    tone="amber"
-                    className="home-library-card home-library-card--media home-zone home-zone--media"
-                    aria-labelledby="home-media-title"
-                    aria-describedby="home-media-description"
-                  >
-                    <SectionHeader
-                      eyebrow="Media reciente"
-                      titleId="home-media-title"
-                      descriptionId="home-media-description"
-                      title="Fotos y audio recientes"
-                      description="Vista previa rápida de lo último capturado o importado."
-                      actionLabel={hasRecentMedia ? 'Ver biblioteca completa' : undefined}
-                      onAction={hasRecentMedia ? openMediaArchiveFromHome : undefined}
-                    />
-
-                    {hasRecentMedia ? (
-                      <div className="home-media-panel">
-                        <div className="home-media-panel__controls">
-                          <SegmentedControl
-                            label="Filtrar media reciente"
-                            value={homeMediaFilter}
-                            items={HOME_MEDIA_FILTERS.map((filterOption) => ({
-                              value: filterOption.id,
-                              label: filterOption.label,
-                              count:
-                                filterOption.id === 'all'
-                                  ? recentMediaLibraryItems.length
-                                  : filterOption.id === 'photos'
-                                    ? recentPhotoLibraryItems.length
-                                    : recentAudioLibraryItems.length,
-                            }))}
-                            onChange={setHomeMediaFilter}
-                            size="sm"
-                          />
-                          <p className="module-copy text-sm home-media-panel__summary">{homeMediaPreviewSummary}</p>
-                        </div>
-
-                        {homeMediaFilter === 'all' ? (
-                          recentMediaLibraryItems.length > 0 ? (
-                            <div className="home-media-overview">
-                              <section className="home-media-overview__section" aria-labelledby="home-media-overview-photos-title">
-                                <div className="home-media-overview__header">
-                                  <p id="home-media-overview-photos-title" className="home-media-overview__title">
-                                    Últimas fotos
-                                  </p>
-                                  <span className="home-media-overview__count">
-                                    {recentPhotoLibraryItems.length}
-                                  </span>
-                                </div>
-
-                                {recentOverviewPhotos.length > 0 ? (
-                                  <StructuredList>
-                                    {recentOverviewPhotos.map((photo) => (
-                                      <li key={photo.id}>
-                                        <ListRow
-                                          dense
-                                          onClick={() => openRecordView(photo.sessionId, photo.pointId)}
-                                          aria-label={`Ver registro de ${photo.pointName}`}
-                                          leadingVisual={
-                                            <span className="home-media-preview-card__visual home-media-preview-card__visual--compact">
-                                              <img src={photo.previewUrl} alt="" className="home-media-preview-card__thumb" />
-                                            </span>
-                                          }
-                                          eyebrow="Foto"
-                                          title={photo.pointName}
-                                          meta={`${photo.sessionName} · ${formatDateTime(photo.createdAt, "d MMM · HH:mm")}`}
-                                        />
-                                      </li>
-                                    ))}
-                                  </StructuredList>
-                                ) : (
-                                  <p className="module-copy text-sm">Sin fotos recientes.</p>
-                                )}
-                              </section>
-
-                              <section className="home-media-overview__section" aria-labelledby="home-media-overview-audio-title">
-                                <div className="home-media-overview__header">
-                                  <p id="home-media-overview-audio-title" className="home-media-overview__title">
-                                    Últimas tomas H6
-                                  </p>
-                                  <span className="home-media-overview__count">
-                                    {recentAudioLibraryItems.length}
-                                  </span>
-                                </div>
-
-                                {recentOverviewAudio.length > 0 ? (
-                                  <StructuredList>
-                                    {recentOverviewAudio.map((take) => (
-                                      <li key={take.id}>
-                                        <ListRow
-                                          dense
-                                          onClick={() =>
-                                            take.associatedPointId
-                                              ? openRecordView(take.sessionId, take.associatedPointId)
-                                              : openSessionMediaArchiveFromHome(take.sessionId)
-                                          }
-                                          aria-label={
-                                            take.associatedPointId
-                                              ? `Abrir registro asociado a ${take.fileName}`
-                                              : `Abrir biblioteca de la salida para ${take.fileName}`
-                                          }
-                                          leadingVisual={
-                                            <span className="home-media-preview-card__visual home-media-preview-card__visual--audio">
-                                              <span className="home-media-preview-card__icon home-media-preview-card__icon--compact">
-                                                <AudioWaveform className="h-4 w-4" />
-                                              </span>
-                                            </span>
-                                          }
-                                          eyebrow="Toma H6"
-                                          title={take.fileName}
-                                          meta={
-                                            take.pointName
-                                              ? `${take.pointName} · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
-                                              : `${take.projectName} · sin punto asociado · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
-                                          }
-                                        />
-                                      </li>
-                                    ))}
-                                  </StructuredList>
-                                ) : (
-                                  <p className="module-copy text-sm">Sin tomas recientes.</p>
-                                )}
-                              </section>
-                            </div>
-                          ) : (
-                            <p className="module-copy text-sm">{homeMediaEmptyMessage}</p>
-                          )
-                        ) : homeMediaFilter === 'photos' ? (
-                          recentPhotoLibrary.length > 0 ? (
-                            <ul className="home-media-grid">
-                              {recentPhotoLibrary.map((photo) => (
-                                <li key={photo.id}>
-                                  <button
-                                    type="button"
-                                    onClick={() => openRecordView(photo.sessionId, photo.pointId)}
-                                    aria-label={`Ver registro de ${photo.pointName}`}
-                                    className="media-thumb-card media-thumb-card--preview"
-                                  >
-                                    <img src={photo.previewUrl} alt={photo.pointName} className="media-thumb-card__image" />
-                                    <span className="media-thumb-card__caption">
-                                      <strong>{photo.pointName}</strong>
-                                      <small>
-                                        {photo.sessionName} · {formatDateTime(photo.createdAt, "d MMM · HH:mm")}
-                                      </small>
-                                    </span>
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="module-copy text-sm">{homeMediaEmptyMessage}</p>
-                          )
-                        ) : recentAudioLibrary.length > 0 ? (
-                          <StructuredList>
-                            {recentAudioLibrary.map((take) => (
-                              <li key={take.id}>
-                                <ListRow
-                                  dense
-                                  onClick={() =>
-                                    take.associatedPointId
-                                      ? openRecordView(take.sessionId, take.associatedPointId)
-                                      : openSessionMediaArchiveFromHome(take.sessionId)
-                                  }
-                                  aria-label={
-                                    take.associatedPointId
-                                      ? `Abrir registro asociado a ${take.fileName}`
-                                      : `Abrir biblioteca de la salida para ${take.fileName}`
-                                  }
-                                  leadingVisual={
-                                    <span className="home-media-preview-card__visual home-media-preview-card__visual--audio">
-                                      <span className="home-media-preview-card__icon home-media-preview-card__icon--compact">
-                                        <AudioWaveform className="h-4 w-4" />
-                                      </span>
-                                    </span>
-                                  }
-                                  eyebrow="Toma H6"
-                                  title={take.fileName}
-                                  meta={
-                                    take.pointName
-                                      ? `${take.pointName} · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
-                                      : `${take.projectName} · sin punto asociado · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
-                                  }
-                                  actionLabel={take.associatedPointId ? 'Abrir registro' : 'Abrir biblioteca'}
-                                />
-                              </li>
-                            ))}
-                          </StructuredList>
-                        ) : (
-                          <p className="module-copy text-sm">{homeMediaEmptyMessage}</p>
-                        )}
-                      </div>
-                    ) : (
-                      <EmptyState
-                        eyebrow="Media"
-                        title="Todavía no hay media reciente"
+                  {isCompactHomeLayout ? (
+                    <Card
+                      as="section"
+                      variant="preview"
+                      tone={effectiveHomeSecondaryTab === 'work' ? 'mint' : 'amber'}
+                      className="home-secondary-hub home-zone home-zone--secondary"
+                      aria-labelledby="home-secondary-hub-title"
+                      aria-describedby="home-secondary-hub-description"
+                    >
+                      <SectionHeader
+                        eyebrow="Acceso reciente"
+                        titleId="home-secondary-hub-title"
+                        descriptionId="home-secondary-hub-description"
+                        title="Trabajo y media"
                         description={
-                          activeSession
-                            ? 'Las fotos y tomas H6 aparecerán aquí en cuanto guardes el primer registro o importes audio a la salida activa.'
-                            : 'Las fotos y tomas H6 aparecerán aquí cuando empieces una salida y registres el primer punto.'
+                          effectiveHomeSecondaryTab === 'work'
+                            ? 'Retoma trabajos y salidas recientes desde una sola zona secundaria.'
+                            : 'Revisa fotos y audio recientes sin convertir el resumen en una biblioteca completa.'
                         }
-                        icon={<ImagePlus className="h-5 w-5" />}
-                        action={
-                          <Button variant="secondary" onClick={() => setView(activeSession ? 'point' : 'session')}>
-                            {activeSession ? 'Ir a captura' : 'Preparar salida'}
-                          </Button>
-                        }
+                        actionLabel={homeSecondaryActionLabel}
+                        onAction={homeSecondaryActionLabel ? homeSecondaryAction : undefined}
                       />
-                    )}
-                  </Card>
+
+                      <div className="home-secondary-hub__controls">
+                        <SegmentedControl
+                          label="Cambiar contenido reciente del resumen"
+                          value={effectiveHomeSecondaryTab}
+                          items={[
+                            { value: 'work', label: 'Trabajo', count: recentSessions.length },
+                            { value: 'media', label: 'Media', count: recentMediaLibraryItems.length },
+                          ]}
+                          onChange={setHomeSecondaryTab}
+                          panelIdBase="home-secondary"
+                          size="sm"
+                        />
+                      </div>
+
+                      <AnimatePresence initial={false} mode="wait">
+                        <motion.div
+                          key={`home-secondary-${effectiveHomeSecondaryTab}`}
+                          id={`home-secondary-panel-${effectiveHomeSecondaryTab}`}
+                          role="tabpanel"
+                          aria-labelledby={`home-secondary-tab-${effectiveHomeSecondaryTab}`}
+                          className="content-swap-panel content-swap-panel--local home-secondary-hub__panel"
+                          {...contentSwapMotion}
+                        >
+                          {effectiveHomeSecondaryTab === 'work' ? renderHomeWorkPreview(true) : renderHomeMediaPreview(true)}
+                        </motion.div>
+                      </AnimatePresence>
+                    </Card>
+                  ) : (
+                    <>
+                      <Card
+                        as="section"
+                        variant="preview"
+                        tone="mint"
+                        className="home-library-card home-zone home-zone--work"
+                        aria-labelledby="home-projects-title"
+                        aria-describedby="home-projects-description"
+                      >
+                        <SectionHeader
+                          eyebrow="Trabajo reciente"
+                          titleId="home-projects-title"
+                          descriptionId="home-projects-description"
+                          title="Trabajos y salidas"
+                          description="Los proyectos y salidas recientes quedan agrupados en una sola zona para retomar trabajo sin buscar entre bloques dispersos."
+                          actionLabel={hasRecentWork ? 'Ver salidas' : undefined}
+                          onAction={hasRecentWork ? () => setView('session') : undefined}
+                        />
+                        {renderHomeWorkPreview()}
+                      </Card>
+
+                      <Card
+                        as="section"
+                        variant="preview"
+                        tone="amber"
+                        className="home-library-card home-library-card--media home-zone home-zone--media"
+                        aria-labelledby="home-media-title"
+                        aria-describedby="home-media-description"
+                      >
+                        <SectionHeader
+                          eyebrow="Media reciente"
+                          titleId="home-media-title"
+                          descriptionId="home-media-description"
+                          title="Fotos y audio recientes"
+                          description="Vista previa rápida de lo último capturado o importado."
+                          actionLabel={hasRecentMedia ? 'Ver biblioteca completa' : undefined}
+                          onAction={hasRecentMedia ? openMediaArchiveFromHome : undefined}
+                        />
+                        {renderHomeMediaPreview()}
+                      </Card>
+                    </>
+                  )}
                 </div>
               </motion.section>
             ) : null}
@@ -5658,242 +6728,59 @@ export default function App() {
                   )}
                 </Card>
 
-                <Card variant="panel" tone="mint" className="dashboard-browser-panel dashboard-support-panel">
-                  <div className="panel-heading panel-heading--compact">
-                    <p className="eyebrow">Reciente</p>
-                    <h3 className="display-heading text-2xl">Trabajos y salidas</h3>
-                  </div>
-
-                  <div className="dashboard-browser-grid dashboard-browser-grid--stacked">
-                    <section className="dashboard-subsection" aria-labelledby="session-browser-projects-title">
-                      <SectionHeader
-                        titleId="session-browser-projects-title"
-                        title="Trabajos"
-                        titleAs="h4"
-                        compact
-                      />
-                      {recentProjectGroups.length > 0 ? (
-                        <StructuredList>
-                          {recentProjectGroups.map((group) => (
-                            <li key={group.key}>
-                              <ListRow
-                                dense
-                                onClick={() => focusArchiveProject(group.key)}
-                                eyebrow={group.activeSessionCount > 0 ? 'Trabajo activo' : 'Trabajo'}
-                                title={group.name}
-                                meta={`${group.sessionCount} salidas · ${group.pointCount} registros · ${group.audioTakeCount} H6${
-                                  group.activeSessionCount > 0
-                                    ? ` · ${group.activeSessionCount} activa${group.activeSessionCount === 1 ? '' : 's'}`
-                                    : ''
-                                }`}
-                                actionLabel="Abrir trabajo"
-                              />
-                            </li>
-                          ))}
-                        </StructuredList>
-                      ) : (
-                        <p className="module-copy text-sm">Todavía no hay trabajos archivados.</p>
-                      )}
-                    </section>
-
-                    <section className="dashboard-subsection" aria-labelledby="session-browser-sessions-title">
-                      <SectionHeader
-                        titleId="session-browser-sessions-title"
-                        title="Salidas"
-                        titleAs="h4"
-                        compact
-                      />
-                      {sessions.length > 0 ? (
-                        <StructuredList>
-                          {sessions.slice(0, 6).map((session) => (
-                            <li key={session.id}>
-                              <ListRow
-                                dense
-                                onClick={() => openSessionWorkspace(session.id)}
-                                eyebrow={session.status === 'active' ? 'Activa' : 'Cerrada'}
-                                title={session.name}
-                                meta={`${resolveProjectName(session.projectName)} · ${session.points.length} registros · ${session.audioTakes.length} H6`}
-                                actionLabel={session.status === 'active' ? 'Abrir salida' : 'Ver salida'}
-                              />
-                            </li>
-                          ))}
-                        </StructuredList>
-                      ) : (
-                        <p className="module-copy text-sm">No hay salidas creadas todavía.</p>
-                      )}
-                    </section>
-                  </div>
-                </Card>
-
-                <Card variant="preview" tone="clay" className="dashboard-search-panel dashboard-support-panel">
-                  <div className="panel-heading panel-heading--compact">
-                    <p className="eyebrow">Buscar registros</p>
-                    <h3 className="display-heading text-2xl">Lugar, trabajo o referencia H6</h3>
-                    <p className="module-copy text-sm">Busca por lugar, trabajo o referencia H6.</p>
-                  </div>
-
-                  <label className="search-shell">
-                    <Search className="h-4 w-4" />
-                    <input
-                      value={dashboardQuery}
-                      onChange={(event) => setDashboardQuery(event.target.value)}
-                      placeholder="Ej. Vigo, lluvia ligera, H6-032..."
-                      className="search-shell__input"
-                    />
-                  </label>
-
-                  <div className="dashboard-search-results">
-                    {recentRecords.length > 0 ? (
-                      <StructuredList>
-                        {recentRecords.map((record) => {
-                          const badge = resolveSoundscapeBadge(record.point);
-                          const BadgeIcon = badge.icon;
-
-                          return (
-                            <li key={`${record.sessionId}:${record.point.id}`}>
-                              <ListRow
-                                dense
-                                onClick={() => openRecordView(record.sessionId, record.point.id)}
-                                leadingVisual={<BadgeIcon className="h-4 w-4" />}
-                                title={record.point.placeName}
-                                meta={`${formatDateTime(record.point.createdAt, "d MMM yyyy · HH:mm")} · ${record.projectName}`}
-                                stats={[record.point.soundscapeClassification?.summary || badge.label]}
-                              />
-                            </li>
-                          );
-                        })}
-                      </StructuredList>
-                    ) : (
-                      <p className="module-copy text-sm">
-                        No hay coincidencias para la búsqueda actual.
-                      </p>
-                    )}
-                  </div>
-                </Card>
-
-                <Card variant="preview" tone="sky" className="dashboard-map-panel dashboard-support-panel">
-                  <div className="panel-heading panel-heading--compact">
-                    <p className="eyebrow">Mapa</p>
-                    <h3 className="display-heading text-2xl">Actividad global</h3>
-                    <p className="module-copy text-sm">Mapa de salidas y registros.</p>
-                  </div>
-
-                  <p className="dashboard-support-summary">
-                    {activityClusters.length} zonas · {currentLocationLabel}
-                  </p>
-
-                  <FieldActivityMap
-                    clusters={activityClusters}
-                    currentLocation={
-                      currentGps
-                        ? {
-                            lat: currentGps.lat,
-                            lon: currentGps.lon,
-                            label: currentLocationLabel,
-                          }
-                        : null
-                    }
-                  />
-                </Card>
-
-                <Card
-                  variant="preview"
-                  emphasis="passive"
-                  tone="amber"
-                  className="dashboard-insights-panel dashboard-support-panel dashboard-support-panel--passive"
-                >
-                  <div className="panel-heading panel-heading--compact">
-                    <p className="eyebrow">Resumen</p>
-                    <h3 className="display-heading text-2xl">Volumen y pendientes</h3>
-                    <p className="module-copy text-sm">Resumen del archivo y la sincronización.</p>
-                  </div>
-
-                  <SummaryStrip
-                    compact
-                    className="dashboard-insights-summary-strip"
-                    ariaLabel="Resumen general del archivo"
-                    items={[
-                      { label: 'Trabajos', value: projectCount },
-                      { label: 'Salidas', value: sessions.length },
-                      { label: 'Fotos', value: totalPhotoCount },
-                      { label: 'Tomas H6', value: totalAudioTakeCount },
-                    ]}
-                  />
-
-                  <section className="dashboard-insights-section" aria-labelledby="dashboard-insights-pending-title">
+                {isCompactSessionLayout ? (
+                  <section className="dashboard-secondary-workspace" aria-labelledby="session-secondary-workspace-title">
                     <SectionHeader
-                      titleId="dashboard-insights-pending-title"
-                      title="Pendientes"
-                      titleAs="h4"
-                      compact
+                      eyebrow="Área secundaria"
+                      titleId="session-secondary-workspace-title"
+                      title="Buscar, mapa y visibles"
+                      description="En compacto, el resto del trabajo vive en una sola superficie para evitar cuatro paneles grandes compitiendo a la vez."
+                      actionLabel={sessionSupportTab === 'insights' ? 'Ver proyectos' : undefined}
+                      onAction={sessionSupportTab === 'insights' ? () => setView('export') : undefined}
                     />
-                    <StructuredList>
-                      <li>
-                        <ListRow
-                          dense
-                          title="Pendiente nube"
-                          meta="Salidas sin respaldo completo."
-                          stats={[`${pendingCloudSessionCount}`]}
-                        />
-                      </li>
-                      <li>
-                        <ListRow
-                          dense
-                          title="Pendiente catálogo"
-                          meta="Salidas aún no visibles en otros dispositivos."
-                          stats={[`${pendingCatalogSessionCount}`]}
-                        />
-                      </li>
-                      <li>
-                        <ListRow
-                          dense
-                          title="Metadatos"
-                          meta="Puntos pendientes de clima o lugar."
-                          stats={[`${pendingEnrichmentCount}`]}
-                        />
-                      </li>
-                      <li>
-                        <ListRow
-                          dense
-                          title="Tomas por asociar"
-                          meta="Audios H6 todavía sin punto asignado."
-                          stats={[`${unassignedAudioTakeCount}`]}
-                        />
-                      </li>
-                    </StructuredList>
-                  </section>
 
-                  {recentInsightProjectGroups.length > 0 ? (
-                    <section className="dashboard-insights-section" aria-labelledby="dashboard-insights-projects-title">
-                      <SectionHeader
-                        titleId="dashboard-insights-projects-title"
-                        title="Trabajos recientes"
-                        titleAs="h4"
-                        compact
-                        actionLabel="Ver proyectos"
-                        onAction={() => setView('export')}
-                      />
-                      <StructuredList>
-                        {recentInsightProjectGroups.map((group) => (
-                          <li key={group.key}>
-                            <ListRow
-                              dense
-                              onClick={() => focusArchiveProject(group.key)}
-                              title={group.name}
-                              meta={`${group.sessionCount} salidas · última salida ${formatDateTime(group.latestStartedAt, "d MMM")}`}
-                              stats={[`${group.pointCount} registros`, `${group.audioTakeCount} H6`]}
-                              actionLabel="Abrir"
-                            />
-                          </li>
-                        ))}
-                      </StructuredList>
-                    </section>
-                  ) : (
-                    <p className="module-copy text-sm">
-                      Todavía no hay histórico suficiente.
-                    </p>
-                  )}
-                </Card>
+                    <SegmentedControl
+                      label="Cambiar área secundaria de salidas"
+                      value={sessionSupportTab}
+                      items={[
+                        { value: 'browser', label: 'Visibles' },
+                        { value: 'search', label: 'Buscar' },
+                        { value: 'map', label: 'Mapa' },
+                        { value: 'insights', label: 'Resumen' },
+                      ]}
+                      onChange={setSessionSupportTab}
+                      panelIdBase="session-support"
+                      size="sm"
+                      fill
+                    />
+
+                    <AnimatePresence initial={false} mode="wait">
+                      <motion.div
+                        key={`session-support-${sessionSupportTab}`}
+                        id={`session-support-panel-${sessionSupportTab}`}
+                        role="tabpanel"
+                        aria-labelledby={`session-support-tab-${sessionSupportTab}`}
+                        className="content-swap-panel content-swap-panel--workspace"
+                        {...contentSwapMotion}
+                      >
+                        {sessionSupportTab === 'browser'
+                          ? renderSessionBrowserPanel()
+                          : sessionSupportTab === 'search'
+                            ? renderSessionSearchPanel()
+                            : sessionSupportTab === 'map'
+                              ? renderSessionMapPanel()
+                              : renderSessionInsightsPanel()}
+                      </motion.div>
+                    </AnimatePresence>
+                  </section>
+                ) : (
+                  <>
+                    {renderSessionBrowserPanel()}
+                    {renderSessionSearchPanel()}
+                    {renderSessionMapPanel()}
+                    {renderSessionInsightsPanel()}
+                  </>
+                )}
               </motion.section>
             ) : null}
 
@@ -6200,196 +7087,57 @@ export default function App() {
                       </details>
                     </div>
 
-                    <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle listen-panel panel-tone panel-tone--amber">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Sección IA</p>
-                        <h3 className="display-heading text-3xl">Detectar Elementos Del Ambiente</h3>
-                        <p className="module-copy text-sm">
-                          Escucha 15 segundos con el micro del dispositivo para estimar pájaros, personas hablando, música, pasos, río, mar, lluvia o tráfico. No guarda el audio y la detección es local y aproximada.
-                        </p>
-                      </div>
-
-                      <div
-                        className="classification-card"
-                        role="status"
-                        aria-live="polite"
-                        aria-atomic="true"
-                        aria-busy={soundscapeStatus === 'listening'}
-                      >
-                        <p className="eyebrow">Resultado</p>
-                        <p className="summary-value">
-                          {draftSoundscapeClassification?.summary || 'Sin detección todavía'}
-                        </p>
-                        <p className="module-copy text-sm">{soundscapeMessage}</p>
-                        {draftSoundscapeClassification ? (
-                          <div className="tag-strip">
-                            {draftSoundscapeClassification.tags.map((tag) => (
-                              <span key={tag} className="tag-pill">
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div className="action-row">
-                        <button
-                          type="button"
-                          onClick={() => void listenAndClassifySoundscape()}
-                          disabled={soundscapeStatus === 'listening'}
-                          aria-busy={soundscapeStatus === 'listening'}
-                          className="ui-button ui-button-secondary"
-                        >
-                          <Sparkles className="h-4 w-4" />
-                          {soundscapeStatus === 'listening' ? 'Analizando...' : 'Volver a detectar'}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle photos-panel panel-tone panel-tone--clay">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Área de fotos</p>
-                        <h3 className="display-heading text-3xl">Setup y entorno</h3>
-                      </div>
-
-                      <label className="upload-zone upload-zone--large">
-                        <ImagePlus className="h-8 w-8 text-[color:var(--signal-strong)]" />
-                        <div>
-                          <p className="display-heading text-2xl">Añadir fotos del punto</p>
-                          <p className="module-copy text-sm">
-                            Documenta micros, orientación, entorno o condiciones específicas del lugar.
-                          </p>
-                        </div>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          multiple
-                          className="hidden"
-                          onChange={handleDraftPhotosInput}
+                    {isCompactCaptureLayout ? (
+                      <section className="capture-secondary-workspace" aria-labelledby="capture-secondary-workspace-title">
+                        <SectionHeader
+                          eyebrow="Herramientas"
+                          titleId="capture-secondary-workspace-title"
+                          title="IA, fotos y exploración"
+                          description="En compacto, las herramientas secundarias se alternan en una sola superficie para que la captura siga sintiéndose rápida."
                         />
-                      </label>
 
-                      {draftPhotos.length > 0 ? (
-                        <div className="photo-grid">
-                          {draftPhotos.map((photo) => (
-                            <div key={photo.id} className="soft-card">
-                              <img src={photo.previewUrl} alt={photo.fileName} className="h-40 w-full object-cover" />
-                              <div className="action-row action-row--compact mt-3">
-                                <p className="module-copy text-sm">{photo.fileName}</p>
-                                <IconButton label={`Quitar ${photo.fileName}`} onClick={() => removeDraftPhoto(photo.id)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </IconButton>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle log-map-panel panel-tone panel-tone--sky">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Exploración</p>
-                        <h3 className="display-heading text-3xl">Mapa y registros previos</h3>
-                      </div>
-
-                      <SegmentedControl
-                        label="Cambiar vista de exploración"
-                        value={captureWorkspace}
-                        items={[
-                          { value: 'map', label: 'Mapa' },
-                          { value: 'points', label: 'Lista' },
-                        ]}
-                        onChange={setCaptureWorkspace}
-                        size="sm"
-                      />
-
-                      {captureWorkspace === 'map' ? (
-                        <SessionMap
-                          points={activeSessionMapPoints}
-                          selectedPointId={selectedPointId}
-                          onSelectPoint={(pointId) => {
-                            setSelectedPointId(pointId);
-                            setRecordSessionId(activeSession.id);
-                            setRecordPointId(pointId);
-                          }}
-                          draftPoint={
-                            draftPointCoordinates
-                              ? {
-                                  lat: draftPointCoordinates.lat,
-                                  lon: draftPointCoordinates.lon,
-                                  label: draftPointLabel,
-                                }
-                              : null
-                          }
+                        <SegmentedControl
+                          label="Cambiar herramienta secundaria de captura"
+                          value={captureSupportTab}
+                          items={[
+                            { value: 'map', label: 'Explorar' },
+                            { value: 'photos', label: 'Fotos', count: draftPhotos.length },
+                            { value: 'ai', label: 'IA' },
+                            { value: 'record', label: 'Último' },
+                          ]}
+                          onChange={setCaptureSupportTab}
+                          panelIdBase="capture-support"
+                          size="sm"
+                          fill
                         />
-                      ) : sortedActiveSessionPoints.length > 0 ? (
-                        <div className="grid gap-3">
-                          {sortedActiveSessionPoints.map((point) => (
-                            <React.Fragment key={point.id}>
-                              <SessionPointCard
-                                point={{
-                                  id: point.id,
-                                  placeName: point.placeName,
-                                  createdAt: point.createdAt,
-                                  observedWeather: point.observedWeather,
-                                  zoomTakeReference: point.zoomTakeReference,
-                                  microphoneSetup: point.microphoneSetup,
-                                  tags: point.tags,
-                                  photoPreviewUrl: point.photos[0]?.previewUrl ?? undefined,
-                                }}
-                                active={point.id === selectedPoint?.id}
-                                onSelect={() => {
-                                  setSelectedPointId(point.id);
-                                  setRecordSessionId(activeSession.id);
-                                  setRecordPointId(point.id);
-                                }}
-                              />
-                            </React.Fragment>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="module-copy text-sm">
-                          Todavía no hay registros guardados en esta salida.
-                        </p>
-                      )}
-                    </div>
 
-                    <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-preview-card panel-tone panel-tone--amber">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Último registro visible</p>
-                        <h3 className="display-heading text-3xl">
-                          {selectedPoint ? selectedPoint.placeName : 'Sin registro seleccionado'}
-                        </h3>
-                      </div>
-
-                      {selectedPoint ? (
-                        <>
-                          <p className="module-copy text-sm">
-                            {selectedPoint.soundscapeClassification?.summary || selectedPoint.observedWeather || 'Sin resumen todavía'}
-                          </p>
-                          <div className="action-row">
-                            <button
-                              type="button"
-                              onClick={() => openRecordView(activeSession.id, selectedPoint.id)}
-                              className="ui-button ui-button-secondary"
-                            >
-                              <History className="h-4 w-4" />
-                              Ver registro completado
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void removePointFromActiveSession(selectedPoint.id)}
-                              className="ui-button ui-button-danger"
-                            >
-                              Eliminar
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <p className="module-copy text-sm">Guarda un punto para abrir su ficha final.</p>
-                      )}
-                    </div>
+                        <AnimatePresence initial={false} mode="wait">
+                          <motion.div
+                            key={`capture-support-${captureSupportTab}`}
+                            id={`capture-support-panel-${captureSupportTab}`}
+                            role="tabpanel"
+                            aria-labelledby={`capture-support-tab-${captureSupportTab}`}
+                            className="content-swap-panel content-swap-panel--workspace"
+                            {...contentSwapMotion}
+                          >
+                            {captureSupportTab === 'map'
+                              ? renderCaptureExplorePanel()
+                              : captureSupportTab === 'photos'
+                                ? renderCapturePhotosPanel()
+                                : captureSupportTab === 'ai'
+                                  ? renderCaptureListenPanel()
+                                  : renderCaptureRecordPreviewPanel()}
+                          </motion.div>
+                        </AnimatePresence>
+                      </section>
+                    ) : (
+                      <>
+                        {renderCaptureListenPanel()}
+                        {renderCapturePhotosPanel()}
+                        {renderCaptureExplorePanel()}
+                        {renderCaptureRecordPreviewPanel()}
+                      </>
+                    )}
                   </>
                 )}
               </motion.section>
@@ -6407,185 +7155,24 @@ export default function App() {
                     <p className="module-copy text-sm">
                       Abre una salida desde el navegador lateral para entrar en su espacio de trabajo y revisar registros, biblioteca o ficha completa.
                     </p>
+                    {isCompactArchiveLayout && sessions.length > 0 ? (
+                      <div className="action-row">
+                        <button
+                          ref={archiveDrawerTriggerRef}
+                          type="button"
+                          onClick={() => setIsArchiveBrowserOpen(true)}
+                          className="ui-button ui-button-primary"
+                        >
+                          <History className="h-4 w-4" />
+                          Abrir archivo
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <>
-                    <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-browser-panel panel-tone panel-tone--mint">
-                      <div className="panel-heading panel-heading--compact archive-browser-panel__header">
-                        <p className="eyebrow">Archivo</p>
-                        <h3 className="display-heading text-3xl">Proyectos y salidas</h3>
-                      </div>
-
-                      <p className="archive-browser-panel__selection">
-                        {currentArchiveProject
-                          ? `Filtrando por ${currentArchiveProject.name}`
-                          : 'Mostrando todas las salidas visibles'}
-                      </p>
-
-                      <div className="archive-filter-strip">
-                        <button
-                          type="button"
-                          onClick={() => focusArchiveProject('all')}
-                          className={`archive-filter-button ${selectedArchiveProjectKey === 'all' ? 'is-active' : ''}`}
-                        >
-                          Todos
-                        </button>
-                        {archiveProjectGroups.map((group) => (
-                          <button
-                            key={group.key}
-                            type="button"
-                            onClick={() => focusArchiveProject(group.key)}
-                            className={`archive-filter-button ${selectedArchiveProjectKey === group.key ? 'is-active' : ''}`}
-                          >
-                            {group.name}
-                          </button>
-                        ))}
-                      </div>
-
-                      <SummaryStrip
-                        compact
-                        className="archive-browser-summary"
-                        ariaLabel="Resumen del archivo filtrado"
-                        items={archiveBrowserSummaryItems}
-                      />
-
-                      {currentArchiveProject ? (
-                        canManageSelectedProject ? (
-                          <details
-                            className="manual-details archive-project-admin"
-                            aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
-                          >
-                            <summary className="manual-details__summary">
-                              <div>
-                                <p className="eyebrow">Gestionar trabajo</p>
-                                <p className="module-copy text-sm">Renombra o limpia la etiqueta del trabajo seleccionado.</p>
-                              </div>
-                              <span className="manual-details__hint">Abrir</span>
-                            </summary>
-
-                            <div className="manual-details__body archive-project-admin__body">
-                              <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                                <span>Nombre del trabajo</span>
-                                <input
-                                  value={projectDraftName}
-                                  onChange={(event) => setProjectDraftName(event.target.value)}
-                                  className="field-input"
-                                  placeholder="Paisajes urbanos de Vigo"
-                                />
-                              </label>
-                              <div className="action-row">
-                                <button
-                                  type="button"
-                                  onClick={() => void renameProject(currentArchiveProject.key)}
-                                  disabled={isUpdatingProjectKey === currentArchiveProject.key}
-                                  aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
-                                  className="ui-button ui-button-secondary"
-                                >
-                                  {isUpdatingProjectKey === currentArchiveProject.key ? 'Guardando...' : 'Renombrar trabajo'}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void clearProject(currentArchiveProject.key)}
-                                  disabled={isUpdatingProjectKey === currentArchiveProject.key}
-                                  aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
-                                  className="ui-button ui-button-danger"
-                                >
-                                  {isUpdatingProjectKey === currentArchiveProject.key ? 'Actualizando...' : 'Quitar trabajo'}
-                                </button>
-                              </div>
-                            </div>
-                          </details>
-                        ) : (
-                          <p className="module-copy text-sm archive-browser-note">
-                            <strong>Sin trabajo</strong> agrupa salidas sin etiqueta.
-                          </p>
-                        )
-                      ) : null}
-
-                      <section className="archive-session-browser" aria-labelledby="archive-session-browser-title">
-                        <SectionHeader
-                          titleId="archive-session-browser-title"
-                          title={currentArchiveProject ? 'Salidas del trabajo' : 'Salidas visibles'}
-                          description={`${visibleArchiveSessions.length} ${visibleArchiveSessions.length === 1 ? 'salida' : 'salidas'} en el filtro actual.`}
-                          titleAs="h4"
-                          compact
-                        />
-                        {visibleArchiveSessions.length > 0 ? (
-                          <StructuredList className="archive-session-list">
-                            {visibleArchiveSessions.map((session) => (
-                              <li key={session.id}>
-                                <ListRow
-                                  dense
-                                  onClick={() => focusArchiveSession(session.id)}
-                                  className={`archive-session-row ${recordSession?.id === session.id ? 'is-active' : ''}`}
-                                  eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
-                                  title={session.name}
-                                  meta={
-                                    currentArchiveProject
-                                      ? `${session.region || 'sin zona'} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`
-                                      : `${resolveProjectName(session.projectName)} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`
-                                  }
-                                  stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
-                                  actionLabel={recordSession?.id === session.id ? 'Abierta' : 'Abrir'}
-                                />
-                              </li>
-                            ))}
-                          </StructuredList>
-                        ) : (
-                          <p className="module-copy text-sm">
-                            No hay salidas en el filtro actual.
-                          </p>
-                        )}
-                      </section>
-                    </div>
-                    <div className="archive-detail-stack">
-                      <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-workspace-panel panel-tone panel-tone--sky">
-                        <div className="archive-workspace-panel__header">
-                          <div className="archive-workspace-panel__copy">
-                            <p className="eyebrow">Espacio de trabajo</p>
-                            <h3 className="display-heading text-3xl">{recordSession.name}</h3>
-                          </div>
-
-                          <div className="archive-workspace-panel__controls">
-                            <ul className="archive-workspace-panel__stats" aria-label="Resumen de la salida abierta">
-                              <li>
-                                <span className="telemetry-chip">{resolveProjectName(recordSession.projectName)}</span>
-                              </li>
-                              <li>
-                                <span className="telemetry-chip">
-                                  {recordSession.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
-                                </span>
-                              </li>
-                              <li>
-                                <span className="telemetry-chip">{recordSessionPoints.length} registros</span>
-                              </li>
-                              <li>
-                                <span className="telemetry-chip">{recordSessionAudioLibrary.length} tomas H6</span>
-                              </li>
-                            </ul>
-
-                            <SegmentedControl
-                              label="Cambiar área del espacio de trabajo"
-                              value={archiveWorkspace}
-                              items={[
-                                { value: 'session', label: 'Salida' },
-                                { value: 'media', label: 'Biblioteca' },
-                                { value: 'record', label: 'Registro', disabled: !recordPoint },
-                              ]}
-                              onChange={setArchiveWorkspace}
-                              size="sm"
-                              className="archive-workspace-switch"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {archiveWorkspace === 'session'
-                        ? renderArchiveSessionWorkspace()
-                        : archiveWorkspace === 'media'
-                          ? renderArchiveMediaWorkspace()
-                          : renderArchiveRecordWorkspace()}
-                    </div>
+                    {!isCompactArchiveLayout ? renderArchiveBrowserPanel() : null}
+                    {renderArchiveWorkspaceStack()}
                   </>
                 )}
               </motion.section>

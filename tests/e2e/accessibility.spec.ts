@@ -25,7 +25,7 @@ test.describe('axe accessibility checks', () => {
     await prepareDeterministicDashboard(page);
 
     await openPrimaryView(page, 'Salidas');
-    await expect(page.getByRole('heading', { name: /Trabajos, salidas y actividad de campo/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Salidas y trabajo de campo/i })).toBeVisible();
     await expectNoSeriousAxeViolations(page);
 
     await openPrimaryView(page, 'Proyectos');
