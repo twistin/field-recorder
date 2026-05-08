@@ -25,11 +25,11 @@ test.describe('axe accessibility checks', () => {
     await prepareDeterministicDashboard(page);
 
     await openPrimaryView(page, 'Salidas');
-    await expect(page.getByRole('heading', { name: /Salidas y trabajo de campo/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Preparar y retomar salidas/i })).toBeVisible();
     await expectNoSeriousAxeViolations(page);
 
-    await openPrimaryView(page, 'Proyectos');
-    await expect(page.getByRole('heading', { name: /Proyectos, fotos, audio y exportación/i })).toBeVisible();
+    await openPrimaryView(page, 'Archivo');
+    await expect(page.getByRole('heading', { name: /Archivo, media y exportación/i })).toBeVisible();
     await expectNoSeriousAxeViolations(page);
   });
 });

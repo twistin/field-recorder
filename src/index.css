@@ -1041,6 +1041,7 @@ audio {
 }
 
 .home-topbar__brand,
+.home-topbar__side,
 .section-header__copy {
   display: grid;
   gap: 0.78rem;
@@ -1092,6 +1093,10 @@ audio {
 .home-topbar__controls {
   display: grid;
   gap: 0.82rem;
+  align-content: start;
+}
+
+.home-topbar__side {
   align-content: start;
 }
 
@@ -1201,6 +1206,62 @@ audio {
 
 .home-status-strip__detail {
   margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-support);
+}
+
+.home-signal-panel {
+  display: grid;
+  gap: 0.82rem;
+  padding: 1.05rem 1.1rem;
+  border: 1px solid rgba(130, 190, 255, 0.1);
+  border-radius: calc(var(--radius-lg) - 2px) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.032), rgba(255, 255, 255, 0)),
+    rgba(11, 20, 32, 0.44);
+}
+
+.home-signal-panel__list {
+  display: grid;
+  gap: 0.8rem;
+  margin: 0;
+}
+
+.home-signal-panel__item {
+  display: grid;
+  gap: 0.18rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(166, 196, 255, 0.08);
+}
+
+.home-signal-panel__item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.home-signal-panel__item dt,
+.home-signal-panel__item dd {
+  margin: 0;
+}
+
+.home-signal-panel__item dt {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-meta);
+}
+
+.home-signal-panel__value {
+  font-family: "Sora", sans-serif;
+  font-size: clamp(1rem, 1.8vw, 1.35rem);
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.home-signal-panel__detail {
   font-size: 0.82rem;
   line-height: 1.5;
   color: var(--text-support);
@@ -1747,6 +1808,23 @@ audio {
   font-size: 0.92rem;
 }
 
+.sidebar-brand__steps {
+  display: grid;
+  gap: 0.38rem;
+  padding: 0;
+  margin: 0.2rem 0 0;
+  list-style: none;
+}
+
+.sidebar-brand__steps li {
+  color: var(--text-meta);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.5;
+}
+
 .brand-card__title {
   font-size: clamp(2rem, 4vw, 3rem);
   color: #fff;
@@ -1793,6 +1871,10 @@ audio {
 
 .mobile-dock__item {
   flex: 1;
+}
+
+.mobile-dock__item--capture {
+  flex: 1.15;
 }
 
 .mobile-dock__item .dock-button,
@@ -2018,6 +2100,18 @@ audio {
   color: rgba(238, 245, 255, 0.82);
 }
 
+.dock-button.is-priority {
+  border-color: rgba(79, 215, 200, 0.22);
+  background:
+    linear-gradient(135deg, rgba(89, 167, 255, 0.16), rgba(79, 215, 200, 0.14)),
+    rgba(255, 255, 255, 0.04);
+}
+
+.dock-button.is-priority .dock-button__icon {
+  border-color: rgba(79, 215, 200, 0.3);
+  background: rgba(79, 215, 200, 0.12);
+}
+
 .dock-button.is-compact {
   flex-direction: column;
   padding: 0.72rem 0.5rem;
@@ -2025,6 +2119,17 @@ audio {
 
 .dock-button.is-compact .dock-button__text {
   text-align: center;
+}
+
+.mobile-dock__item--capture .dock-button.is-priority {
+  min-height: 4rem;
+  padding-block: 0.88rem;
+  transform: translateY(-0.4rem);
+  box-shadow: 0 16px 30px rgba(4, 12, 22, 0.28);
+}
+
+.mobile-dock__item--capture .dock-button.is-priority .dock-button__label {
+  font-size: 0.76rem;
 }
 
 .ui-button {
@@ -3359,6 +3464,19 @@ audio {
   background: rgba(15, 119, 209, 0.08);
 }
 
+:root[data-display-mode="sun"] .home-signal-panel {
+  border-color: rgba(31, 116, 199, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0)),
+    rgba(255, 255, 255, 0.58);
+}
+
+:root[data-display-mode="sun"] .dock-button.is-priority {
+  background:
+    linear-gradient(135deg, rgba(15, 119, 209, 0.14), rgba(12, 143, 116, 0.12)),
+    rgba(255, 255, 255, 0.84);
+}
+
 @keyframes heroPulse {
   0%,
   100% {
@@ -3466,7 +3584,7 @@ audio {
 }
 
 .workflow-card__title {
-  font-size: clamp(1.75rem, 3vw, 2.7rem);
+  font-size: clamp(1.3rem, 2vw, 1.8rem);
 }
 
 .workflow-card__footer {
@@ -4991,6 +5109,10 @@ select:focus-visible {
     align-items: flex-start;
   }
 
+  .mobile-dock__item--capture .dock-button.is-priority {
+    transform: translateY(-0.24rem);
+  }
+
   .action-row > * {
     width: 100%;
   }
@@ -5186,6 +5308,10 @@ select:focus-visible {
       "session session"
       "work media";
     align-items: start;
+  }
+
+  .home-workflow-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .layout-dashboard {

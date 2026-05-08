@@ -99,6 +99,7 @@ type NavigationItem = {
 };
 
 const DISPLAY_MODE_STORAGE_KEY = 'fieldnotes-display-mode';
+const PREFERRED_PROJECT_NAME_STORAGE_KEY = 'fieldnotes-preferred-project-name';
 const REMOTE_CATALOG_REFRESH_INTERVAL_MS = 45_000;
 const REMOTE_CATALOG_REFRESH_MIN_GAP_MS = 12_000;
 const CATALOG_API_UNAVAILABLE_MESSAGE =
@@ -394,14 +395,14 @@ function parseCoordinate(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function buildSessionDraft(): SessionDraft {
+function buildSessionDraft(overrides?: Partial<SessionDraft>): SessionDraft {
   const now = new Date();
   return {
-    name: `Salida ${format(now, 'yyyy-MM-dd', { locale: es })}`,
-    projectName: '',
-    region: '',
-    notes: '',
-    equipmentPreset: 'Zoom H6 · XY',
+    name: overrides?.name ?? `Salida ${format(now, 'yyyy-MM-dd', { locale: es })}`,
+    projectName: overrides?.projectName ?? '',
+    region: overrides?.region ?? '',
+    notes: overrides?.notes ?? '',
+    equipmentPreset: overrides?.equipmentPreset ?? 'Zoom H6 · XY',
   };
 }
 
@@ -725,6 +726,33 @@ function buildSessionMapPoints(points: UiSessionPoint[]) {
     }));
 }
 
+function isSameLocalCalendarDay(left: Date | string | number, right: Date | string | number): boolean {
+  const leftDate = new Date(left);
+  const rightDate = new Date(right);
+
+  return (
+    leftDate.getFullYear() === rightDate.getFullYear()
+    && leftDate.getMonth() === rightDate.getMonth()
+    && leftDate.getDate() === rightDate.getDate()
+  );
+}
+
+function findLatestSpilloverPointCreatedAt(
+  session: Pick<UiFieldSession, 'startedAt' | 'points'>,
+): string | null {
+  const spilloverPoints = session.points
+    .filter((point) => !isSameLocalCalendarDay(point.createdAt, session.startedAt))
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+
+  return spilloverPoints[0]?.createdAt ?? null;
+}
+
+function findLatestProjectName(sessions: UiFieldSession[]): string {
+  return [...sessions]
+    .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime())
+    .find((session) => session.projectName.trim())?.projectName.trim() ?? '';
+}
+
 function groupSessionsByProject(sessions: UiFieldSession[]): ProjectArchiveGroup[] {
   const groups = new Map<string, ProjectArchiveGroup>();
 
@@ -901,6 +929,7 @@ function ViewButton({
   icon: Icon,
   onClick,
   compact = false,
+  priority = false,
 }: {
   active: boolean;
   label: string;
@@ -908,6 +937,7 @@ function ViewButton({
   icon: React.ComponentType<{ className?: string }>;
   onClick: () => void;
   compact?: boolean;
+  priority?: boolean;
 }) {
   return (
     <button
@@ -915,7 +945,7 @@ function ViewButton({
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       aria-label={compact ? `${label}. ${description}` : undefined}
-      className={`dock-button ${active ? 'is-active' : ''} ${compact ? 'is-compact' : ''}`}
+      className={`dock-button ${active ? 'is-active' : ''} ${compact ? 'is-compact' : ''} ${priority ? 'is-priority' : ''}`}
     >
       <span className="dock-button__icon" aria-hidden="true">
         <Icon className="h-4 w-4" />
@@ -1048,11 +1078,16 @@ function AppNavigationPanels({
         <div className="sidebar-brand">
           <p className="eyebrow sidebar-brand__eyebrow">FieldNotes AI</p>
           <h2 id={titleId} className="sidebar-brand__title">
-            Centro de trabajo
+            Flujo de campo
           </h2>
           <p className="sidebar-brand__copy">
-            Resumen, salidas, captura y archivo dentro de una navegación estable.
+            Empieza en Inicio, prepara la salida, registra en campo y cierra revisando el archivo.
           </p>
+          <ol className="sidebar-brand__steps" aria-label="Flujo principal de trabajo">
+            <li>1. Preparar o retomar una salida</li>
+            <li>2. Registrar punto con GPS, fotos y notas</li>
+            <li>3. Revisar media, registros y exportación</li>
+          </ol>
         </div>
         <nav className="sidebar-nav" aria-label="Navegación principal">
           <ul className="sidebar-nav__list">
@@ -1122,7 +1157,7 @@ function AppNavigationPanels({
                 className="ui-button ui-button-secondary"
               >
                 <History className="h-4 w-4" />
-                Ver proyectos
+                Abrir archivo
               </button>
               <button
                 type="button"
@@ -1178,7 +1213,7 @@ function ShellHeader({
 
         <div className="fieldnotes-shell-header__copy">
           <p className="eyebrow fieldnotes-shell-header__eyebrow">FieldNotes AI</p>
-          <p className="fieldnotes-shell-header__title">Centro de trabajo</p>
+          <p className="fieldnotes-shell-header__title">Flujo de campo</p>
           <div className="fieldnotes-shell-header__context">
             <Badge variant="muted">{currentViewLabel}</Badge>
             <p className="fieldnotes-shell-header__support">{supportText}</p>
@@ -1222,6 +1257,17 @@ export default function App() {
   const [homeSecondaryTab, setHomeSecondaryTab] = useState<HomeSecondaryTab>('work');
   const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false);
   const [isArchiveBrowserOpen, setIsArchiveBrowserOpen] = useState(false);
+  const [preferredProjectName, setPreferredProjectName] = useState(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+
+    try {
+      return window.localStorage.getItem(PREFERRED_PROJECT_NAME_STORAGE_KEY)?.trim() ?? '';
+    } catch {
+      return '';
+    }
+  });
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => {
     if (typeof window === 'undefined') {
       return 'night';
@@ -1265,6 +1311,7 @@ export default function App() {
   const [isSyncingCloudSessionId, setIsSyncingCloudSessionId] = useState<string | null>(null);
   const [isSyncingCatalogSessionId, setIsSyncingCatalogSessionId] = useState<string | null>(null);
   const [isUpdatingProjectKey, setIsUpdatingProjectKey] = useState<string | null>(null);
+  const [isSplittingSessionId, setIsSplittingSessionId] = useState<string | null>(null);
   const [catalogApiStatus, setCatalogApiStatus] = useState<'unknown' | 'available' | 'unavailable'>('unknown');
   const [zoomImportTargetSessionId, setZoomImportTargetSessionId] = useState<string | null>(null);
   const [publishPhotoId, setPublishPhotoId] = useState<string>('');
@@ -1304,6 +1351,19 @@ export default function App() {
   }
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+  const isActiveSessionFromAnotherDay = activeSession ? !isSameLocalCalendarDay(activeSession.startedAt, now) : false;
+  const activeSessionLatestSpilloverPointAt = activeSession ? findLatestSpilloverPointCreatedAt(activeSession) : null;
+  const activeSessionLatestSpilloverPointCount =
+    activeSession && activeSessionLatestSpilloverPointAt
+      ? activeSession.points.filter((point) => isSameLocalCalendarDay(point.createdAt, activeSessionLatestSpilloverPointAt)).length
+      : 0;
+  const activeSessionDateWarning = activeSession
+    ? activeSessionLatestSpilloverPointAt
+      ? `Esta salida se abrió el ${formatDateTime(activeSession.startedAt, "d MMM yyyy")} y contiene ${activeSessionLatestSpilloverPointCount} registro${activeSessionLatestSpilloverPointCount === 1 ? '' : 's'} del ${formatDateTime(activeSessionLatestSpilloverPointAt, "d MMM yyyy")}. Sepáralos en una salida nueva antes de seguir.`
+      : isActiveSessionFromAnotherDay
+        ? `Esta salida sigue abierta desde el ${formatDateTime(activeSession.startedAt, "d MMM yyyy")}. Si hoy es otra salida, ciérrala y abre una nueva antes de registrar.`
+        : null
+    : null;
   const sortedActiveSessionPoints = activeSession
     ? [...activeSession.points].sort(
         (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
@@ -1348,10 +1408,54 @@ export default function App() {
         .filter(Boolean),
     ),
   ).sort((left: string, right: string) => left.localeCompare(right, 'es'));
+  const latestKnownProjectName = findLatestProjectName(sessions);
   const visibleArchiveProjectGroups =
     selectedArchiveProjectKey === 'all'
       ? archiveProjectGroups
       : archiveProjectGroups.filter((group) => group.key === selectedArchiveProjectKey);
+
+  function rememberPreferredProjectName(projectName: string) {
+    const trimmedProjectName = projectName.trim();
+    setPreferredProjectName(trimmedProjectName);
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      if (trimmedProjectName) {
+        window.localStorage.setItem(PREFERRED_PROJECT_NAME_STORAGE_KEY, trimmedProjectName);
+      } else {
+        window.localStorage.removeItem(PREFERRED_PROJECT_NAME_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore storage failures and keep the current in-memory preference.
+    }
+  }
+
+  function buildNextSessionDraft(sourceSession?: Pick<UiFieldSession, 'projectName' | 'region' | 'equipmentPreset'> | null) {
+    return buildSessionDraft({
+      projectName: sourceSession?.projectName.trim() || preferredProjectName,
+      region: sourceSession?.region.trim() || '',
+      equipmentPreset: sourceSession?.equipmentPreset.trim() || 'Zoom H6 · XY',
+    });
+  }
+
+  function buildFollowUpSession(previousSession: Pick<UiFieldSession, 'projectName' | 'region' | 'equipmentPreset'>, createdAt: string): UiFieldSession {
+    return {
+      id: uuidv4(),
+      name: `Salida ${formatDateTime(createdAt, 'yyyy-MM-dd')}`,
+      projectName: previousSession.projectName.trim(),
+      region: previousSession.region.trim(),
+      notes: '',
+      createdAt,
+      startedAt: createdAt,
+      status: 'active',
+      equipmentPreset: previousSession.equipmentPreset.trim() || 'Zoom H6 · XY',
+      points: [],
+      audioTakes: [],
+    };
+  }
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -1539,6 +1643,29 @@ export default function App() {
       setSelectedArchiveProjectKey('all');
     }
   }, [archiveProjectGroups, selectedArchiveProjectKey]);
+
+  useEffect(() => {
+    if (preferredProjectName || !latestKnownProjectName) {
+      return;
+    }
+
+    rememberPreferredProjectName(latestKnownProjectName);
+  }, [latestKnownProjectName, preferredProjectName]);
+
+  useEffect(() => {
+    if (activeSession || sessionDraft.projectName.trim() || !preferredProjectName) {
+      return;
+    }
+
+    setSessionDraft((previous) =>
+      previous.projectName.trim()
+        ? previous
+        : {
+            ...previous,
+            projectName: preferredProjectName,
+          },
+    );
+  }, [activeSession, preferredProjectName, sessionDraft.projectName]);
 
   useEffect(() => {
     if (!recordSession) {
@@ -2258,11 +2385,12 @@ export default function App() {
       audioTakes: [],
     };
 
+    rememberPreferredProjectName(nextSession.projectName);
     setActiveSessionId(nextSession.id);
     setSelectedPointId(null);
     void persistSession(nextSession);
     setPointDraft(buildPointDraft(nextSession.equipmentPreset, currentGpsRef.current));
-    setSessionDraft(buildSessionDraft());
+    setSessionDraft(buildNextSessionDraft(nextSession));
     announceStatus('Salida iniciada. Empieza a registrar puntos de escucha.', 'success');
     setView('point');
   }
@@ -2292,10 +2420,160 @@ export default function App() {
     };
 
     await persistSession(nextSession);
+    rememberPreferredProjectName(nextSession.projectName);
     setActiveSessionId(null);
     resetPointDraft(nextSession.equipmentPreset);
     announceStatus(`Salida "${nextSession.name}" cerrada y lista para exportación.`, 'success');
     setView('export');
+  }
+
+  async function closeActiveSessionAndPrepareNext() {
+    if (!activeSession) {
+      return;
+    }
+
+    const nextSession: UiFieldSession = {
+      ...activeSession,
+      status: 'closed',
+      endedAt: new Date().toISOString(),
+    };
+
+    await persistSession(nextSession);
+    rememberPreferredProjectName(nextSession.projectName);
+    setActiveSessionId(null);
+    setSelectedPointId(null);
+    setSessionDraft(buildNextSessionDraft(nextSession));
+    resetPointDraft(nextSession.equipmentPreset);
+    announceStatus(`Salida "${nextSession.name}" cerrada. Nueva salida preparada dentro del mismo trabajo.`, 'success');
+    setView('session');
+  }
+
+  async function ensureSessionForCurrentOuting(session: UiFieldSession): Promise<UiFieldSession> {
+    if (isSameLocalCalendarDay(session.startedAt, Date.now())) {
+      return session;
+    }
+
+    const closedSession: UiFieldSession = {
+      ...session,
+      status: 'closed',
+      endedAt: new Date().toISOString(),
+    };
+    const nextSessionCreatedAt = new Date().toISOString();
+    const nextSession = buildFollowUpSession(closedSession, nextSessionCreatedAt);
+
+    await persistSession(closedSession);
+    await persistSession(nextSession);
+
+    rememberPreferredProjectName(nextSession.projectName);
+    setActiveSessionId(nextSession.id);
+    setSelectedPointId(null);
+    setSessionDraft(buildNextSessionDraft(nextSession));
+    announceStatus(
+      `La salida anterior (${formatDateTime(closedSession.startedAt, "d MMM")}) se cerró automáticamente. Estás registrando en una salida nueva de hoy.`,
+      'warning',
+    );
+
+    return nextSession;
+  }
+
+  async function splitSessionRecordsFromLatestSpilloverDay(sessionId: string) {
+    const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+    if (!session) {
+      return;
+    }
+
+    const spilloverPointAt = findLatestSpilloverPointCreatedAt(session);
+    if (!spilloverPointAt) {
+      announceStatus('Esta salida no tiene registros mezclados de otro día.');
+      return;
+    }
+
+    const movedPoints = session.points.filter((point) => isSameLocalCalendarDay(point.createdAt, spilloverPointAt));
+    if (movedPoints.length === 0) {
+      announceStatus('No encontré registros válidos para separar.', 'warning');
+      return;
+    }
+
+    const movedPointIds = new Set(movedPoints.map((point) => point.id));
+    const movedAudioTakes = session.audioTakes.filter(
+      (take) =>
+        (take.associatedPointId && movedPointIds.has(take.associatedPointId))
+        || (!take.associatedPointId && isSameLocalCalendarDay(take.inferredRecordedAt, spilloverPointAt)),
+    );
+    const movedAudioTakeIds = new Set(movedAudioTakes.map((take) => take.id));
+    const remainingPoints = session.points.filter((point) => !movedPointIds.has(point.id));
+    const remainingAudioTakes = session.audioTakes.filter((take) => !movedAudioTakeIds.has(take.id));
+
+    const activityTimestamps = [
+      ...movedPoints.map((point) => new Date(point.createdAt).getTime()),
+      ...movedAudioTakes
+        .map((take) => new Date(take.inferredRecordedAt).getTime())
+        .filter((timestamp) => Number.isFinite(timestamp)),
+    ].sort((left, right) => left - right);
+    const nextSessionCreatedAt =
+      activityTimestamps.length > 0 ? new Date(activityTimestamps[0]).toISOString() : spilloverPointAt;
+    const latestMovedActivityAt =
+      activityTimestamps.length > 0
+        ? new Date(activityTimestamps[activityTimestamps.length - 1]).toISOString()
+        : spilloverPointAt;
+    const hasAnotherActiveSession = sessionsRef.current.some(
+      (entry) => entry.id !== session.id && entry.status === 'active',
+    );
+    const shouldActivateRecoveredSession = isSameLocalCalendarDay(spilloverPointAt, Date.now()) && !hasAnotherActiveSession;
+    const recoveredSessionBase = buildFollowUpSession(session, nextSessionCreatedAt);
+    const recoveredSession: UiFieldSession = {
+      ...recoveredSessionBase,
+      status: shouldActivateRecoveredSession ? 'active' : 'closed',
+      endedAt: shouldActivateRecoveredSession ? undefined : latestMovedActivityAt,
+      points: movedPoints,
+      audioTakes: reconcileSessionAudioTakes(movedPoints, movedAudioTakes),
+    };
+    const repairedSourceSession: UiFieldSession = {
+      ...session,
+      status: session.status === 'active' ? 'closed' : session.status,
+      endedAt: session.status === 'active' ? new Date().toISOString() : session.endedAt,
+      points: remainingPoints,
+      audioTakes: reconcileSessionAudioTakes(remainingPoints, remainingAudioTakes),
+    };
+
+    setIsSplittingSessionId(sessionId);
+    setAppError(null);
+
+    try {
+      await persistSession(repairedSourceSession);
+      await persistSession(recoveredSession);
+
+      rememberPreferredProjectName(recoveredSession.projectName);
+      setSelectedArchiveProjectKey(buildProjectKey(recoveredSession.projectName));
+
+      if (activeSessionId === session.id) {
+        if (shouldActivateRecoveredSession) {
+          setActiveSessionId(recoveredSession.id);
+          setSelectedPointId(recoveredSession.points[0]?.id ?? null);
+          setView('session');
+        } else {
+          setActiveSessionId(null);
+          setSelectedPointId(null);
+          setView('export');
+        }
+      }
+
+      if (recordSessionId === session.id) {
+        setRecordSessionId(recoveredSession.id);
+        setRecordPointId(recoveredSession.points[0]?.id ?? null);
+        setArchiveWorkspace('session');
+      }
+
+      announceStatus(
+        `Separados ${movedPoints.length} registro${movedPoints.length === 1 ? '' : 's'} del ${formatDateTime(spilloverPointAt, "d MMM yyyy")} en una salida nueva.`,
+        'success',
+      );
+    } catch (error) {
+      console.error('Split session by day failed:', error);
+      setAppError('No pude separar los registros del día mezclado.');
+    } finally {
+      setIsSplittingSessionId(null);
+    }
   }
 
   async function addPointToSession() {
@@ -2303,6 +2581,8 @@ export default function App() {
       setAppError('Necesitas una salida activa antes de registrar puntos.');
       return;
     }
+
+    const sessionForCapture = await ensureSessionForCurrentOuting(activeSession);
 
     let coordinates = resolvePointCoordinates(pointDraft, currentGpsRef.current);
     if (!coordinates && pointDraft.coordinateSource === 'auto') {
@@ -2329,21 +2609,21 @@ export default function App() {
       photos: sessionPhotos,
       soundscapeClassification: draftSoundscapeClassification,
     });
-    const nextPoints = [point, ...activeSession.points];
+    const nextPoints = [point, ...sessionForCapture.points];
 
     const nextSession: UiFieldSession = {
-      ...activeSession,
+      ...sessionForCapture,
       points: nextPoints,
-      audioTakes: reconcileSessionAudioTakes(nextPoints, activeSession.audioTakes),
+      audioTakes: reconcileSessionAudioTakes(nextPoints, sessionForCapture.audioTakes),
     };
 
     await persistSession(nextSession);
     setSelectedPointId(point.id);
-    setRecordSessionId(activeSession.id);
+    setRecordSessionId(sessionForCapture.id);
     setRecordPointId(point.id);
     setAppError(null);
     announceStatus(`Punto "${point.placeName}" guardado dentro de la salida.`, 'success');
-    resetPointDraft(activeSession.equipmentPreset);
+    resetPointDraft(sessionForCapture.equipmentPreset);
   }
 
   async function addQuickPointToSession() {
@@ -2351,6 +2631,8 @@ export default function App() {
       setAppError('Necesitas una salida activa antes de registrar un punto rápido.');
       return;
     }
+
+    const sessionForCapture = await ensureSessionForCurrentOuting(activeSession);
 
     let coordinates = currentGpsRef.current ?? resolvePointCoordinates(pointDraft, currentGpsRef.current);
     if (!coordinates) {
@@ -2386,20 +2668,20 @@ export default function App() {
         photos: sessionPhotos,
         soundscapeClassification: draftSoundscapeClassification,
       });
-      const nextPoints = [point, ...activeSession.points];
+      const nextPoints = [point, ...sessionForCapture.points];
 
       const nextSession: UiFieldSession = {
-        ...activeSession,
+        ...sessionForCapture,
         points: nextPoints,
-        audioTakes: reconcileSessionAudioTakes(nextPoints, activeSession.audioTakes),
+        audioTakes: reconcileSessionAudioTakes(nextPoints, sessionForCapture.audioTakes),
       };
 
       await persistSession(nextSession);
       setSelectedPointId(point.id);
-      setRecordSessionId(activeSession.id);
+      setRecordSessionId(sessionForCapture.id);
       setRecordPointId(point.id);
       announceStatus(`Punto rápido "${point.placeName}" creado con GPS, fecha, hora y clima.`, 'success');
-      resetPointDraft(activeSession.equipmentPreset);
+      resetPointDraft(sessionForCapture.equipmentPreset);
     } finally {
       setIsQuickCapturing(false);
     }
@@ -2481,6 +2763,10 @@ export default function App() {
           ...session,
           projectName: nextProjectName,
         });
+      }
+
+      if (buildProjectKey(preferredProjectName) === projectKey) {
+        rememberPreferredProjectName(nextProjectName);
       }
 
       setSelectedArchiveProjectKey(nextProjectName.trim() ? buildProjectKey(nextProjectName) : 'all');
@@ -3938,7 +4224,11 @@ export default function App() {
     ? `${activeSession.name} sigue abierta. Registra el siguiente punto desde aquí y usa las acciones de apoyo sólo cuando necesites revisar salidas o archivo.`
     : 'Empieza creando o abriendo una salida. La captura y el archivo se activan desde este mismo punto de entrada.';
   const homePrimaryActionLabel = activeSession ? 'Registrar punto' : 'Preparar salida';
-  const homeArchiveActionLabel = recordPoint && recordSession ? 'Ver último registro' : 'Ver proyectos';
+  const homeArchiveActionLabel = recordPoint && recordSession ? 'Ver último registro' : 'Abrir archivo';
+  const latestRecordLabel = recordPoint ? recordPoint.placeName : 'Sin ficha final todavía';
+  const latestRecordSummary = recordPoint
+    ? `${formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm")} · ${resolveProjectName(recordSession?.projectName ?? '')}`
+    : 'El archivo final aparecerá en cuanto guardes el primer punto.';
   const homeGpsValue = currentGps ? gpsAccuracyLabel : 'Sin señal';
   const homeGpsCopy = currentGps ? `${gpsLabel} · ${gpsStatusLabel}` : 'Activa el GPS para situar la salida.';
   const homePlaceValue = detectedPlace ? 'Lugar detectado' : currentGps ? 'Buscando lugar' : 'Esperando GPS';
@@ -3971,6 +4261,30 @@ export default function App() {
       detail: metadataReviewSummary,
     },
   ] as const;
+  const homeQuickReadItems = [
+    {
+      id: 'now',
+      label: 'Ahora',
+      value: activeSession ? activeSession.name : 'Preparar salida',
+      detail: activeSession
+        ? `${activeSession.points.length} registro${activeSession.points.length === 1 ? '' : 's'} en curso`
+        : 'Define trabajo, zona y equipo antes de salir.',
+    },
+    {
+      id: 'next',
+      label: 'Siguiente paso',
+      value: activeSession ? 'Registrar punto' : 'Abrir salidas',
+      detail: activeSession
+        ? 'La captura queda lista para GPS, fotos y notas.'
+        : 'La captura se activa cuando abras o crees una salida.',
+    },
+    {
+      id: 'archive',
+      label: 'Archivo',
+      value: recordPoint ? latestRecordLabel : 'Sin último registro',
+      detail: recordPoint ? latestRecordSummary : 'El archivo aparecerá tras guardar el primer punto.',
+    },
+  ] as const;
   const storageSummary =
     storageMode === 'ready'
       ? 'Archivo local disponible'
@@ -3979,25 +4293,25 @@ export default function App() {
         : 'Sólo memoria';
   const isSunMode = displayMode === 'sun';
   const currentViewLabel =
-    view === 'home' ? 'Resumen' : view === 'session' ? 'Salidas' : view === 'point' ? 'Captura' : 'Proyectos';
+    view === 'home' ? 'Inicio' : view === 'session' ? 'Salidas' : view === 'point' ? 'Registrar' : 'Archivo';
   const currentViewTitle =
     view === 'home'
-      ? 'Resumen operativo del trabajo de campo'
+      ? 'Qué necesita la jornada'
       : view === 'session'
-        ? 'Salidas y trabajo de campo'
+        ? 'Preparar y retomar salidas'
         : view === 'point'
           ? activeSession
-            ? 'Nuevo registro con GPS, fotos, clima e IA'
+            ? 'Registrar punto en campo'
             : 'Prepara una salida antes de registrar'
-          : 'Proyectos, fotos, audio y exportación';
+          : 'Archivo, media y exportación';
   const currentViewDescription =
     view === 'home'
-      ? 'Desde aquí ves el estado de la salida, los trabajos existentes y la biblioteca reciente sin navegar a ciegas.'
+      ? 'Desde aquí ves qué salida sigue abierta, qué falta por registrar y cómo llegar al archivo sin navegar a ciegas.'
       : view === 'session'
-        ? 'Crea una salida, abre trabajo reciente y busca registros.'
+        ? 'Crea una salida, retoma trabajo reciente y busca registros sin mezclar captura y archivo.'
         : view === 'point'
-          ? 'La captura queda aislada para trabajar rápido en el terreno: ubicación, escucha, fotos y notas en una sola pantalla.'
-          : 'El archivo deja visibles salidas, registros, fotos y tomas H6 para revisar y exportar sin esconder acciones.';
+          ? 'La captura queda centrada en registrar rápido: ubicación, escucha, fotos y notas en una sola pantalla.'
+          : 'El archivo deja visibles registros, fotos, audio H6 y exportación sin esconder acciones ni mezclar edición.';
   const surfaceEnterMotion = getSurfaceEnterMotion(prefersReducedMotion);
   const viewTransitionMotion = getViewTransitionMotion(prefersReducedMotion);
   const contentSwapMotion = getContentSwapMotion(prefersReducedMotion);
@@ -4063,58 +4377,54 @@ export default function App() {
                             ? 'Sincronizando metadatos pendientes.'
                             : null;
   const shellSupportText = activeSession
-    ? `Salida activa: ${activeSession.name}`
-    : 'Sin salida activa';
+    ? `Siguiente paso: registrar en ${activeSession.name}`
+    : 'Siguiente paso: preparar una salida';
   const captureEntryLabel = activeSession ? 'Ir a captura' : 'Preparar salida';
-  const latestRecordLabel = recordPoint ? recordPoint.placeName : 'Sin ficha final todavía';
-  const latestRecordSummary = recordPoint
-    ? `${formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm")} · ${resolveProjectName(recordSession?.projectName ?? '')}`
-    : 'El archivo final aparecerá en cuanto guardes el primer punto.';
   const navigationItems: NavigationItem[] = [
     {
       view: 'home',
-      label: 'Resumen',
-      description: 'Estado, trabajos y media',
+      label: 'Inicio',
+      description: 'Estado y siguiente paso',
       icon: House,
       onClick: () => setView('home'),
     },
     {
       view: 'session',
       label: 'Salidas',
-      description: 'Crear, abrir y localizar',
+      description: 'Preparar y retomar',
       icon: MapPinned,
       onClick: () => setView('session'),
     },
     {
       view: 'point',
-      label: 'Captura',
-      description: activeSession ? 'Nuevo registro en la salida activa' : 'Necesita una salida activa',
+      label: activeSession ? 'Registrar' : 'Preparar',
+      description: activeSession ? 'GPS, fotos y notas' : 'Necesita una salida',
       icon: Mic,
       onClick: () => setView(activeSession ? 'point' : 'session'),
     },
     {
       view: 'export',
-      label: 'Proyectos',
-      description: 'Fotos, tomas y exportación',
+      label: 'Archivo',
+      description: 'Registros, media y ZIP',
       icon: History,
       onClick: () => setView('export'),
     },
   ];
   const homeWorkflowCards = [
     {
-      eyebrow: 'Panel',
-      title: 'Trabajos y salidas',
-      description: 'Abre lo que ya existe o prepara una salida nueva sin perder la jerarquía.',
+      eyebrow: 'Paso 1',
+      title: activeSession ? 'Retomar salida' : 'Preparar salida',
+      description: 'Abre el contexto de trabajo antes de entrar en captura.',
       status: activeSession ? `${activeSession.points.length} registros en ${activeSession.name}` : `${projectCount} trabajos visibles`,
-      cta: activeSession ? 'Ver salidas' : 'Crear salida',
+      cta: activeSession ? 'Abrir salidas' : 'Preparar salida',
       icon: MapPinned,
       featured: !activeSession,
       onClick: () => setView('session'),
     },
     {
-      eyebrow: 'Captura',
-      title: 'Nuevo registro',
-      description: 'GPS, clima, fotos, notas e IA en el flujo de captura.',
+      eyebrow: 'Paso 2',
+      title: activeSession ? 'Registrar punto' : 'Activar captura',
+      description: 'GPS, clima, fotos, notas e IA sin salir del flujo de campo.',
       status: activeSession ? `${gpsStatusLabel} · ${activeSession.name}` : 'Necesita una salida activa',
       cta: captureEntryLabel,
       icon: Mic,
@@ -4122,11 +4432,11 @@ export default function App() {
       onClick: () => setView(activeSession ? 'point' : 'session'),
     },
     {
-      eyebrow: 'Registro',
-      title: 'Proyectos',
-      description: 'Registros, galería, tomas H6 y exportación en la misma vista.',
+      eyebrow: 'Paso 3',
+      title: 'Revisar archivo',
+      description: 'Registros, galería, tomas H6 y exportación en una vista clara.',
       status: recordSession ? `${recordSession.name} · ${recordSession.audioTakes.length} tomas H6` : `${totalPhotoCount} fotos · ${totalAudioTakeCount} tomas`,
-      cta: 'Ver proyectos',
+      cta: 'Abrir archivo',
       icon: History,
       featured: view === 'export',
       onClick: () => setView('export'),
@@ -4291,6 +4601,10 @@ export default function App() {
     const sessionPhotoCount = session.points.reduce((count, point) => count + point.photos.length, 0);
     const sessionLinkedAudioCount = session.audioTakes.filter((take) => take.associatedPointId).length;
     const sessionUnlinkedAudioCount = session.audioTakes.length - sessionLinkedAudioCount;
+    const sessionLatestSpilloverPointAt = findLatestSpilloverPointCreatedAt(session);
+    const sessionLatestSpilloverPointCount = sessionLatestSpilloverPointAt
+      ? session.points.filter((point) => isSameLocalCalendarDay(point.createdAt, sessionLatestSpilloverPointAt)).length
+      : 0;
     const sessionCloudStatusLabel =
       session.cloudSyncStatus === 'synced'
         ? 'Respaldo al día'
@@ -4403,6 +4717,20 @@ export default function App() {
               <Download className="h-4 w-4" />
               {isExportingSessionId === session.id ? 'Exportando' : 'Exportar salida'}
             </button>
+            {sessionLatestSpilloverPointAt ? (
+              <button
+                type="button"
+                onClick={() => void splitSessionRecordsFromLatestSpilloverDay(session.id)}
+                disabled={isSplittingSessionId === session.id}
+                aria-busy={isSplittingSessionId === session.id}
+                className="ui-button ui-button-secondary disabled:cursor-wait disabled:opacity-60"
+              >
+                <RefreshCw className="h-4 w-4" />
+                {isSplittingSessionId === session.id
+                  ? 'Separando'
+                  : `Separar ${formatDateTime(sessionLatestSpilloverPointAt, "d MMM")}`}
+              </button>
+            ) : null}
             <IconButton label="Eliminar salida" onClick={() => void removeSession(session.id)}>
               <Trash2 className="h-4 w-4" />
             </IconButton>
@@ -4417,6 +4745,14 @@ export default function App() {
         />
 
         <ul className="archive-session-card__status-list" aria-label="Estado de sincronización de la salida">
+          {sessionLatestSpilloverPointAt ? (
+            <li className="archive-session-card__status-item">
+              <span className="archive-session-card__status-label">Mezcla de días</span>
+              <span className="archive-session-card__status-value">
+                {`${sessionLatestSpilloverPointCount} registro${sessionLatestSpilloverPointCount === 1 ? '' : 's'} del ${formatDateTime(sessionLatestSpilloverPointAt, "d MMM yyyy")}. Puedes separarlos en una salida nueva.`}
+              </span>
+            </li>
+          ) : null}
           <li className="archive-session-card__status-item">
             <span className="archive-session-card__status-label">Nube</span>
             <span className="archive-session-card__status-value">
@@ -4921,7 +5257,7 @@ export default function App() {
               title="Trabajos recientes"
               titleAs="h4"
               compact
-              actionLabel="Ver proyectos"
+              actionLabel="Abrir archivo"
               onAction={() => setView('export')}
             />
             <StructuredList>
@@ -5172,7 +5508,7 @@ export default function App() {
       <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-browser-panel panel-tone panel-tone--mint">
         <div className="panel-heading panel-heading--compact archive-browser-panel__header">
           <p className="eyebrow">Archivo</p>
-          <h3 className="display-heading text-3xl">Proyectos y salidas</h3>
+          <h3 className="display-heading text-3xl">Archivo y salidas</h3>
         </div>
 
         <p className="archive-browser-panel__selection">
@@ -6165,7 +6501,7 @@ export default function App() {
               {...surfaceEnterMotion}
             >
               <div className="home-topbar__brand">
-                <p className="eyebrow">Entrada principal</p>
+                <p className="eyebrow">{greetingLabel} · centro de campo</p>
                 <h1 id="dashboard-home-title" className="display-heading home-topbar__title">{homeLauncherTitle}</h1>
                 <p id="dashboard-home-description" className="module-copy text-sm md:text-base">
                   {homeLauncherCopy}
@@ -6199,7 +6535,7 @@ export default function App() {
                   </div>
                 </div>
                 <section className="home-status-strip" aria-label="Estado operativo del resumen">
-                  <p className="eyebrow home-status-strip__eyebrow">Estado operativo</p>
+                  <p className="eyebrow home-status-strip__eyebrow">Automático y sincronización</p>
                   <dl className="home-status-strip__grid">
                     {homeStatusItems.map((item) => (
                       <div key={item.id} className="home-status-strip__item">
@@ -6211,43 +6547,60 @@ export default function App() {
                   </dl>
                 </section>
               </div>
-              <div className="home-topbar__controls">
-                <ul className="status-inline-group" aria-label="Estado rápido del resumen">
-                  <li>
-                    <Badge variant={isOnline ? 'default' : 'offline'}>
-                      {isOnline ? 'En línea' : 'Offline'}
-                    </Badge>
-                  </li>
-                  <li>
-                    <Badge variant="muted">{storageSummary}</Badge>
-                  </li>
-                  <li>
-                    <Badge variant="muted">
-                      {activeSession ? `${activeSession.points.length} registros activos` : 'Sin salida activa'}
-                    </Badge>
-                  </li>
-                </ul>
-                <div className="utility-inline-group">
-                  {activeSession ? (
-                    <Button
-                      variant="ghost"
-                      onClick={() => openZoomImportPicker(activeSession.id)}
-                      leadingIcon={<AudioWaveform className="h-4 w-4" />}
+              <div className="home-topbar__side">
+                <div className="home-topbar__controls">
+                  <ul className="status-inline-group" aria-label="Estado rápido del resumen">
+                    <li>
+                      <Badge variant={isOnline ? 'default' : 'offline'}>
+                        {isOnline ? 'En línea' : 'Offline'}
+                      </Badge>
+                    </li>
+                    <li>
+                      <Badge variant="muted">{storageSummary}</Badge>
+                    </li>
+                    <li>
+                      <Badge variant="muted">
+                        {activeSession ? `${activeSession.points.length} registros activos` : 'Sin salida activa'}
+                      </Badge>
+                    </li>
+                  </ul>
+                  <div className="utility-inline-group">
+                    {activeSession ? (
+                      <Button
+                        variant="ghost"
+                        onClick={() => openZoomImportPicker(activeSession.id)}
+                        leadingIcon={<AudioWaveform className="h-4 w-4" />}
+                      >
+                        Importar H6
+                      </Button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
+                      className={`mode-toggle ${isSunMode ? 'is-sun' : ''}`}
                     >
-                      Importar H6
-                    </Button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
-                    className={`mode-toggle ${isSunMode ? 'is-sun' : ''}`}
-                  >
-                    <span className="mode-toggle__icon">
-                      {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
-                    </span>
-                    {isSunMode ? 'Modo noche' : 'Modo sol'}
-                  </button>
+                      <span className="mode-toggle__icon">
+                        {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
+                      </span>
+                      {isSunMode ? 'Modo noche' : 'Modo sol'}
+                    </button>
+                  </div>
                 </div>
+
+                <HomeHeroVisual />
+
+                <section className="home-signal-panel" aria-label="Lectura rápida de la jornada">
+                  <p className="eyebrow">Lectura rápida</p>
+                  <dl className="home-signal-panel__list">
+                    {homeQuickReadItems.map((item) => (
+                      <div key={item.id} className="home-signal-panel__item">
+                        <dt>{item.label}</dt>
+                        <dd className="home-signal-panel__value">{item.value}</dd>
+                        <dd className="home-signal-panel__detail">{item.detail}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
               </div>
             </Card>
           ) : (
@@ -6368,6 +6721,22 @@ export default function App() {
                 className="layout-home"
                 {...viewTransitionMotion}
               >
+                <section className="home-workflow-grid" aria-label="Ruta principal de trabajo">
+                  {homeWorkflowCards.map((card) => (
+                    <WorkflowCard
+                      key={card.title}
+                      eyebrow={card.eyebrow}
+                      title={card.title}
+                      description={card.description}
+                      status={card.status}
+                      cta={card.cta}
+                      icon={card.icon}
+                      featured={card.featured}
+                      onClick={card.onClick}
+                    />
+                  ))}
+                </section>
+
                 <div className={isCompactHomeLayout ? 'home-primary-stack' : 'home-primary-grid'}>
                   <Card
                     as="section"
@@ -6608,6 +6977,13 @@ export default function App() {
 
                   {activeSession ? (
                     <>
+                      {activeSessionDateWarning ? (
+                        <div className="capture-alert capture-alert--warning mb-4">
+                          <TriangleAlert className="h-4 w-4" />
+                          <div>{activeSessionDateWarning}</div>
+                        </div>
+                      ) : null}
+
                       <SummaryStrip
                         compact
                         className="dashboard-session-summary-strip"
@@ -6657,6 +7033,28 @@ export default function App() {
                               Abrir último registro
                             </button>
                           ) : null}
+                          {activeSessionLatestSpilloverPointAt ? (
+                            <button
+                              type="button"
+                              onClick={() => void splitSessionRecordsFromLatestSpilloverDay(activeSession.id)}
+                              disabled={isSplittingSessionId === activeSession.id}
+                              aria-busy={isSplittingSessionId === activeSession.id}
+                              className="ui-button ui-button-secondary"
+                            >
+                              <RefreshCw className="h-4 w-4" />
+                              {isSplittingSessionId === activeSession.id
+                                ? 'Separando...'
+                                : `Separar ${formatDateTime(activeSessionLatestSpilloverPointAt, "d MMM")}`}
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => void closeActiveSessionAndPrepareNext()}
+                            className="ui-button ui-button-secondary"
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                            Cerrar y nueva salida
+                          </button>
                         </div>
                         <div className="action-row action-row--compact dashboard-session-panel__actions-danger">
                           <button type="button" onClick={() => void closeActiveSession()} className="ui-button ui-button-danger">
@@ -6687,6 +7085,9 @@ export default function App() {
                             placeholder="Paisajes sonoros costa atlántica"
                             list="project-name-options"
                           />
+                          <span className="text-xs text-[color:var(--muted)]">
+                            La app recuerda el último trabajo usado y lo propone en las siguientes salidas.
+                          </span>
                         </label>
                         <label className="grid gap-2 text-sm panel-primary-label">
                           <span>Zona / región</span>
@@ -6735,7 +7136,7 @@ export default function App() {
                       titleId="session-secondary-workspace-title"
                       title="Buscar, mapa y visibles"
                       description="En compacto, el resto del trabajo vive en una sola superficie para evitar cuatro paneles grandes compitiendo a la vez."
-                      actionLabel={sessionSupportTab === 'insights' ? 'Ver proyectos' : undefined}
+                      actionLabel={sessionSupportTab === 'insights' ? 'Abrir archivo' : undefined}
                       onAction={sessionSupportTab === 'insights' ? () => setView('export') : undefined}
                     />
 
@@ -6743,10 +7144,10 @@ export default function App() {
                       label="Cambiar área secundaria de salidas"
                       value={sessionSupportTab}
                       items={[
-                        { value: 'browser', label: 'Visibles' },
+                        { value: 'browser', label: 'Salidas' },
                         { value: 'search', label: 'Buscar' },
                         { value: 'map', label: 'Mapa' },
-                        { value: 'insights', label: 'Resumen' },
+                        { value: 'insights', label: 'Estado' },
                       ]}
                       onChange={setSessionSupportTab}
                       panelIdBase="session-support"
@@ -6828,6 +7229,15 @@ export default function App() {
                           </li>
                         </ul>
                       </div>
+
+                      {activeSessionDateWarning ? (
+                        <div className="capture-status-stack" aria-label="Avisos de antigüedad de la salida">
+                          <div className="capture-alert capture-alert--warning">
+                            <TriangleAlert className="h-4 w-4" />
+                            <div>{activeSessionDateWarning}</div>
+                          </div>
+                        </div>
+                      ) : null}
 
                       {!isOnline || storageMode === 'memory-only' ? (
                         <div className="capture-status-stack" aria-label="Avisos del registro activo">
@@ -7100,7 +7510,7 @@ export default function App() {
                           label="Cambiar herramienta secundaria de captura"
                           value={captureSupportTab}
                           items={[
-                            { value: 'map', label: 'Explorar' },
+                            { value: 'map', label: 'Mapa' },
                             { value: 'photos', label: 'Fotos', count: draftPhotos.length },
                             { value: 'ai', label: 'IA' },
                             { value: 'record', label: 'Último' },
@@ -7186,13 +7596,17 @@ export default function App() {
           <nav className="menu-shell mobile-dock" aria-label="Navegación principal móvil">
             <ul className="mobile-dock__list">
               {navigationItems.map((item) => (
-                <li key={item.view} className="mobile-dock__item">
+                <li
+                  key={item.view}
+                  className={`mobile-dock__item ${item.view === 'point' ? 'mobile-dock__item--capture' : ''}`}
+                >
                   <ViewButton
                     active={view === item.view}
                     label={item.label}
                     description={item.description}
                     icon={item.icon}
                     compact
+                    priority={item.view === 'point'}
                     onClick={item.onClick}
                   />
                 </li>

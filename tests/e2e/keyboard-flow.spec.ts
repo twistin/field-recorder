@@ -31,7 +31,7 @@ test.describe('keyboard flow', () => {
     await tabUntilFocused(page, primaryAction);
 
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('heading', { name: /Salidas y trabajo de campo/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Preparar y retomar salidas/i })).toBeVisible();
   });
 
   test.describe('tablet shell', () => {
@@ -73,13 +73,13 @@ test.describe('keyboard flow', () => {
       await prepareDeterministicDashboard(page);
 
       const bottomNav = page.getByRole('navigation', { name: 'Navegación principal móvil' });
-      const projectsButton = bottomNav.getByRole('button', { name: /Proyectos/i });
+      const archiveButton = bottomNav.getByRole('button', { name: /Archivo/i });
 
-      await projectsButton.focus();
-      await expect(projectsButton).toBeFocused();
+      await archiveButton.focus();
+      await expect(archiveButton).toBeFocused();
 
       await page.keyboard.press('Enter');
-      await expect(page.getByRole('heading', { name: /Proyectos, fotos, audio y exportación/i })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /Archivo, media y exportación/i })).toBeVisible();
     });
   });
 });
