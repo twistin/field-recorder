@@ -930,6 +930,7 @@ function ViewButton({
   onClick,
   compact = false,
   priority = false,
+  minimal = false,
 }: {
   active: boolean;
   label: string;
@@ -938,21 +939,22 @@ function ViewButton({
   onClick: () => void;
   compact?: boolean;
   priority?: boolean;
+  minimal?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
-      aria-label={compact ? `${label}. ${description}` : undefined}
-      className={`dock-button ${active ? 'is-active' : ''} ${compact ? 'is-compact' : ''} ${priority ? 'is-priority' : ''}`}
+      aria-label={compact || minimal ? `${label}. ${description}` : undefined}
+      className={`dock-button ${active ? 'is-active' : ''} ${compact ? 'is-compact' : ''} ${priority ? 'is-priority' : ''} ${minimal ? 'is-minimal' : ''}`}
     >
       <span className="dock-button__icon" aria-hidden="true">
         <Icon className="h-4 w-4" />
       </span>
       <span className="dock-button__text">
         <span className="dock-button__label">{label}</span>
-        {!compact ? <span className="dock-button__description">{description}</span> : null}
+        {!compact && !minimal ? <span className="dock-button__description">{description}</span> : null}
       </span>
     </button>
   );
@@ -1053,128 +1055,41 @@ function AppNavigationPanels({
   titleId,
   activeView,
   navigationItems,
-  activeSession,
-  activeSessionProjectName,
-  isOnline,
-  onOpenProjects,
-  onImportZoom,
-  showSessionSummary = true,
   onNavigate,
 }: {
   titleId: string;
   activeView: View;
   navigationItems: NavigationItem[];
-  activeSession: UiFieldSession | null;
-  activeSessionProjectName: string;
-  isOnline: boolean;
-  onOpenProjects: () => void;
-  onImportZoom: () => void;
-  showSessionSummary?: boolean;
   onNavigate?: () => void;
 }) {
   return (
-    <>
-      <section className="panel sidebar-nav-panel" aria-labelledby={titleId}>
-        <div className="sidebar-brand">
-          <p className="eyebrow sidebar-brand__eyebrow">FieldNotes AI</p>
-          <h2 id={titleId} className="sidebar-brand__title">
-            Flujo de campo
-          </h2>
-          <p className="sidebar-brand__copy">
-            Empieza en Inicio, prepara la salida, registra en campo y cierra revisando el archivo.
-          </p>
-          <ol className="sidebar-brand__steps" aria-label="Flujo principal de trabajo">
-            <li>1. Preparar o retomar una salida</li>
-            <li>2. Registrar punto con GPS, fotos y notas</li>
-            <li>3. Revisar media, registros y exportación</li>
-          </ol>
-        </div>
-        <nav className="sidebar-nav" aria-label="Navegación principal">
-          <ul className="sidebar-nav__list">
-            {navigationItems.map((item) => (
-              <li key={item.view} className="sidebar-nav__item">
-                <ViewButton
-                  active={activeView === item.view}
-                  label={item.label}
-                  description={item.description}
-                  icon={item.icon}
-                  onClick={() => {
-                    item.onClick();
-                    onNavigate?.();
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
-        </nav>
-      </section>
-
-      {showSessionSummary && activeView !== 'home' ? (
-        <section
-          className="panel sidebar-session-card sidebar-session-card--compact"
-          aria-labelledby={`${titleId}-current-session-title`}
-        >
-          <p className="eyebrow">Salida actual</p>
-          <h2 id={`${titleId}-current-session-title`} className="sidebar-session-card__title">
-            {activeSession ? activeSession.name : 'No hay salida activa'}
-          </h2>
-          {activeSession ? (
-            <dl className="session-meta-list session-meta-list--compact">
-              <div className="session-meta-row">
-                <dt className="session-meta-label">Trabajo</dt>
-                <dd>{activeSessionProjectName}</dd>
-              </div>
-              <div className="session-meta-row">
-                <dt className="session-meta-label">Zona</dt>
-                <dd>{activeSession.region || 'sin definir'}</dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="module-copy text-sm">
-              Crea una salida para poder lanzar nuevos registros desde el terreno.
-            </p>
-          )}
-          <ul className="sidebar-session-card__stats" aria-label="Estado de la salida actual">
-            <li>
-              <span className="telemetry-chip">
-                {activeSession ? `${activeSession.points.length} registros` : '0 registros'}
-              </span>
-            </li>
-            <li>
-              <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
-                {isOnline ? 'En línea' : 'Offline'}
-              </span>
-            </li>
-          </ul>
-          {activeSession ? (
-            <div className="action-row action-row--compact action-row--support">
-              <button
-                type="button"
+    <section className="panel sidebar-nav-panel" aria-labelledby={titleId}>
+      <div className="sidebar-brand">
+        <p className="eyebrow sidebar-brand__eyebrow">FieldNotes AI</p>
+        <h2 id={titleId} className="sidebar-brand__title">
+          Campo
+        </h2>
+      </div>
+      <nav className="sidebar-nav" aria-label="Navegación principal">
+        <ul className="sidebar-nav__list">
+          {navigationItems.map((item) => (
+            <li key={item.view} className="sidebar-nav__item">
+              <ViewButton
+                active={activeView === item.view}
+                label={item.label}
+                description={item.description}
+                icon={item.icon}
+                minimal
                 onClick={() => {
-                  onOpenProjects();
+                  item.onClick();
                   onNavigate?.();
                 }}
-                className="ui-button ui-button-secondary"
-              >
-                <History className="h-4 w-4" />
-                Abrir archivo
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onImportZoom();
-                  onNavigate?.();
-                }}
-                className="ui-button ui-button-secondary"
-              >
-                <AudioWaveform className="h-4 w-4" />
-                Importar H6
-              </button>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-    </>
+              />
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </section>
   );
 }
 
@@ -1213,7 +1128,7 @@ function ShellHeader({
 
         <div className="fieldnotes-shell-header__copy">
           <p className="eyebrow fieldnotes-shell-header__eyebrow">FieldNotes AI</p>
-          <p className="fieldnotes-shell-header__title">Flujo de campo</p>
+          <p className="fieldnotes-shell-header__title">Campo</p>
           <div className="fieldnotes-shell-header__context">
             <Badge variant="muted">{currentViewLabel}</Badge>
             <p className="fieldnotes-shell-header__support">{supportText}</p>
@@ -4221,14 +4136,42 @@ export default function App() {
   const greetingLabel = getGreetingLabel(now);
   const homeLauncherTitle = activeSession ? 'Continuar salida' : 'Preparar salida';
   const homeLauncherCopy = activeSession
-    ? `${activeSession.name} sigue abierta. Registra el siguiente punto desde aquí y usa las acciones de apoyo sólo cuando necesites revisar salidas o archivo.`
-    : 'Empieza creando o abriendo una salida. La captura y el archivo se activan desde este mismo punto de entrada.';
+    ? `${activeSession.name} sigue abierta. Registra el siguiente punto y deja el archivo para cuando realmente lo necesites.`
+    : 'Empieza creando o retomando una salida. Todo lo demás queda fuera del camino hasta que haga falta.';
   const homePrimaryActionLabel = activeSession ? 'Registrar punto' : 'Preparar salida';
-  const homeArchiveActionLabel = recordPoint && recordSession ? 'Ver último registro' : 'Abrir archivo';
+  const homeSessionActionLabel = activeSession ? 'Abrir salida' : 'Ver salidas';
+  const homeArchiveActionLabel = 'Abrir archivo';
   const latestRecordLabel = recordPoint ? recordPoint.placeName : 'Sin ficha final todavía';
   const latestRecordSummary = recordPoint
     ? `${formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm")} · ${resolveProjectName(recordSession?.projectName ?? '')}`
     : 'El archivo final aparecerá en cuanto guardes el primer punto.';
+  const homeOperationalFacts = [
+    {
+      id: 'gps',
+      label: 'GPS',
+      value: currentGps ? gpsAccuracyLabel : 'pendiente',
+    },
+    {
+      id: 'place',
+      label: 'Lugar',
+      value: detectedPlace?.placeName || activeSession?.region || 'sin contexto',
+    },
+    {
+      id: 'sync',
+      label: 'Sync',
+      value: syncPendingCount === 0 ? 'activo' : `${syncPendingCount} pendientes`,
+    },
+    {
+      id: 'records',
+      label: 'Registros',
+      value: activeSession ? String(activeSession.points.length) : '0',
+    },
+  ] as const;
+  const homeOperationalContext = activeSession
+    ? [activeSessionProjectName, activeSession.region || null, activeSessionStartedLabel ? `Desde ${activeSessionStartedLabel}` : null]
+        .filter(Boolean)
+        .join(' · ')
+    : 'Sin salida activa';
   const homeGpsValue = currentGps ? gpsAccuracyLabel : 'Sin señal';
   const homeGpsCopy = currentGps ? `${gpsLabel} · ${gpsStatusLabel}` : 'Activa el GPS para situar la salida.';
   const homePlaceValue = detectedPlace ? 'Lugar detectado' : currentGps ? 'Buscando lugar' : 'Esperando GPS';
@@ -4293,7 +4236,7 @@ export default function App() {
         : 'Sólo memoria';
   const isSunMode = displayMode === 'sun';
   const currentViewLabel =
-    view === 'home' ? 'Inicio' : view === 'session' ? 'Salidas' : view === 'point' ? 'Registrar' : 'Archivo';
+    view === 'home' ? 'Inicio' : view === 'session' ? 'Salidas' : view === 'point' ? 'Captura' : 'Archivo';
   const currentViewTitle =
     view === 'home'
       ? 'Qué necesita la jornada'
@@ -4397,7 +4340,7 @@ export default function App() {
     },
     {
       view: 'point',
-      label: activeSession ? 'Registrar' : 'Preparar',
+      label: 'Captura',
       description: activeSession ? 'GPS, fotos y notas' : 'Necesita una salida',
       icon: Mic,
       onClick: () => setView(activeSession ? 'point' : 'session'),
@@ -5284,6 +5227,58 @@ export default function App() {
     );
   }
 
+  function renderSessionSupportWorkspace() {
+    return (
+      <section
+        className="dashboard-secondary-workspace dashboard-secondary-workspace--focused"
+        aria-labelledby="session-secondary-workspace-title"
+      >
+        <SectionHeader
+          eyebrow="Apoyo"
+          titleId="session-secondary-workspace-title"
+          title="Todo lo secundario vive aquí"
+          description="Retoma salidas, busca registros, consulta el mapa o revisa el estado sin convertir esta pantalla en un dashboard."
+          actionLabel={sessionSupportTab === 'insights' ? 'Abrir archivo' : undefined}
+          onAction={sessionSupportTab === 'insights' ? () => setView('export') : undefined}
+        />
+
+        <SegmentedControl
+          label="Cambiar área secundaria de salidas"
+          value={sessionSupportTab}
+          items={[
+            { value: 'browser', label: 'Salidas' },
+            { value: 'search', label: 'Buscar' },
+            { value: 'map', label: 'Mapa' },
+            { value: 'insights', label: 'Estado' },
+          ]}
+          onChange={setSessionSupportTab}
+          panelIdBase="session-support"
+          size="sm"
+          fill={isCompactSessionLayout}
+        />
+
+        <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            key={`session-support-${sessionSupportTab}`}
+            id={`session-support-panel-${sessionSupportTab}`}
+            role="tabpanel"
+            aria-labelledby={`session-support-tab-${sessionSupportTab}`}
+            className="content-swap-panel content-swap-panel--workspace"
+            {...contentSwapMotion}
+          >
+            {sessionSupportTab === 'browser'
+              ? renderSessionBrowserPanel()
+              : sessionSupportTab === 'search'
+                ? renderSessionSearchPanel()
+                : sessionSupportTab === 'map'
+                  ? renderSessionMapPanel()
+                  : renderSessionInsightsPanel()}
+          </motion.div>
+        </AnimatePresence>
+      </section>
+    );
+  }
+
   function renderCaptureListenPanel() {
     return (
       <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle listen-panel panel-tone panel-tone--amber">
@@ -5738,11 +5733,11 @@ export default function App() {
     ];
 
     return (
-      <>
+      <div className="archive-session-workspace">
         <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-records-panel panel-tone panel-tone--sky">
           <div className="panel-heading">
             <p className="eyebrow">Salida abierta</p>
-            <h3 className="display-heading text-3xl">{recordSession.name}</h3>
+            <h3 className="display-heading text-3xl">Registros de {recordSession.name}</h3>
             <ul className="record-header-card__context" aria-label="Contexto de la salida visible">
               <li>
                 <span className="telemetry-chip">{resolveProjectName(recordSession.projectName)}</span>
@@ -5797,47 +5792,42 @@ export default function App() {
           ) : (
             <p className="module-copy text-sm">Esta salida todavía no tiene registros guardados.</p>
           )}
-        </div>
-
-        <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-preview-card panel-tone panel-tone--amber">
-          <div className="panel-heading">
-            <p className="eyebrow">Registro activo en la salida</p>
-            <h3 className="display-heading text-3xl">
-              {recordPoint ? recordPoint.placeName : 'Sin registro seleccionado'}
-            </h3>
+          <div className="archive-session-workspace__footer">
+            {recordPoint ? (
+              <button
+                type="button"
+                onClick={() => setArchiveWorkspace('record')}
+                className="ui-button ui-button-primary"
+              >
+                Abrir ficha del registro
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setArchiveWorkspace('media')}
+              className="ui-button ui-button-secondary"
+            >
+              Ver biblioteca
+            </button>
           </div>
-
-          {recordPoint ? (
-            <>
-              <p className="module-copy text-sm">
-                {recordPoint.soundscapeClassification?.summary ||
-                  recordPoint.observedWeather ||
-                  'Selecciona un registro para abrir su ficha completa o revisar su biblioteca.'}
-              </p>
-              <div className="action-row">
-                <button
-                  type="button"
-                  onClick={() => setArchiveWorkspace('record')}
-                  className="ui-button ui-button-primary"
-                >
-                  Abrir ficha del registro
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setArchiveWorkspace('media')}
-                  className="ui-button ui-button-secondary"
-                >
-                  Ver biblioteca
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="module-copy text-sm">Selecciona un registro de la salida para abrir su ficha o su biblioteca.</p>
-          )}
         </div>
 
-        {renderArchiveSessionCard(recordSession)}
-      </>
+        <details className="manual-details archive-session-workspace__details">
+          <summary className="manual-details__summary">
+            <div>
+              <p className="eyebrow">Gestión de salida</p>
+              <p className="module-copy text-sm">
+                Sincronización, exportación y edición de tomas H6 sólo cuando realmente haga falta.
+              </p>
+            </div>
+            <span className="manual-details__hint">Abrir</span>
+          </summary>
+
+          <div className="manual-details__body archive-session-workspace__details-body">
+            {renderArchiveSessionCard(recordSession)}
+          </div>
+        </details>
+      </div>
     );
   }
 
@@ -5847,7 +5837,7 @@ export default function App() {
     }
 
     return (
-      <>
+      <div className="archive-media-workspace">
         <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-media-panel panel-tone panel-tone--amber">
           <div className="panel-heading">
             <p className="eyebrow">Fotos y audio</p>
@@ -5943,43 +5933,26 @@ export default function App() {
               <p className="module-copy text-sm">Esta salida todavía no tiene tomas H6 importadas.</p>
             )}
           </div>
-        </div>
-
-        <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-preview-card panel-tone panel-tone--sky">
-          <div className="panel-heading">
-            <p className="eyebrow">Registro seleccionado en la biblioteca</p>
-            <h3 className="display-heading text-3xl">
-              {recordPoint ? recordPoint.placeName : 'Sin registro seleccionado'}
-            </h3>
+          <div className="archive-media-workspace__footer">
+            {recordPoint ? (
+              <button
+                type="button"
+                onClick={() => setArchiveWorkspace('record')}
+                className="ui-button ui-button-primary"
+              >
+                Abrir ficha del registro
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setArchiveWorkspace('session')}
+              className="ui-button ui-button-secondary"
+            >
+              Volver a salida
+            </button>
           </div>
-
-          {recordPoint ? (
-            <>
-              <p className="module-copy text-sm">
-                {recordPoint.notes || recordPoint.detectedPlace?.context || 'Este registro ya puede abrirse en la ficha completa.'}
-              </p>
-              <div className="action-row">
-                <button
-                  type="button"
-                  onClick={() => setArchiveWorkspace('record')}
-                  className="ui-button ui-button-primary"
-                >
-                  Ver ficha completa
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setArchiveWorkspace('session')}
-                  className="ui-button ui-button-secondary"
-                >
-                  Volver a salida
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="module-copy text-sm">Selecciona una foto o una toma H6 para enfocar el registro correspondiente.</p>
-          )}
         </div>
-      </>
+      </div>
     );
   }
 
@@ -6419,12 +6392,6 @@ export default function App() {
               titleId="tablet-drawer-nav-title"
               activeView={view}
               navigationItems={navigationItems}
-              activeSession={activeSession}
-              activeSessionProjectName={activeSessionProjectName}
-              isOnline={isOnline}
-              onOpenProjects={() => setView('export')}
-              onImportZoom={() => activeSession ? openZoomImportPicker(activeSession.id) : undefined}
-              showSessionSummary={false}
               onNavigate={() => setIsNavDrawerOpen(false)}
             />
           </div>
@@ -6478,11 +6445,6 @@ export default function App() {
                 titleId="desktop-sidebar-nav-title"
                 activeView={view}
                 navigationItems={navigationItems}
-                activeSession={activeSession}
-                activeSessionProjectName={activeSessionProjectName}
-                isOnline={isOnline}
-                onOpenProjects={() => setView('export')}
-                onImportZoom={() => activeSession ? openZoomImportPicker(activeSession.id) : undefined}
               />
             </aside>
           ) : null}
@@ -6500,54 +6462,16 @@ export default function App() {
               aria-describedby="dashboard-home-description"
               {...surfaceEnterMotion}
             >
-              <div className="home-topbar__brand">
-                <p className="eyebrow">{greetingLabel} · centro de campo</p>
-                <h1 id="dashboard-home-title" className="display-heading home-topbar__title">{homeLauncherTitle}</h1>
-                <p id="dashboard-home-description" className="module-copy text-sm md:text-base">
-                  {homeLauncherCopy}
-                </p>
-                <div className="home-topbar__actions" role="group" aria-label="Acciones principales del resumen">
-                  <Button
-                    variant="primary"
-                    onClick={() => setView(activeSession ? 'point' : 'session')}
-                    className="home-topbar__primary-action"
-                    leadingIcon={<Mic className="h-4 w-4" />}
-                  >
-                    {homePrimaryActionLabel}
-                  </Button>
-                  <div className="home-topbar__support-actions">
-                    <Button
-                      variant="secondary"
-                      onClick={() => setView('session')}
-                      leadingIcon={<MapPinned className="h-4 w-4" />}
-                    >
-                      Ver salidas
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() =>
-                        recordPoint && recordSession ? openRecordView(recordSession.id, recordPoint.id) : setView('export')
-                      }
-                      leadingIcon={<History className="h-4 w-4" />}
-                    >
-                      {homeArchiveActionLabel}
-                    </Button>
-                  </div>
+              <div className="home-topbar__masthead">
+                <div className="home-topbar__brand">
+                  <p className="eyebrow">{greetingLabel} · trabajo de campo</p>
+                  <h1 id="dashboard-home-title" className="display-heading home-topbar__title">{homeLauncherTitle}</h1>
+                  <p id="dashboard-home-description" className="module-copy text-sm md:text-base">
+                    {homeLauncherCopy}
+                  </p>
+                  <p className="home-topbar__context-line">{homeOperationalContext}</p>
                 </div>
-                <section className="home-status-strip" aria-label="Estado operativo del resumen">
-                  <p className="eyebrow home-status-strip__eyebrow">Automático y sincronización</p>
-                  <dl className="home-status-strip__grid">
-                    {homeStatusItems.map((item) => (
-                      <div key={item.id} className="home-status-strip__item">
-                        <dt className="home-status-strip__term">{item.label}</dt>
-                        <dd className="home-status-strip__value">{item.value}</dd>
-                        <dd className="home-status-strip__detail">{item.detail}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </section>
-              </div>
-              <div className="home-topbar__side">
+
                 <div className="home-topbar__controls">
                   <ul className="status-inline-group" aria-label="Estado rápido del resumen">
                     <li>
@@ -6559,21 +6483,10 @@ export default function App() {
                       <Badge variant="muted">{storageSummary}</Badge>
                     </li>
                     <li>
-                      <Badge variant="muted">
-                        {activeSession ? `${activeSession.points.length} registros activos` : 'Sin salida activa'}
-                      </Badge>
+                      <Badge variant="muted">{activeSession ? 'Salida activa' : 'Sin salida activa'}</Badge>
                     </li>
                   </ul>
                   <div className="utility-inline-group">
-                    {activeSession ? (
-                      <Button
-                        variant="ghost"
-                        onClick={() => openZoomImportPicker(activeSession.id)}
-                        leadingIcon={<AudioWaveform className="h-4 w-4" />}
-                      >
-                        Importar H6
-                      </Button>
-                    ) : null}
                     <button
                       type="button"
                       onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
@@ -6586,21 +6499,42 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+              </div>
 
-                <HomeHeroVisual />
+              <ul className="home-operational-facts" aria-label="Estado inmediato de la jornada">
+                {homeOperationalFacts.map((fact) => (
+                  <li key={fact.id} className="home-operational-fact">
+                    <span className="home-operational-fact__label">{fact.label}</span>
+                    <strong className="home-operational-fact__value">{fact.value}</strong>
+                  </li>
+                ))}
+              </ul>
 
-                <section className="home-signal-panel" aria-label="Lectura rápida de la jornada">
-                  <p className="eyebrow">Lectura rápida</p>
-                  <dl className="home-signal-panel__list">
-                    {homeQuickReadItems.map((item) => (
-                      <div key={item.id} className="home-signal-panel__item">
-                        <dt>{item.label}</dt>
-                        <dd className="home-signal-panel__value">{item.value}</dd>
-                        <dd className="home-signal-panel__detail">{item.detail}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </section>
+              <div className="home-topbar__actions" role="group" aria-label="Acciones principales del inicio">
+                <Button
+                  variant="primary"
+                  onClick={() => setView(activeSession ? 'point' : 'session')}
+                  className="home-topbar__primary-action"
+                  leadingIcon={<Mic className="h-4 w-4" />}
+                >
+                  {homePrimaryActionLabel}
+                </Button>
+                <div className="home-topbar__support-actions">
+                  <Button
+                    variant="secondary"
+                    onClick={() => activeSession ? openSessionWorkspace(activeSession.id) : setView('session')}
+                    leadingIcon={<MapPinned className="h-4 w-4" />}
+                  >
+                    {homeSessionActionLabel}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setView('export')}
+                    leadingIcon={<History className="h-4 w-4" />}
+                  >
+                    {homeArchiveActionLabel}
+                  </Button>
+                </div>
               </div>
             </Card>
           ) : (
@@ -6718,233 +6652,131 @@ export default function App() {
             {view === 'home' ? (
               <motion.section
                 key="home"
-                className="layout-home"
+                className="layout-home layout-home--focused"
                 {...viewTransitionMotion}
               >
-                <section className="home-workflow-grid" aria-label="Ruta principal de trabajo">
-                  {homeWorkflowCards.map((card) => (
-                    <WorkflowCard
-                      key={card.title}
-                      eyebrow={card.eyebrow}
-                      title={card.title}
-                      description={card.description}
-                      status={card.status}
-                      cta={card.cta}
-                      icon={card.icon}
-                      featured={card.featured}
-                      onClick={card.onClick}
-                    />
-                  ))}
-                </section>
+                <Card
+                  as="section"
+                  variant="panel"
+                  tone="sky"
+                  border="strong"
+                  className="home-session-overview"
+                  aria-labelledby="home-session-overview-title"
+                  aria-describedby={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
+                >
+                  <SectionHeader
+                    eyebrow={activeSession ? 'Captura en curso' : 'Siguiente paso'}
+                    titleId="home-session-overview-title"
+                    descriptionId={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
+                    title={activeSession ? 'Últimos registros' : 'No hay una salida activa'}
+                    description={
+                      activeSession
+                        ? homeRecentRecordsDescription
+                        : 'Crea o retoma una salida antes de capturar. El historial y la media viven en sus propias vistas.'
+                    }
+                    actionLabel={activeSession ? 'Ir a captura' : undefined}
+                    onAction={activeSession ? () => setView('point') : undefined}
+                  />
 
-                <div className={isCompactHomeLayout ? 'home-primary-stack' : 'home-primary-grid'}>
-                  <Card
-                    as="section"
-                    variant="panel"
-                    tone="sky"
-                    border="strong"
-                    className="home-session-overview home-zone home-zone--session"
-                    aria-labelledby="home-session-overview-title"
-                    aria-describedby={activeSession ? undefined : 'home-session-overview-description'}
-                  >
-                    <SectionHeader
-                      eyebrow="Salida actual"
-                      titleId="home-session-overview-title"
-                      descriptionId="home-session-overview-description"
-                      title={activeSession ? activeSession.name : 'Prepara la próxima salida'}
-                      description={
-                        activeSession
-                          ? undefined
-                          : 'Empieza por crear o abrir una salida. Después la captura y el archivo quedan conectados.'
-                      }
-                      actionLabel={activeSession ? 'Ver salida activa' : undefined}
-                      onAction={activeSession ? () => openSessionWorkspace(activeSession.id) : undefined}
-                    />
-
-                    {activeSession ? (
-                      <>
-                        <ul className="home-session-overview__context" aria-label="Contexto de la salida actual">
-                          <li>
-                            <span className="telemetry-chip">{activeSessionProjectName}</span>
-                          </li>
-                          <li>
-                            <span className="telemetry-chip">{activeSession.region || 'sin zona'}</span>
-                          </li>
-                          {activeSessionStartedLabel ? (
-                            <li>
-                              <span className="telemetry-chip">Desde {activeSessionStartedLabel}</span>
-                            </li>
-                          ) : null}
-                        </ul>
-
-                        <SummaryStrip
-                          compact
-                          className="home-session-overview__summary"
-                          ariaLabel="Resumen operativo de la salida actual"
-                          items={homeSessionSummaryItems}
-                        />
-
-                        {latestActivePoints.length > 0 ? (
-                          <section
-                            className="home-session-overview__records"
-                            aria-labelledby="home-recent-records-title"
-                            aria-describedby="home-recent-records-description"
-                          >
-                            <SectionHeader
-                              titleId="home-recent-records-title"
-                              descriptionId="home-recent-records-description"
-                              title="Últimos registros"
-                              description={homeRecentRecordsDescription}
-                              titleAs="h3"
-                              compact
-                              actionLabel={hasMoreActivePoints ? 'Ver todos' : undefined}
-                              onAction={hasMoreActivePoints ? () => setView('point') : undefined}
-                            />
-                            <StructuredList>
-                              {latestActivePoints.map((point) => {
-                                const hasLinkedAudio =
-                                  activeSession.audioTakes.some((take) => take.associatedPointId === point.id) ?? false;
-
-                                return (
-                                  <li key={point.id}>
-                                    <ListRow
-                                      dense
-                                      onClick={() => openRecordView(activeSession.id, point.id)}
-                                      title={point.placeName}
-                                      meta={
-                                        <>
-                                          {formatDateTime(point.createdAt, "d MMM · HH:mm")} ·{' '}
-                                          {point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}
-                                        </>
-                                      }
-                                      stats={[
-                                        `${point.photos.length} foto${point.photos.length === 1 ? '' : 's'}`,
-                                        hasLinkedAudio ? 'H6 asociado' : 'Sin H6',
-                                      ]}
-                                      actionLabel="Ver registro"
-                                    />
-                                  </li>
-                                );
-                              })}
-                            </StructuredList>
-                          </section>
-                        ) : null}
-                      </>
-                    ) : (
-                      <EmptyState
-                        eyebrow="Salida"
-                        title="No hay una salida activa"
-                        description="Crea o abre una salida para empezar a registrar puntos con GPS, fotos, clima y tomas H6 desde el flujo principal."
-                        icon={<MapPinned className="h-5 w-5" />}
-                        action={
-                          <Button variant="secondary" onClick={() => setView('session')}>
-                            Preparar salida
-                          </Button>
-                        }
-                      />
-                    )}
-                  </Card>
-                  {isCompactHomeLayout ? (
-                    <Card
-                      as="section"
-                      variant="preview"
-                      tone={effectiveHomeSecondaryTab === 'work' ? 'mint' : 'amber'}
-                      className="home-secondary-hub home-zone home-zone--secondary"
-                      aria-labelledby="home-secondary-hub-title"
-                      aria-describedby="home-secondary-hub-description"
-                    >
-                      <SectionHeader
-                        eyebrow="Acceso reciente"
-                        titleId="home-secondary-hub-title"
-                        descriptionId="home-secondary-hub-description"
-                        title="Trabajo y media"
-                        description={
-                          effectiveHomeSecondaryTab === 'work'
-                            ? 'Retoma trabajos y salidas recientes desde una sola zona secundaria.'
-                            : 'Revisa fotos y audio recientes sin convertir el resumen en una biblioteca completa.'
-                        }
-                        actionLabel={homeSecondaryActionLabel}
-                        onAction={homeSecondaryActionLabel ? homeSecondaryAction : undefined}
-                      />
-
-                      <div className="home-secondary-hub__controls">
-                        <SegmentedControl
-                          label="Cambiar contenido reciente del resumen"
-                          value={effectiveHomeSecondaryTab}
-                          items={[
-                            { value: 'work', label: 'Trabajo', count: recentSessions.length },
-                            { value: 'media', label: 'Media', count: recentMediaLibraryItems.length },
-                          ]}
-                          onChange={setHomeSecondaryTab}
-                          panelIdBase="home-secondary"
-                          size="sm"
-                        />
+                  {activeSession ? (
+                    <>
+                      <div className="home-session-overview__summaryline" aria-label="Resumen compacto de la salida actual">
+                        {homeSessionSummaryItems.map((item) => (
+                          <div key={item.label} className="home-session-overview__summarystat">
+                            <span>{item.label}</span>
+                            <strong>{item.value}</strong>
+                          </div>
+                        ))}
                       </div>
 
-                      <AnimatePresence initial={false} mode="wait">
-                        <motion.div
-                          key={`home-secondary-${effectiveHomeSecondaryTab}`}
-                          id={`home-secondary-panel-${effectiveHomeSecondaryTab}`}
-                          role="tabpanel"
-                          aria-labelledby={`home-secondary-tab-${effectiveHomeSecondaryTab}`}
-                          className="content-swap-panel content-swap-panel--local home-secondary-hub__panel"
-                          {...contentSwapMotion}
+                      {latestActivePoints.length > 0 ? (
+                        <section
+                          className="home-session-overview__records"
+                          aria-labelledby="home-recent-records-title"
+                          aria-describedby="home-recent-records-description"
                         >
-                          {effectiveHomeSecondaryTab === 'work' ? renderHomeWorkPreview(true) : renderHomeMediaPreview(true)}
-                        </motion.div>
-                      </AnimatePresence>
-                    </Card>
-                  ) : (
-                    <>
-                      <Card
-                        as="section"
-                        variant="preview"
-                        tone="mint"
-                        className="home-library-card home-zone home-zone--work"
-                        aria-labelledby="home-projects-title"
-                        aria-describedby="home-projects-description"
-                      >
-                        <SectionHeader
-                          eyebrow="Trabajo reciente"
-                          titleId="home-projects-title"
-                          descriptionId="home-projects-description"
-                          title="Trabajos y salidas"
-                          description="Los proyectos y salidas recientes quedan agrupados en una sola zona para retomar trabajo sin buscar entre bloques dispersos."
-                          actionLabel={hasRecentWork ? 'Ver salidas' : undefined}
-                          onAction={hasRecentWork ? () => setView('session') : undefined}
-                        />
-                        {renderHomeWorkPreview()}
-                      </Card>
+                          <p id="home-recent-records-title" className="sr-only">Últimos registros</p>
+                          <StructuredList>
+                            {latestActivePoints.map((point) => {
+                              const hasLinkedAudio =
+                                activeSession.audioTakes.some((take) => take.associatedPointId === point.id) ?? false;
 
-                      <Card
-                        as="section"
-                        variant="preview"
-                        tone="amber"
-                        className="home-library-card home-library-card--media home-zone home-zone--media"
-                        aria-labelledby="home-media-title"
-                        aria-describedby="home-media-description"
-                      >
-                        <SectionHeader
-                          eyebrow="Media reciente"
-                          titleId="home-media-title"
-                          descriptionId="home-media-description"
-                          title="Fotos y audio recientes"
-                          description="Vista previa rápida de lo último capturado o importado."
-                          actionLabel={hasRecentMedia ? 'Ver biblioteca completa' : undefined}
-                          onAction={hasRecentMedia ? openMediaArchiveFromHome : undefined}
+                              return (
+                                <li key={point.id}>
+                                  <ListRow
+                                    dense
+                                    onClick={() => openRecordView(activeSession.id, point.id)}
+                                    title={point.placeName}
+                                    meta={
+                                      <>
+                                        {formatDateTime(point.createdAt, "d MMM · HH:mm")} ·{' '}
+                                        {point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}
+                                      </>
+                                    }
+                                    stats={[
+                                      `${point.photos.length} foto${point.photos.length === 1 ? '' : 's'}`,
+                                      hasLinkedAudio ? 'H6 asociado' : 'Sin H6',
+                                    ]}
+                                    actionLabel="Abrir"
+                                  />
+                                </li>
+                              );
+                            })}
+                          </StructuredList>
+                        </section>
+                      ) : (
+                        <EmptyState
+                          eyebrow="Salida"
+                          title="La salida está lista, pero aún no hay registros"
+                          description="Entra en captura y guarda el primer punto. Después podrás revisar el material desde archivo."
+                          icon={<Mic className="h-5 w-5" />}
+                          action={
+                            <Button variant="secondary" onClick={() => setView('point')}>
+                              Ir a captura
+                            </Button>
+                          }
+                          compact
                         />
-                        {renderHomeMediaPreview()}
-                      </Card>
+                      )}
+
+                      <div className="home-session-overview__footer">
+                        <Button
+                          variant="secondary"
+                          onClick={() => setView('point')}
+                          leadingIcon={<Mic className="h-4 w-4" />}
+                        >
+                          Registrar punto
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => setView('export')}
+                          leadingIcon={<History className="h-4 w-4" />}
+                        >
+                          Abrir archivo
+                        </Button>
+                      </div>
                     </>
+                  ) : (
+                    <EmptyState
+                      eyebrow="Salida"
+                      title="Prepara una salida antes de capturar"
+                      description="Cuando abras una salida, esta vista se quedará sólo con el contexto operativo y los últimos registros."
+                      icon={<MapPinned className="h-5 w-5" />}
+                      action={
+                        <Button variant="secondary" onClick={() => setView('session')}>
+                          Preparar salida
+                        </Button>
+                      }
+                    />
                   )}
-                </div>
+                </Card>
               </motion.section>
             ) : null}
 
             {view === 'session' ? (
               <motion.section
                 key="panel"
-                className="layout-dashboard"
+                className="layout-dashboard layout-dashboard--focused"
                 {...viewTransitionMotion}
               >
                 <Card variant="hero" tone="sky" className="dashboard-session-panel">
@@ -7013,7 +6845,7 @@ export default function App() {
                         <div className="action-row dashboard-session-panel__actions-main">
                           <button type="button" onClick={() => setView('point')} className="ui-button ui-button-primary">
                             <Mic className="h-4 w-4" />
-                            Ir a nuevo registro
+                            Ir a captura
                           </button>
                           <button
                             type="button"
@@ -7129,59 +6961,7 @@ export default function App() {
                   )}
                 </Card>
 
-                {isCompactSessionLayout ? (
-                  <section className="dashboard-secondary-workspace" aria-labelledby="session-secondary-workspace-title">
-                    <SectionHeader
-                      eyebrow="Área secundaria"
-                      titleId="session-secondary-workspace-title"
-                      title="Buscar, mapa y visibles"
-                      description="En compacto, el resto del trabajo vive en una sola superficie para evitar cuatro paneles grandes compitiendo a la vez."
-                      actionLabel={sessionSupportTab === 'insights' ? 'Abrir archivo' : undefined}
-                      onAction={sessionSupportTab === 'insights' ? () => setView('export') : undefined}
-                    />
-
-                    <SegmentedControl
-                      label="Cambiar área secundaria de salidas"
-                      value={sessionSupportTab}
-                      items={[
-                        { value: 'browser', label: 'Salidas' },
-                        { value: 'search', label: 'Buscar' },
-                        { value: 'map', label: 'Mapa' },
-                        { value: 'insights', label: 'Estado' },
-                      ]}
-                      onChange={setSessionSupportTab}
-                      panelIdBase="session-support"
-                      size="sm"
-                      fill
-                    />
-
-                    <AnimatePresence initial={false} mode="wait">
-                      <motion.div
-                        key={`session-support-${sessionSupportTab}`}
-                        id={`session-support-panel-${sessionSupportTab}`}
-                        role="tabpanel"
-                        aria-labelledby={`session-support-tab-${sessionSupportTab}`}
-                        className="content-swap-panel content-swap-panel--workspace"
-                        {...contentSwapMotion}
-                      >
-                        {sessionSupportTab === 'browser'
-                          ? renderSessionBrowserPanel()
-                          : sessionSupportTab === 'search'
-                            ? renderSessionSearchPanel()
-                            : sessionSupportTab === 'map'
-                              ? renderSessionMapPanel()
-                              : renderSessionInsightsPanel()}
-                      </motion.div>
-                    </AnimatePresence>
-                  </section>
-                ) : (
-                  <>
-                    {renderSessionBrowserPanel()}
-                    {renderSessionSearchPanel()}
-                    {renderSessionMapPanel()}
-                    {renderSessionInsightsPanel()}
-                  </>
-                )}
+                {renderSessionSupportWorkspace()}
               </motion.section>
             ) : null}
 

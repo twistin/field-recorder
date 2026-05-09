@@ -92,7 +92,7 @@ export async function prepareDeterministicDashboard(page: Page) {
   await expect(page.getByRole('main', { name: 'Contenido principal' })).toBeVisible();
 }
 
-export async function openPrimaryView(page: Page, label: 'Inicio' | 'Salidas' | 'Registrar' | 'Archivo') {
+export async function openPrimaryView(page: Page, label: 'Inicio' | 'Salidas' | 'Captura' | 'Archivo') {
   const labelPattern = new RegExp(`^${escapeRegex(label)}`, 'i');
   const desktopNavButton = page.locator('.sidebar-nav:visible .dock-button', { hasText: labelPattern });
 
