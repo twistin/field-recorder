@@ -69,6 +69,16 @@ export interface SessionAudioTake {
   cloudSyncedAt?: string | null;
 }
 
+export interface SessionRoutePlan {
+  navigationUrl: string;
+  destinationLabel: string;
+  destinationLat: number | null;
+  destinationLon: number | null;
+  arrivalRadiusMeters: number;
+  activateCaptureOnArrival: boolean;
+  arrivalDetectedAt?: string | null;
+}
+
 export interface SessionPoint {
   id: string;
   createdAt: string;
@@ -100,6 +110,7 @@ export interface FieldSession {
   equipmentPreset: string;
   points: SessionPoint[];
   audioTakes: SessionAudioTake[];
+  routePlan?: SessionRoutePlan | null;
   cloudSyncStatus?: 'local-only' | 'pending' | 'syncing' | 'synced' | 'error';
   cloudSyncedAt?: string | null;
   cloudError?: string | null;

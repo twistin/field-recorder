@@ -75,6 +75,7 @@ import type {
   DetectedPlaceSummary,
   FieldSession,
   GpsCoordinates,
+  SessionRoutePlan,
   SessionAudioTake,
   SessionPhoto,
   SessionPoint,
@@ -109,6 +110,7 @@ const HOME_MEDIA_OVERVIEW_PHOTO_LIMIT = 2;
 const HOME_MEDIA_OVERVIEW_AUDIO_LIMIT = 2;
 const HOME_MEDIA_PREVIEW_LIMIT = 4;
 const HOME_AUDIO_PREVIEW_LIMIT = 4;
+const DEFAULT_ROUTE_ARRIVAL_RADIUS_METERS = 150;
 
 let exportFieldSessionLibPromise: Promise<typeof import('./lib/exportFieldSession')> | null = null;
 let locationLookupLibPromise: Promise<typeof import('./lib/locationLookup')> | null = null;
@@ -190,6 +192,12 @@ interface SessionDraft {
   region: string;
   notes: string;
   equipmentPreset: string;
+  routeUrl: string;
+  routeDestinationLabel: string;
+  routeLatitude: string;
+  routeLongitude: string;
+  routeArrivalRadiusMeters: string;
+  armCaptureOnArrival: boolean;
 }
 
 interface PointDraft {
@@ -366,6 +374,79 @@ function parseOptionalBoolean(value: string): boolean | null {
   return null;
 }
 
+function normalizeNavigationUrl(value: string): string | null {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return '';
+  }
+
+  try {
+    const nextUrl = new URL(trimmedValue);
+    if (nextUrl.protocol !== 'http:' && nextUrl.protocol !== 'https:') {
+      return null;
+    }
+
+    return nextUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function extractCoordinatesFromNavigationUrl(value: string): { lat: number; lon: number } | null {
+  const normalizedUrl = normalizeNavigationUrl(value);
+  if (!normalizedUrl) {
+    return null;
+  }
+
+  const decodedUrl = decodeURIComponent(normalizedUrl);
+  const patterns = [
+    /[?&](?:destination|query|q)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i,
+    /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+    /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = decodedUrl.match(pattern);
+    if (!match) {
+      continue;
+    }
+
+    const lat = Number(match[1]);
+    const lon = Number(match[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      return { lat, lon };
+    }
+  }
+
+  return null;
+}
+
+function isShortGoogleMapsUrl(value: string): boolean {
+  const normalizedUrl = normalizeNavigationUrl(value);
+  if (!normalizedUrl) {
+    return false;
+  }
+
+  try {
+    return new URL(normalizedUrl).hostname === 'maps.app.goo.gl';
+  } catch {
+    return false;
+  }
+}
+
+function parseArrivalRadius(value: string): number | null {
+  const parsed = parseOptionalNumber(value);
+  if (parsed == null || parsed <= 0) {
+    return null;
+  }
+
+  return Math.round(parsed);
+}
+
+function clampArrivalRadius(radiusMeters: number): number {
+  return Math.max(25, Math.min(2000, Math.round(radiusMeters)));
+}
+
 function shouldOverwritePointPlaceName(placeName: string): boolean {
   const normalized = placeName.trim();
   return !normalized || /^Punto\s\d{2}:\d{2}:\d{2}$/i.test(normalized);
@@ -395,6 +476,63 @@ function parseCoordinate(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function resolveRouteDestinationCoordinatesFromDraft(
+  draft: Pick<SessionDraft, 'routeLatitude' | 'routeLongitude' | 'routeUrl'>,
+): { lat: number; lon: number } | null {
+  const latitude = parseCoordinate(draft.routeLatitude);
+  const longitude = parseCoordinate(draft.routeLongitude);
+
+  if (latitude !== null && longitude !== null) {
+    return {
+      lat: latitude,
+      lon: longitude,
+    };
+  }
+
+  if (draft.routeLatitude.trim() || draft.routeLongitude.trim()) {
+    return null;
+  }
+
+  return extractCoordinatesFromNavigationUrl(draft.routeUrl);
+}
+
+function resolveRoutePlanDestination(
+  routePlan: Pick<SessionRoutePlan, 'destinationLat' | 'destinationLon'> | null | undefined,
+): { lat: number; lon: number } | null {
+  if (routePlan?.destinationLat == null || routePlan.destinationLon == null) {
+    return null;
+  }
+
+  return {
+    lat: routePlan.destinationLat,
+    lon: routePlan.destinationLon,
+  };
+}
+
+function formatDistanceLabel(distanceMeters: number): string {
+  if (distanceMeters < 1000) {
+    return `${Math.round(distanceMeters)} m`;
+  }
+
+  return `${(distanceMeters / 1000).toFixed(distanceMeters < 10_000 ? 1 : 0)} km`;
+}
+
+function calculateDistanceMeters(
+  from: Pick<GpsCoordinates, 'lat' | 'lon'>,
+  to: { lat: number; lon: number },
+): number {
+  const earthRadiusMeters = 6_371_000;
+  const dLat = ((to.lat - from.lat) * Math.PI) / 180;
+  const dLon = ((to.lon - from.lon) * Math.PI) / 180;
+  const fromLat = (from.lat * Math.PI) / 180;
+  const toLat = (to.lat * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLon / 2) ** 2 * Math.cos(fromLat) * Math.cos(toLat);
+
+  return 2 * earthRadiusMeters * Math.asin(Math.sqrt(a));
+}
+
 function buildSessionDraft(overrides?: Partial<SessionDraft>): SessionDraft {
   const now = new Date();
   return {
@@ -403,6 +541,12 @@ function buildSessionDraft(overrides?: Partial<SessionDraft>): SessionDraft {
     region: overrides?.region ?? '',
     notes: overrides?.notes ?? '',
     equipmentPreset: overrides?.equipmentPreset ?? 'Zoom H6 · XY',
+    routeUrl: overrides?.routeUrl ?? '',
+    routeDestinationLabel: overrides?.routeDestinationLabel ?? '',
+    routeLatitude: overrides?.routeLatitude ?? '',
+    routeLongitude: overrides?.routeLongitude ?? '',
+    routeArrivalRadiusMeters: overrides?.routeArrivalRadiusMeters ?? '',
+    armCaptureOnArrival: overrides?.armCaptureOnArrival ?? false,
   };
 }
 
@@ -444,6 +588,68 @@ function normalizeAudioTake(take: SessionAudioTake): SessionAudioTake {
   };
 }
 
+function normalizeRoutePlan(routePlan: SessionRoutePlan | null | undefined): SessionRoutePlan | null {
+  if (!routePlan) {
+    return null;
+  }
+
+  return {
+    navigationUrl: normalizeNavigationUrl(routePlan.navigationUrl) ?? '',
+    destinationLabel: routePlan.destinationLabel ?? '',
+    destinationLat: routePlan.destinationLat ?? null,
+    destinationLon: routePlan.destinationLon ?? null,
+    arrivalRadiusMeters: clampArrivalRadius(routePlan.arrivalRadiusMeters || DEFAULT_ROUTE_ARRIVAL_RADIUS_METERS),
+    activateCaptureOnArrival: Boolean(routePlan.activateCaptureOnArrival),
+    arrivalDetectedAt: routePlan.arrivalDetectedAt ?? null,
+  };
+}
+
+function validateSessionRouteDraft(draft: SessionDraft): string | null {
+  if (draft.routeUrl.trim() && !normalizeNavigationUrl(draft.routeUrl)) {
+    return 'El enlace de navegación no es válido. Usa una URL completa de Google Maps.';
+  }
+
+  if ((draft.routeLatitude.trim() || draft.routeLongitude.trim()) && !resolveRouteDestinationCoordinatesFromDraft(draft)) {
+    return 'Las coordenadas del destino no son válidas. Completa latitud y longitud o deja ambas vacías.';
+  }
+
+  if (draft.routeArrivalRadiusMeters.trim() && !parseArrivalRadius(draft.routeArrivalRadiusMeters)) {
+    return 'El radio de llegada debe ser un número positivo en metros.';
+  }
+
+  if (draft.armCaptureOnArrival && !resolveRouteDestinationCoordinatesFromDraft(draft)) {
+    return 'Para activar al llegar necesito coordenadas del destino. Los enlaces cortos de Maps no siempre las incluyen.';
+  }
+
+  return null;
+}
+
+function buildRoutePlanFromDraft(draft: SessionDraft): SessionRoutePlan | null {
+  const normalizedUrl = normalizeNavigationUrl(draft.routeUrl) ?? '';
+  const destinationCoordinates = resolveRouteDestinationCoordinatesFromDraft(draft);
+  const routeArrivalRadius =
+    parseArrivalRadius(draft.routeArrivalRadiusMeters) ?? DEFAULT_ROUTE_ARRIVAL_RADIUS_METERS;
+  const hasRouteData =
+    Boolean(normalizedUrl) ||
+    Boolean(draft.routeDestinationLabel.trim()) ||
+    Boolean(destinationCoordinates) ||
+    draft.armCaptureOnArrival;
+
+  if (!hasRouteData) {
+    return null;
+  }
+
+  return {
+    navigationUrl: normalizedUrl,
+    destinationLabel: draft.routeDestinationLabel.trim(),
+    destinationLat: destinationCoordinates?.lat ?? null,
+    destinationLon: destinationCoordinates?.lon ?? null,
+    arrivalRadiusMeters: clampArrivalRadius(routeArrivalRadius),
+    activateCaptureOnArrival: draft.armCaptureOnArrival,
+    arrivalDetectedAt: null,
+  };
+}
+
 function prepareSessionForLocalMutation(
   session: FieldSession,
   options?: { markCloudPending?: boolean; markCatalogPending?: boolean },
@@ -470,6 +676,7 @@ function normalizeFieldSession(session: FieldSession): FieldSession {
       ...point,
       soundscapeClassification: point.soundscapeClassification ?? null,
     })),
+    routePlan: normalizeRoutePlan(session.routePlan),
     cloudSyncStatus: session.cloudSyncStatus ?? 'local-only',
     cloudSyncedAt: session.cloudSyncedAt ?? null,
     cloudError: session.cloudError ?? null,
@@ -1316,6 +1523,10 @@ export default function App() {
     (fallbackRecord && recordSession?.id === fallbackRecord.sessionId ? fallbackRecord.point : recordSession?.points[0] ?? null);
   const draftPointCoordinates = resolvePointCoordinates(pointDraft, currentGps);
   const draftPointLabel = pointDraft.placeName.trim() || detectedPlace?.placeName || 'Punto preparado';
+  const sessionDraftRouteCoordinates = resolveRouteDestinationCoordinatesFromDraft(sessionDraft);
+  const sessionDraftRouteHasShortMapsUrl = isShortGoogleMapsUrl(sessionDraft.routeUrl);
+  const sessionDraftRouteRadius =
+    parseArrivalRadius(sessionDraft.routeArrivalRadiusMeters) ?? DEFAULT_ROUTE_ARRIVAL_RADIUS_METERS;
   const knownProjectNames = Array.from(
     new Set(
       sessions
@@ -1328,6 +1539,20 @@ export default function App() {
     selectedArchiveProjectKey === 'all'
       ? archiveProjectGroups
       : archiveProjectGroups.filter((group) => group.key === selectedArchiveProjectKey);
+  const activeRoutePlan = activeSession?.routePlan ?? null;
+  const activeRouteDestination = resolveRoutePlanDestination(activeRoutePlan);
+  const activeRouteDestinationLabel =
+    activeRoutePlan?.destinationLabel.trim() || activeSession?.region.trim() || 'Destino programado';
+  const activeRouteDistanceMeters =
+    currentGps && activeRouteDestination ? calculateDistanceMeters(currentGps, activeRouteDestination) : null;
+  const isWithinActiveRouteArrivalRadius =
+    Boolean(
+      activeRoutePlan &&
+      currentGps &&
+      activeRouteDestination &&
+      activeRouteDistanceMeters != null &&
+      activeRouteDistanceMeters <= activeRoutePlan.arrivalRadiusMeters,
+    );
 
   function rememberPreferredProjectName(projectName: string) {
     const trimmedProjectName = projectName.trim();
@@ -1370,6 +1595,61 @@ export default function App() {
       points: [],
       audioTakes: [],
     };
+  }
+
+  function openNavigationRoute(routePlan: SessionRoutePlan) {
+    if (!routePlan.navigationUrl) {
+      setAppError('Esta salida no tiene un enlace de navegación guardado.');
+      return;
+    }
+
+    setAppError(null);
+    const openedWindow = window.open(routePlan.navigationUrl, '_blank', 'noopener,noreferrer');
+    if (!openedWindow) {
+      window.location.assign(routePlan.navigationUrl);
+    }
+    announceStatus('Ruta abierta en navegación.', 'info');
+  }
+
+  async function applyCurrentGpsToRouteDestination() {
+    setAppError(null);
+
+    const nextLocation = currentGpsRef.current ?? (await requestCurrentLocation());
+    if (!nextLocation) {
+      setAppError('No pude usar la ubicación actual para fijar el destino.');
+      return;
+    }
+
+    setSessionDraft((previous) => ({
+      ...previous,
+      routeLatitude: nextLocation.lat.toFixed(6),
+      routeLongitude: nextLocation.lon.toFixed(6),
+    }));
+    announceStatus('Destino actualizado con la ubicación actual.', 'success');
+  }
+
+  function prepareCaptureForRoutePlan(routePlan: SessionRoutePlan) {
+    const destination = resolveRoutePlanDestination(routePlan);
+    const destinationLabel = routePlan.destinationLabel.trim();
+
+    setPointDraft((previous) => ({
+      ...previous,
+      placeName: shouldOverwritePointPlaceName(previous.placeName) && destinationLabel
+        ? destinationLabel
+        : previous.placeName,
+      latitude: destination ? destination.lat.toFixed(6) : previous.latitude,
+      longitude: destination ? destination.lon.toFixed(6) : previous.longitude,
+      coordinateSource: destination ? 'manual' : previous.coordinateSource,
+    }));
+
+    setView('point');
+    setAppError(null);
+    announceStatus(
+      destinationLabel
+        ? `Captura preparada para ${destinationLabel}.`
+        : 'Captura preparada con el destino programado.',
+      'success',
+    );
   }
 
   useEffect(() => {
@@ -1830,6 +2110,33 @@ export default function App() {
   }, [currentGps]);
 
   useEffect(() => {
+    if (!activeSession || !activeRoutePlan?.activateCaptureOnArrival) {
+      return;
+    }
+
+    if (activeRoutePlan.arrivalDetectedAt || !activeRouteDestination || !isWithinActiveRouteArrivalRadius) {
+      return;
+    }
+
+    const nextSession: UiFieldSession = {
+      ...activeSession,
+      routePlan: {
+        ...activeRoutePlan,
+        arrivalDetectedAt: new Date().toISOString(),
+      },
+    };
+
+    void persistSession(nextSession);
+    announceStatus(`Llegada detectada cerca de ${activeRouteDestinationLabel}. La captura ya puede activarse.`, 'success');
+  }, [
+    activeRouteDestination,
+    activeRouteDestinationLabel,
+    activeRoutePlan,
+    activeSession,
+    isWithinActiveRouteArrivalRadius,
+  ]);
+
+  useEffect(() => {
     const coordinates = resolvePointCoordinates(pointDraft, currentGps);
     if (!coordinates) {
       locationAbortRef.current?.abort();
@@ -2285,7 +2592,14 @@ export default function App() {
   }
 
   function createSession() {
+    const routeValidationError = validateSessionRouteDraft(sessionDraft);
+    if (routeValidationError) {
+      setAppError(routeValidationError);
+      return;
+    }
+
     const createdAt = new Date().toISOString();
+    const routePlan = buildRoutePlanFromDraft(sessionDraft);
     const nextSession: UiFieldSession = {
       id: uuidv4(),
       name: sessionDraft.name.trim() || `Salida ${formatDateTime(createdAt, 'yyyy-MM-dd')}`,
@@ -2298,16 +2612,23 @@ export default function App() {
       equipmentPreset: sessionDraft.equipmentPreset.trim() || 'Zoom H6 · XY',
       points: [],
       audioTakes: [],
+      routePlan,
     };
 
     rememberPreferredProjectName(nextSession.projectName);
     setActiveSessionId(nextSession.id);
     setSelectedPointId(null);
+    setAppError(null);
     void persistSession(nextSession);
     setPointDraft(buildPointDraft(nextSession.equipmentPreset, currentGpsRef.current));
     setSessionDraft(buildNextSessionDraft(nextSession));
-    announceStatus('Salida iniciada. Empieza a registrar puntos de escucha.', 'success');
-    setView('point');
+    announceStatus(
+      routePlan?.navigationUrl
+        ? 'Salida iniciada con ruta programada. La captura quedará lista al llegar.'
+        : 'Salida iniciada. Empieza a registrar puntos de escucha.',
+      'success',
+    );
+    setView(routePlan ? 'session' : 'point');
   }
 
   function updateActiveSessionField<K extends keyof UiFieldSession>(field: K, value: UiFieldSession[K]) {
@@ -4255,6 +4576,67 @@ export default function App() {
         : view === 'point'
           ? 'La captura queda centrada en registrar rápido: ubicación, escucha, fotos y notas en una sola pantalla.'
           : 'El archivo deja visibles registros, fotos, audio H6 y exportación sin esconder acciones ni mezclar edición.';
+  const sessionDraftProjectHint =
+    sessionDraft.projectName.trim() || preferredProjectName || latestKnownProjectName || 'Sin trabajo reciente';
+  const sessionDraftRegionHint =
+    sessionDraft.region.trim() || (currentGps ? homePlaceValue : 'Define la zona al abrir la salida');
+  const sessionDraftRouteValue =
+    sessionDraft.routeDestinationLabel.trim() ||
+    (sessionDraft.routeUrl.trim() ? 'Ruta enlazada' : 'Sin ruta programada');
+  const sessionDraftArrivalValue = sessionDraft.armCaptureOnArrival
+    ? sessionDraftRouteCoordinates
+      ? `Radio ${sessionDraftRouteRadius} m`
+      : 'Faltan coordenadas'
+    : 'Activación manual';
+  const sessionDraftSupportItems = [
+    { id: 'project', label: 'Trabajo sugerido', value: sessionDraftProjectHint },
+    { id: 'territory', label: 'Territorio', value: sessionDraftRegionHint },
+    { id: 'equipment', label: 'Equipo', value: sessionDraft.equipmentPreset.trim() || 'Zoom H6 · XY' },
+    { id: 'route', label: 'Ruta', value: sessionDraftRouteValue },
+    { id: 'arrival', label: 'Llegada', value: sessionDraftArrivalValue },
+  ] as const;
+  const sessionDraftSupportCopy = sessionDraft.armCaptureOnArrival
+    ? sessionDraftRouteCoordinates
+      ? `La captura se podrá armar al entrar dentro de ${sessionDraftRouteRadius} m del destino.`
+      : 'Añade coordenadas de destino para que la activación por llegada funcione.'
+    : currentGps
+      ? 'La posición actual ya está lista para completar contexto en cuanto abras la salida.'
+      : 'Puedes dejar la salida preparada ahora y resolver ubicación o clima más tarde desde captura.';
+  const sessionDraftRouteHint = sessionDraftRouteCoordinates
+    ? `Destino listo en ${sessionDraftRouteCoordinates.lat.toFixed(6)}, ${sessionDraftRouteCoordinates.lon.toFixed(6)}.`
+    : sessionDraftRouteHasShortMapsUrl
+      ? 'El enlace corto abrirá Maps, pero para detectar la llegada conviene añadir latitud y longitud.'
+      : sessionDraft.routeUrl.trim()
+        ? 'Si el enlace trae coordenadas, la app las detectará al guardar aunque no rellenes latitud y longitud.'
+        : 'Puedes pegar una ruta de Google Maps y definir un punto de llegada para dejar la captura lista al llegar.';
+  const activeRouteArrivalValue =
+    !activeRoutePlan
+      ? null
+      : activeRoutePlan.arrivalDetectedAt
+        ? 'Llegada detectada'
+        : activeRoutePlan.activateCaptureOnArrival
+          ? activeRouteDestination
+            ? isWithinActiveRouteArrivalRadius
+              ? 'Dentro del radio'
+              : activeRouteDistanceMeters != null
+                ? `A ${formatDistanceLabel(activeRouteDistanceMeters)}`
+                : 'Esperando GPS'
+            : 'Faltan coordenadas'
+          : activeRouteDestination
+            ? 'Ruta guardada'
+            : 'Sin punto de llegada';
+  const activeRouteArrivalDetail =
+    !activeRoutePlan
+      ? null
+      : activeRoutePlan.arrivalDetectedAt
+        ? `La llegada quedó marcada el ${formatDateTime(activeRoutePlan.arrivalDetectedAt, "d MMM · HH:mm")}.`
+        : activeRoutePlan.activateCaptureOnArrival
+          ? activeRouteDestination
+            ? activeRouteDistanceMeters != null
+              ? `Radio armado en ${activeRoutePlan.arrivalRadiusMeters} m.`
+              : 'Activa el GPS para medir la distancia restante.'
+            : 'Añade coordenadas al destino para activar automáticamente.'
+          : 'La ruta sólo se abre en Maps; la captura se activa manualmente.';
   const surfaceEnterMotion = getSurfaceEnterMotion(prefersReducedMotion);
   const viewTransitionMotion = getViewTransitionMotion(prefersReducedMotion);
   const contentSwapMotion = getContentSwapMotion(prefersReducedMotion);
@@ -4444,6 +4826,64 @@ export default function App() {
   const canRefreshDetectedPlace = isOnline && Boolean(draftPointCoordinates);
   const canRefreshWeather = isOnline && Boolean(draftPointCoordinates);
   const recordBadge = recordPoint ? resolveSoundscapeBadge(recordPoint) : null;
+
+  function renderActiveRoutePlanCard(mode: 'home' | 'session') {
+    if (!activeRoutePlan || !activeRouteArrivalValue || !activeRouteArrivalDetail) {
+      return null;
+    }
+
+    const showCaptureAction = Boolean(activeRouteDestination || activeRoutePlan.destinationLabel.trim());
+    const captureActionLabel =
+      activeRoutePlan.arrivalDetectedAt || isWithinActiveRouteArrivalRadius
+        ? 'Activar captura'
+        : 'Preparar captura';
+
+    return (
+      <aside className={`session-draft-context route-plan-card route-plan-card--${mode}`} aria-label="Ruta activa">
+        <p className="eyebrow">{mode === 'home' ? 'Ruta armada' : 'Ruta activa'}</p>
+        <h4 className="session-draft-context__title">{activeRouteDestinationLabel}</h4>
+        <ul className="session-draft-context__facts">
+          <li className="session-draft-context__fact">
+            <span className="session-draft-context__label">Llegada</span>
+            <strong className="session-draft-context__value">{activeRouteArrivalValue}</strong>
+          </li>
+          <li className="session-draft-context__fact">
+            <span className="session-draft-context__label">Radio</span>
+            <strong className="session-draft-context__value">{activeRoutePlan.arrivalRadiusMeters} m</strong>
+          </li>
+          <li className="session-draft-context__fact">
+            <span className="session-draft-context__label">Navegación</span>
+            <strong className="session-draft-context__value">
+              {activeRoutePlan.navigationUrl ? 'Lista para abrir' : 'Sin enlace guardado'}
+            </strong>
+          </li>
+        </ul>
+        <p className="module-copy text-sm">{activeRouteArrivalDetail}</p>
+        <div className="action-row action-row--compact">
+          {activeRoutePlan.navigationUrl ? (
+            <button
+              type="button"
+              onClick={() => openNavigationRoute(activeRoutePlan)}
+              className="ui-button ui-button-secondary"
+            >
+              <CarFront className="h-4 w-4" />
+              Abrir ruta
+            </button>
+          ) : null}
+          {showCaptureAction ? (
+            <button
+              type="button"
+              onClick={() => prepareCaptureForRoutePlan(activeRoutePlan)}
+              className="ui-button ui-button-primary"
+            >
+              <Mic className="h-4 w-4" />
+              {captureActionLabel}
+            </button>
+          ) : null}
+        </div>
+      </aside>
+    );
+  }
 
   useEffect(() => {
     if (!isOnline || storageMode !== 'ready') {
@@ -5236,10 +5676,11 @@ export default function App() {
         <SectionHeader
           eyebrow="Apoyo"
           titleId="session-secondary-workspace-title"
-          title="Todo lo secundario vive aquí"
-          description="Retoma salidas, busca registros, consulta el mapa o revisa el estado sin convertir esta pantalla en un dashboard."
+          title="Apoyo operativo"
+          description="Salidas, búsqueda, mapa y estado en una sola banda compacta."
           actionLabel={sessionSupportTab === 'insights' ? 'Abrir archivo' : undefined}
           onAction={sessionSupportTab === 'insights' ? () => setView('export') : undefined}
+          compact
         />
 
         <SegmentedControl
@@ -6689,6 +7130,8 @@ export default function App() {
                         ))}
                       </div>
 
+                      {renderActiveRoutePlanCard('home')}
+
                       {latestActivePoints.length > 0 ? (
                         <section
                           className="home-session-overview__records"
@@ -6841,6 +7284,8 @@ export default function App() {
                         ]}
                       />
 
+                      {renderActiveRoutePlanCard('session')}
+
                       <div className="dashboard-session-panel__actions">
                         <div className="action-row dashboard-session-panel__actions-main">
                           <button type="button" onClick={() => setView('point')} className="ui-button ui-button-primary">
@@ -6896,68 +7341,200 @@ export default function App() {
                       </div>
                     </>
                   ) : (
-                    <div className="grid gap-4">
-                      <label className="grid gap-2 text-sm panel-primary-label">
-                        <span>Nombre de la salida</span>
-                        <input
-                          value={sessionDraft.name}
-                          onChange={(event) => setSessionDraft((previous) => ({ ...previous, name: event.target.value }))}
-                          className="field-input"
-                        />
-                      </label>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <label className="grid gap-2 text-sm panel-primary-label">
-                          <span>Trabajo</span>
-                          <input
-                            value={sessionDraft.projectName}
-                            onChange={(event) =>
-                              setSessionDraft((previous) => ({ ...previous, projectName: event.target.value }))
-                            }
-                            className="field-input"
-                            placeholder="Paisajes sonoros costa atlántica"
-                            list="project-name-options"
-                          />
-                          <span className="text-xs text-[color:var(--muted)]">
-                            La app recuerda el último trabajo usado y lo propone en las siguientes salidas.
-                          </span>
-                        </label>
-                        <label className="grid gap-2 text-sm panel-primary-label">
-                          <span>Zona / región</span>
-                          <input
-                            value={sessionDraft.region}
-                            onChange={(event) => setSessionDraft((previous) => ({ ...previous, region: event.target.value }))}
-                            className="field-input"
-                            placeholder="Vigo, Galicia"
-                          />
-                        </label>
+                    <>
+                      <div className="session-draft-shell">
+                        <div className="session-draft-main">
+                          <label className="grid gap-2 text-sm panel-primary-label">
+                            <span>Nombre de la salida</span>
+                            <input
+                              value={sessionDraft.name}
+                              onChange={(event) => setSessionDraft((previous) => ({ ...previous, name: event.target.value }))}
+                              className="field-input"
+                            />
+                          </label>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label className="grid gap-2 text-sm panel-primary-label">
+                              <span>Trabajo</span>
+                              <input
+                                value={sessionDraft.projectName}
+                                onChange={(event) =>
+                                  setSessionDraft((previous) => ({ ...previous, projectName: event.target.value }))
+                                }
+                                className="field-input"
+                                placeholder="Paisajes sonoros costa atlántica"
+                                list="project-name-options"
+                              />
+                              <span className="text-xs text-[color:var(--muted)]">
+                                La app recuerda el último trabajo usado y lo propone en las siguientes salidas.
+                              </span>
+                            </label>
+                            <label className="grid gap-2 text-sm panel-primary-label">
+                              <span>Zona / región</span>
+                              <input
+                                value={sessionDraft.region}
+                                onChange={(event) => setSessionDraft((previous) => ({ ...previous, region: event.target.value }))}
+                                className="field-input"
+                                placeholder="Vigo, Galicia"
+                              />
+                            </label>
+                          </div>
+                          <label className="grid gap-2 text-sm panel-primary-label">
+                            <span>Preset de equipo</span>
+                            <input
+                              value={sessionDraft.equipmentPreset}
+                              onChange={(event) =>
+                                setSessionDraft((previous) => ({ ...previous, equipmentPreset: event.target.value }))
+                              }
+                              className="field-input"
+                              placeholder="Zoom H6 · XY"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm panel-primary-label">
+                            <span>Notas</span>
+                            <textarea
+                              value={sessionDraft.notes}
+                              onChange={(event) => setSessionDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                              rows={4}
+                              className="field-input min-h-28"
+                              placeholder="Objetivo de la salida, ruta o condiciones esperadas..."
+                            />
+                          </label>
+                          <section className="session-draft-route" aria-labelledby="session-draft-route-title">
+                            <div className="session-draft-route__header">
+                              <p className="eyebrow">Ruta opcional</p>
+                              <h4 id="session-draft-route-title" className="session-draft-context__title">
+                                Programa la llegada antes de salir
+                              </h4>
+                              <p className="module-copy text-sm">
+                                Pega tu enlace de Maps y define el punto de llegada para que la captura quede lista al entrar en la zona.
+                              </p>
+                            </div>
+
+                            <label className="grid gap-2 text-sm panel-primary-label">
+                              <span>Enlace de navegación</span>
+                              <input
+                                value={sessionDraft.routeUrl}
+                                onChange={(event) =>
+                                  setSessionDraft((previous) => ({ ...previous, routeUrl: event.target.value }))
+                                }
+                                className="field-input"
+                                placeholder="https://maps.app.goo.gl/..."
+                                inputMode="url"
+                              />
+                            </label>
+
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <label className="grid gap-2 text-sm panel-primary-label">
+                                <span>Nombre del destino</span>
+                                <input
+                                  value={sessionDraft.routeDestinationLabel}
+                                  onChange={(event) =>
+                                    setSessionDraft((previous) => ({
+                                      ...previous,
+                                      routeDestinationLabel: event.target.value,
+                                    }))
+                                  }
+                                  className="field-input"
+                                  placeholder="Miradoiro de Mesa de Montes"
+                                />
+                              </label>
+                              <label className="grid gap-2 text-sm panel-primary-label">
+                                <span>Radio de llegada (m)</span>
+                                <input
+                                  value={sessionDraft.routeArrivalRadiusMeters}
+                                  onChange={(event) =>
+                                    setSessionDraft((previous) => ({
+                                      ...previous,
+                                      routeArrivalRadiusMeters: event.target.value,
+                                    }))
+                                  }
+                                  className="field-input"
+                                  placeholder={String(DEFAULT_ROUTE_ARRIVAL_RADIUS_METERS)}
+                                  inputMode="numeric"
+                                />
+                              </label>
+                            </div>
+
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <label className="grid gap-2 text-sm panel-primary-label">
+                                <span>Latitud destino</span>
+                                <input
+                                  value={sessionDraft.routeLatitude}
+                                  onChange={(event) =>
+                                    setSessionDraft((previous) => ({ ...previous, routeLatitude: event.target.value }))
+                                  }
+                                  className="field-input"
+                                  placeholder="42.284685"
+                                  inputMode="decimal"
+                                />
+                              </label>
+                              <label className="grid gap-2 text-sm panel-primary-label">
+                                <span>Longitud destino</span>
+                                <input
+                                  value={sessionDraft.routeLongitude}
+                                  onChange={(event) =>
+                                    setSessionDraft((previous) => ({ ...previous, routeLongitude: event.target.value }))
+                                  }
+                                  className="field-input"
+                                  placeholder="-8.791661"
+                                  inputMode="decimal"
+                                />
+                              </label>
+                            </div>
+
+                            <div className="action-row action-row--compact">
+                              <button
+                                type="button"
+                                onClick={() => void applyCurrentGpsToRouteDestination()}
+                                className="ui-button ui-button-secondary"
+                              >
+                                <LocateFixed className="h-4 w-4" />
+                                Usar GPS actual
+                              </button>
+                            </div>
+
+                            <label className="session-draft-toggle">
+                              <input
+                                type="checkbox"
+                                checked={sessionDraft.armCaptureOnArrival}
+                                onChange={(event) =>
+                                  setSessionDraft((previous) => ({
+                                    ...previous,
+                                    armCaptureOnArrival: event.target.checked,
+                                  }))
+                                }
+                              />
+                              <span className="session-draft-toggle__label">Armar captura al llegar</span>
+                              <small className="session-draft-toggle__copy">
+                                Si el GPS entra en el radio, la app marcará la llegada y dejará la captura lista para activarla.
+                              </small>
+                            </label>
+
+                            <p className="module-copy text-sm">{sessionDraftRouteHint}</p>
+                          </section>
+                        </div>
+
+                        <aside className="session-draft-context" aria-label="Contexto rápido antes de salir">
+                          <p className="eyebrow">Antes de salir</p>
+                          <h4 className="session-draft-context__title">La app ya te deja esto orientado</h4>
+                          <ul className="session-draft-context__facts">
+                            {sessionDraftSupportItems.map((item) => (
+                              <li key={item.id} className="session-draft-context__fact">
+                                <span className="session-draft-context__label">{item.label}</span>
+                                <strong className="session-draft-context__value">{item.value}</strong>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="module-copy text-sm">{sessionDraftSupportCopy}</p>
+                        </aside>
                       </div>
-                      <label className="grid gap-2 text-sm panel-primary-label">
-                        <span>Preset de equipo</span>
-                        <input
-                          value={sessionDraft.equipmentPreset}
-                          onChange={(event) =>
-                            setSessionDraft((previous) => ({ ...previous, equipmentPreset: event.target.value }))
-                          }
-                          className="field-input"
-                          placeholder="Zoom H6 · XY"
-                        />
-                      </label>
-                      <label className="grid gap-2 text-sm panel-primary-label">
-                        <span>Notas</span>
-                        <textarea
-                          value={sessionDraft.notes}
-                          onChange={(event) => setSessionDraft((previous) => ({ ...previous, notes: event.target.value }))}
-                          rows={4}
-                          className="field-input min-h-28"
-                          placeholder="Objetivo de la salida, ruta o condiciones esperadas..."
-                        />
-                      </label>
-                      <div className="action-row">
+
+                      <div className="action-row session-draft-actions">
                         <button type="button" onClick={createSession} className="ui-button ui-button-primary">
                           Iniciar salida
                         </button>
                       </div>
-                    </div>
+                    </>
                   )}
                 </Card>
 
