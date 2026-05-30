@@ -1392,14 +1392,14 @@ export default function App() {
   });
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => {
     if (typeof window === 'undefined') {
-      return 'night';
+      return 'sun';
     }
 
     try {
       const storedValue = window.localStorage.getItem(DISPLAY_MODE_STORAGE_KEY);
-      return storedValue === 'sun' || storedValue === 'night' ? storedValue : 'night';
+      return storedValue === 'sun' || storedValue === 'night' ? storedValue : 'sun';
     } catch {
-      return 'night';
+      return 'sun';
     }
   });
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -6913,34 +6913,51 @@ export default function App() {
                   <p className="home-topbar__context-line">{homeOperationalContext}</p>
                 </div>
 
-                <div className="home-topbar__controls">
-                  <ul className="status-inline-group" aria-label="Estado rápido del resumen">
-                    <li>
-                      <Badge variant={isOnline ? 'default' : 'offline'}>
-                        {isOnline ? 'En línea' : 'Offline'}
-                      </Badge>
-                    </li>
-                    <li>
-                      <Badge variant="muted">{storageSummary}</Badge>
-                    </li>
-                    <li>
-                      <Badge variant="muted">{activeSession ? 'Salida activa' : 'Sin salida activa'}</Badge>
-                    </li>
-                  </ul>
-                  <div className="utility-inline-group">
-                    <button
-                      type="button"
-                      onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
-                      className={`mode-toggle ${isSunMode ? 'is-sun' : ''}`}
-                    >
-                      <span className="mode-toggle__icon">
-                        {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
-                      </span>
-                      {isSunMode ? 'Modo noche' : 'Modo sol'}
-                    </button>
+                <div className="home-topbar__sidecar">
+                  <div className="home-topbar__controls">
+                    <ul className="status-inline-group" aria-label="Estado rápido del resumen">
+                      <li>
+                        <Badge variant={isOnline ? 'default' : 'offline'}>
+                          {isOnline ? 'En línea' : 'Offline'}
+                        </Badge>
+                      </li>
+                      <li>
+                        <Badge variant="muted">{storageSummary}</Badge>
+                      </li>
+                      <li>
+                        <Badge variant="muted">{activeSession ? 'Salida activa' : 'Sin salida activa'}</Badge>
+                      </li>
+                    </ul>
+                    <div className="utility-inline-group">
+                      <button
+                        type="button"
+                        onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
+                        className={`mode-toggle ${isSunMode ? 'is-sun' : ''}`}
+                      >
+                        <span className="mode-toggle__icon">
+                          {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
+                        </span>
+                        {isSunMode ? 'Modo noche' : 'Modo sol'}
+                      </button>
+                    </div>
                   </div>
+
+                  <HomeHeroVisual />
                 </div>
               </div>
+
+              <section className="home-status-strip" aria-label="Lectura rápida de la jornada">
+                <p className="eyebrow home-status-strip__eyebrow">Lectura rápida</p>
+                <div className="home-status-strip__grid">
+                  {homeQuickReadItems.map((item) => (
+                    <div key={item.id} className="home-status-strip__item">
+                      <p className="home-status-strip__term">{item.label}</p>
+                      <p className="home-status-strip__value">{item.value}</p>
+                      <p className="home-status-strip__detail">{item.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
 
               <ul className="home-operational-facts" aria-label="Estado inmediato de la jornada">
                 {homeOperationalFacts.map((fact) => (
@@ -7096,6 +7113,23 @@ export default function App() {
                 className="layout-home layout-home--focused"
                 {...viewTransitionMotion}
               >
+                <section className="home-workflow-grid" aria-label="Flujo principal de la jornada">
+                  {homeWorkflowCards.map((card) => (
+                    <React.Fragment key={card.title}>
+                      <WorkflowCard
+                        eyebrow={card.eyebrow}
+                        title={card.title}
+                        description={card.description}
+                        status={card.status}
+                        cta={card.cta}
+                        icon={card.icon}
+                        featured={card.featured}
+                        onClick={card.onClick}
+                      />
+                    </React.Fragment>
+                  ))}
+                </section>
+
                 <Card
                   as="section"
                   variant="panel"
@@ -7286,53 +7320,79 @@ export default function App() {
 
                       {renderActiveRoutePlanCard('session')}
 
-                      <div className="dashboard-session-panel__actions">
-                        <div className="action-row dashboard-session-panel__actions-main">
-                          <button type="button" onClick={() => setView('point')} className="ui-button ui-button-primary">
-                            <Mic className="h-4 w-4" />
-                            Ir a captura
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openZoomImportPicker(activeSession.id)}
-                            className="ui-button ui-button-secondary"
-                          >
-                            <AudioWaveform className="h-4 w-4" />
-                            Importar Zoom H6
-                          </button>
-                          {recordPoint && recordSession ? (
+                      <div className="dashboard-session-actions-grid">
+                        <section className="dashboard-action-block dashboard-action-block--primary" aria-label="Acciones de captura">
+                          <div className="dashboard-action-block__header">
+                            <p className="eyebrow">Operar ahora</p>
+                            <p className="module-copy text-sm">Las acciones de trabajo quedan primero; el resto se aparta del flujo principal.</p>
+                          </div>
+                          <div className="action-row dashboard-session-panel__actions-main">
+                            <button type="button" onClick={() => setView('point')} className="ui-button ui-button-primary">
+                              <Mic className="h-4 w-4" />
+                              Ir a captura
+                            </button>
+                            {activeRoutePlan?.navigationUrl ? (
+                              <button
+                                type="button"
+                                onClick={() => openNavigationRoute(activeRoutePlan)}
+                                className="ui-button ui-button-secondary"
+                              >
+                                <CarFront className="h-4 w-4" />
+                                Abrir ruta
+                              </button>
+                            ) : null}
+                            {recordPoint && recordSession ? (
+                              <button
+                                type="button"
+                                onClick={() => openRecordView(recordSession.id, recordPoint.id)}
+                                className="ui-button ui-button-secondary"
+                              >
+                                <History className="h-4 w-4" />
+                                Abrir último registro
+                              </button>
+                            ) : null}
+                          </div>
+                        </section>
+
+                        <section className="dashboard-action-block" aria-label="Acciones de mantenimiento">
+                          <div className="dashboard-action-block__header">
+                            <p className="eyebrow">Preparar y ordenar</p>
+                            <p className="module-copy text-sm">Importación, separación de registros y relevo de salida sin entorpecer la captura.</p>
+                          </div>
+                          <div className="action-row dashboard-session-panel__actions-main">
                             <button
                               type="button"
-                              onClick={() => openRecordView(recordSession.id, recordPoint.id)}
+                              onClick={() => openZoomImportPicker(activeSession.id)}
                               className="ui-button ui-button-secondary"
                             >
-                              <History className="h-4 w-4" />
-                              Abrir último registro
+                              <AudioWaveform className="h-4 w-4" />
+                              Importar Zoom H6
                             </button>
-                          ) : null}
-                          {activeSessionLatestSpilloverPointAt ? (
+                            {activeSessionLatestSpilloverPointAt ? (
+                              <button
+                                type="button"
+                                onClick={() => void splitSessionRecordsFromLatestSpilloverDay(activeSession.id)}
+                                disabled={isSplittingSessionId === activeSession.id}
+                                aria-busy={isSplittingSessionId === activeSession.id}
+                                className="ui-button ui-button-secondary"
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                                {isSplittingSessionId === activeSession.id
+                                  ? 'Separando...'
+                                  : `Separar ${formatDateTime(activeSessionLatestSpilloverPointAt, "d MMM")}`}
+                              </button>
+                            ) : null}
                             <button
                               type="button"
-                              onClick={() => void splitSessionRecordsFromLatestSpilloverDay(activeSession.id)}
-                              disabled={isSplittingSessionId === activeSession.id}
-                              aria-busy={isSplittingSessionId === activeSession.id}
+                              onClick={() => void closeActiveSessionAndPrepareNext()}
                               className="ui-button ui-button-secondary"
                             >
                               <RefreshCw className="h-4 w-4" />
-                              {isSplittingSessionId === activeSession.id
-                                ? 'Separando...'
-                                : `Separar ${formatDateTime(activeSessionLatestSpilloverPointAt, "d MMM")}`}
+                              Cerrar y nueva salida
                             </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={() => void closeActiveSessionAndPrepareNext()}
-                            className="ui-button ui-button-secondary"
-                          >
-                            <RefreshCw className="h-4 w-4" />
-                            Cerrar y nueva salida
-                          </button>
-                        </div>
+                          </div>
+                        </section>
+
                         <div className="action-row action-row--compact dashboard-session-panel__actions-danger">
                           <button type="button" onClick={() => void closeActiveSession()} className="ui-button ui-button-danger">
                             Cerrar salida
