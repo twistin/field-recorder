@@ -91,4 +91,23 @@ test.describe('dashboard visual coverage', () => {
     await expect(page.getByRole('button', { name: 'Guardar registro rápido', exact: true })).toBeVisible();
     await expect(page).toHaveScreenshot('dashboard-capture-desktop.png');
   });
+
+  test('archive desktop layout stays stable with a selected session', async ({ page }) => {
+    await prepareDeterministicDashboard(page);
+    await seedFieldSessions(page, [ACTIVE_CAPTURE_SESSION]);
+    await openPrimaryView(page, 'Archivo');
+
+    await expect(page.getByRole('button', { name: 'Exportar ZIP', exact: true })).toBeVisible();
+    await expect(page).toHaveScreenshot('dashboard-archive-desktop.png');
+  });
+
+  test('archive record desktop layout stays stable with a selected record', async ({ page }) => {
+    await prepareDeterministicDashboard(page);
+    await seedFieldSessions(page, [ACTIVE_CAPTURE_SESSION]);
+    await openPrimaryView(page, 'Archivo');
+
+    await page.getByRole('tab', { name: 'Registro', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Exportar CSV', exact: true })).toBeVisible();
+    await expect(page).toHaveScreenshot('dashboard-archive-record-desktop.png');
+  });
 });

@@ -6005,154 +6005,266 @@ export default function App() {
   }
 
   function renderArchiveBrowserPanel() {
+    const archiveNavigatorFactItems = [
+      {
+        id: 'filter',
+        label: 'Filtro',
+        value: currentArchiveProject?.name || 'Todos los trabajos',
+        detail: `${visibleArchiveSessions.length} ${visibleArchiveSessions.length === 1 ? 'salida visible' : 'salidas visibles'} ahora.`,
+      },
+      {
+        id: 'focus',
+        label: 'Salida abierta',
+        value: recordSession?.name || 'Ninguna todavía',
+        detail: recordSession
+          ? `${resolveProjectName(recordSession.projectName)} · ${recordSession.region || 'sin zona'}`
+          : 'Abre una salida para revisar registros, media o ficha final.',
+      },
+      {
+        id: 'pending',
+        label: 'Pendientes',
+        value: totalOperationalPendingCount > 0 ? `${totalOperationalPendingCount}` : 'Al día',
+        detail: totalOperationalPendingCount > 0
+          ? operationalPendingSummary
+          : 'Sin tareas de sincronización ni revisión.',
+      },
+    ] as const;
+
     return (
       <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-browser-panel panel-tone panel-tone--mint">
-        <div className="panel-heading panel-heading--compact archive-browser-panel__header">
-          <p className="eyebrow">Archivo</p>
-          <h3 className="display-heading text-3xl">Archivo y salidas</h3>
-        </div>
+        <div className="archive-browser-shell">
+          <div className="archive-browser-intro">
+            <div className="archive-browser-intro__copy">
+              <p className="eyebrow">Archivo</p>
+              <h3 className="display-heading text-3xl">Elige una salida y baja al detalle después</h3>
+              <p className="module-copy text-sm">
+                Filtra por trabajo, cambia de salida y deja la gestión avanzada fuera del camino principal.
+              </p>
+            </div>
 
-        <p className="archive-browser-panel__selection">
-          {currentArchiveProject
-            ? `Filtrando por ${currentArchiveProject.name}`
-            : 'Mostrando todas las salidas visibles'}
-        </p>
-
-        <div className="archive-filter-strip">
-          <button
-            type="button"
-            onClick={() => focusArchiveProject('all')}
-            className={`archive-filter-button ${selectedArchiveProjectKey === 'all' ? 'is-active' : ''}`}
-          >
-            Todos
-          </button>
-          {archiveProjectGroups.map((group) => (
-            <button
-              key={group.key}
-              type="button"
-              onClick={() => focusArchiveProject(group.key)}
-              className={`archive-filter-button ${selectedArchiveProjectKey === group.key ? 'is-active' : ''}`}
-            >
-              {group.name}
-            </button>
-          ))}
-        </div>
-
-        <SummaryStrip
-          compact
-          className="archive-browser-summary"
-          ariaLabel="Resumen del archivo filtrado"
-          items={archiveBrowserSummaryItems}
-        />
-
-        {currentArchiveProject ? (
-          canManageSelectedProject ? (
-            <details
-              className="manual-details archive-project-admin"
-              aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
-            >
-              <summary className="manual-details__summary">
-                <div>
-                  <p className="eyebrow">Gestionar trabajo</p>
-                  <p className="module-copy text-sm">Renombra o limpia la etiqueta del trabajo seleccionado.</p>
-                </div>
-                <span className="manual-details__hint">Abrir</span>
-              </summary>
-
-              <div className="manual-details__body archive-project-admin__body">
-                <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                  <span>Nombre del trabajo</span>
-                  <input
-                    value={projectDraftName}
-                    onChange={(event) => setProjectDraftName(event.target.value)}
-                    className="field-input"
-                    placeholder="Paisajes urbanos de Vigo"
-                  />
-                </label>
-                <div className="action-row">
-                  <button
-                    type="button"
-                    onClick={() => void renameProject(currentArchiveProject.key)}
-                    disabled={isUpdatingProjectKey === currentArchiveProject.key}
-                    aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
-                    className="ui-button ui-button-secondary"
-                  >
-                    {isUpdatingProjectKey === currentArchiveProject.key ? 'Guardando...' : 'Renombrar trabajo'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void clearProject(currentArchiveProject.key)}
-                    disabled={isUpdatingProjectKey === currentArchiveProject.key}
-                    aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
-                    className="ui-button ui-button-danger"
-                  >
-                    {isUpdatingProjectKey === currentArchiveProject.key ? 'Actualizando...' : 'Quitar trabajo'}
-                  </button>
-                </div>
-              </div>
-            </details>
-          ) : (
-            <p className="module-copy text-sm archive-browser-note">
-              <strong>Sin trabajo</strong> agrupa salidas sin etiqueta.
-            </p>
-          )
-        ) : null}
-
-        <section className="archive-session-browser" aria-labelledby="archive-session-browser-title">
-          <SectionHeader
-            titleId="archive-session-browser-title"
-            title={currentArchiveProject ? 'Salidas del trabajo' : 'Salidas visibles'}
-            description={`${visibleArchiveSessions.length} ${visibleArchiveSessions.length === 1 ? 'salida' : 'salidas'} en el filtro actual.`}
-            titleAs="h4"
-            compact
-          />
-          {visibleArchiveSessions.length > 0 ? (
-            <StructuredList className="archive-session-list">
-              {visibleArchiveSessions.map((session) => (
-                <li key={session.id}>
-                  <ListRow
-                    dense
-                    onClick={() => {
-                      focusArchiveSession(session.id);
-                      setIsArchiveBrowserOpen(false);
-                    }}
-                    className={`archive-session-row ${recordSession?.id === session.id ? 'is-active' : ''}`}
-                    eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
-                    title={session.name}
-                    meta={
-                      currentArchiveProject
-                        ? `${session.region || 'sin zona'} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`
-                        : `${resolveProjectName(session.projectName)} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`
-                    }
-                    stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
-                    actionLabel={recordSession?.id === session.id ? 'Abierta' : 'Abrir'}
-                  />
+            <ul className="archive-fact-grid" aria-label="Lectura rápida del archivo">
+              {archiveNavigatorFactItems.map((item) => (
+                <li key={item.id} className="archive-fact-card">
+                  <span className="archive-fact-card__label">{item.label}</span>
+                  <strong className="archive-fact-card__value">{item.value}</strong>
+                  <span className="archive-fact-card__detail">{item.detail}</span>
                 </li>
               ))}
-            </StructuredList>
-          ) : (
-            <p className="module-copy text-sm">
-              No hay salidas en el filtro actual.
+            </ul>
+          </div>
+
+          <div className="archive-browser-toolbar">
+            <p className="archive-browser-panel__selection">
+              {currentArchiveProject
+                ? `Trabajo en foco: ${currentArchiveProject.name}`
+                : 'Mostrando todas las salidas visibles'}
             </p>
-          )}
-        </section>
+
+            <div className="archive-filter-strip">
+              <button
+                type="button"
+                onClick={() => focusArchiveProject('all')}
+                className={`archive-filter-button ${selectedArchiveProjectKey === 'all' ? 'is-active' : ''}`}
+              >
+                Todos
+              </button>
+              {archiveProjectGroups.map((group) => (
+                <button
+                  key={group.key}
+                  type="button"
+                  onClick={() => focusArchiveProject(group.key)}
+                  className={`archive-filter-button ${selectedArchiveProjectKey === group.key ? 'is-active' : ''}`}
+                >
+                  {group.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <SummaryStrip
+            compact
+            className="archive-summary-strip archive-browser-summary"
+            ariaLabel="Resumen del archivo filtrado"
+            items={archiveBrowserSummaryItems}
+          />
+
+          {currentArchiveProject ? (
+            canManageSelectedProject ? (
+              <details
+                className="manual-details archive-project-admin"
+                aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
+              >
+                <summary className="manual-details__summary">
+                  <div>
+                    <p className="eyebrow">Gestionar trabajo</p>
+                    <p className="module-copy text-sm">Renombra o limpia la etiqueta del trabajo seleccionado.</p>
+                  </div>
+                  <span className="manual-details__hint">Abrir</span>
+                </summary>
+
+                <div className="manual-details__body archive-project-admin__body">
+                  <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                    <span>Nombre del trabajo</span>
+                    <input
+                      value={projectDraftName}
+                      onChange={(event) => setProjectDraftName(event.target.value)}
+                      className="field-input"
+                      placeholder="Paisajes urbanos de Vigo"
+                    />
+                  </label>
+                  <div className="action-row">
+                    <button
+                      type="button"
+                      onClick={() => void renameProject(currentArchiveProject.key)}
+                      disabled={isUpdatingProjectKey === currentArchiveProject.key}
+                      aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
+                      className="ui-button ui-button-secondary"
+                    >
+                      {isUpdatingProjectKey === currentArchiveProject.key ? 'Guardando...' : 'Renombrar trabajo'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void clearProject(currentArchiveProject.key)}
+                      disabled={isUpdatingProjectKey === currentArchiveProject.key}
+                      aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
+                      className="ui-button ui-button-danger"
+                    >
+                      {isUpdatingProjectKey === currentArchiveProject.key ? 'Actualizando...' : 'Quitar trabajo'}
+                    </button>
+                  </div>
+                </div>
+              </details>
+            ) : (
+              <p className="module-copy text-sm archive-browser-note">
+                <strong>Sin trabajo</strong> agrupa salidas sin etiqueta.
+              </p>
+            )
+          ) : null}
+
+          <section className="archive-session-browser" aria-labelledby="archive-session-browser-title">
+            <SectionHeader
+              titleId="archive-session-browser-title"
+              title={currentArchiveProject ? 'Salidas en foco' : 'Salidas visibles'}
+              description={`${visibleArchiveSessions.length} ${visibleArchiveSessions.length === 1 ? 'salida lista' : 'salidas listas'} para abrir o exportar.`}
+              titleAs="h4"
+              compact
+            />
+            {visibleArchiveSessions.length > 0 ? (
+              <StructuredList className="archive-session-list">
+                {visibleArchiveSessions.map((session) => (
+                  <li key={session.id}>
+                    <ListRow
+                      dense
+                      onClick={() => {
+                        focusArchiveSession(session.id);
+                        setIsArchiveBrowserOpen(false);
+                      }}
+                      className={`archive-session-row ${recordSession?.id === session.id ? 'is-active' : ''}`}
+                      eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
+                      title={session.name}
+                      meta={
+                        currentArchiveProject
+                          ? `${session.region || 'sin zona'} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`
+                          : `${resolveProjectName(session.projectName)} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`
+                      }
+                      stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                      actionLabel={recordSession?.id === session.id ? 'Abierta' : 'Abrir'}
+                    />
+                  </li>
+                ))}
+              </StructuredList>
+            ) : (
+              <p className="module-copy text-sm">
+                No hay salidas en el filtro actual.
+              </p>
+            )}
+          </section>
+        </div>
       </div>
     );
   }
 
   function renderArchiveWorkspaceStack() {
+    if (!recordSession) {
+      return null;
+    }
+
+    const archiveWorkspaceDescription =
+      archiveWorkspace === 'session'
+        ? 'Ordena registros y abre sólo la ficha que toque.'
+        : archiveWorkspace === 'media'
+          ? 'Recorre fotos y tomas H6 sin perder la salida de contexto.'
+          : recordPoint
+            ? 'Exporta, publica y revisa el punto abierto desde una sola mesa.'
+            : 'Abre un registro para ver su ficha completa.';
+    const archiveWorkspaceFactItems = [
+      {
+        id: 'project',
+        label: 'Trabajo',
+        value: resolveProjectName(recordSession.projectName),
+        detail: recordSession.region || 'Sin región definida',
+      },
+      {
+        id: 'status',
+        label: 'Estado',
+        value: recordSession.status === 'active' ? 'Activa ahora' : 'Salida cerrada',
+        detail: formatDateTime(recordSession.startedAt, "d MMM yyyy · HH:mm"),
+      },
+      {
+        id: 'material',
+        label: 'Material',
+        value: `${recordSessionPoints.length} registros`,
+        detail: `${recordSessionPhotoLibrary.length} fotos · ${recordSessionAudioLibrary.length} H6`,
+      },
+      {
+        id: 'focus',
+        label: 'Foco',
+        value:
+          archiveWorkspace === 'record'
+            ? recordPoint?.placeName || 'Sin registro'
+            : archiveWorkspace === 'media'
+              ? 'Biblioteca visible'
+              : 'Salida abierta',
+        detail:
+          archiveWorkspace === 'record'
+            ? recordPoint
+              ? formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm:ss")
+              : 'Selecciona un registro desde salida o biblioteca.'
+            : archiveWorkspace === 'media'
+              ? recordPoint
+                ? `Ficha lista: ${recordPoint.placeName}.`
+                : 'Abre un registro cuando necesites detalle final.'
+              : recordPoint
+                ? `Ficha preparada: ${recordPoint.placeName}.`
+                : 'Abre un registro para bajar al detalle.',
+      },
+    ] as const;
+
     return (
       <div className="archive-detail-stack">
         <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-workspace-panel panel-tone panel-tone--sky">
-          <div className="archive-workspace-panel__header">
-            <div className="archive-workspace-panel__copy">
-              <p className="eyebrow">Espacio de trabajo</p>
-              <h3 className="display-heading text-3xl">{recordSession?.name ?? 'Sin salida seleccionada'}</h3>
+          <div className="archive-workspace-shell">
+            <div className="archive-workspace-hero">
+              <div className="archive-workspace-hero__copy">
+                <p className="eyebrow">Mesa de revisión</p>
+                <h3 className="display-heading text-3xl">{recordSession.name}</h3>
+                <p className="module-copy text-sm">{archiveWorkspaceDescription}</p>
+              </div>
+
+              <ul className="archive-fact-grid" aria-label="Lectura rápida de la salida abierta">
+                {archiveWorkspaceFactItems.map((item) => (
+                  <li key={item.id} className="archive-fact-card">
+                    <span className="archive-fact-card__label">{item.label}</span>
+                    <strong className="archive-fact-card__value">{item.value}</strong>
+                    <span className="archive-fact-card__detail">{item.detail}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
 
-            <div className="archive-workspace-panel__controls">
-              {isCompactArchiveLayout ? (
-                <div className="archive-workspace-panel__primary-actions">
+            <div className="archive-workspace-actions">
+              <div className="archive-workspace-actions__primary">
+                {isCompactArchiveLayout ? (
                   <button
                     ref={archiveDrawerTriggerRef}
                     type="button"
@@ -6162,42 +6274,77 @@ export default function App() {
                     <History className="h-4 w-4" />
                     Cambiar salida
                   </button>
-                </div>
-              ) : null}
+                ) : null}
 
-              {recordSession ? (
-                <ul className="archive-workspace-panel__stats" aria-label="Resumen de la salida abierta">
-                  <li>
-                    <span className="telemetry-chip">{resolveProjectName(recordSession.projectName)}</span>
-                  </li>
-                  <li>
-                    <span className="telemetry-chip">
-                      {recordSession.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
-                    </span>
-                  </li>
-                  <li>
-                    <span className="telemetry-chip">{recordSessionPoints.length} registros</span>
-                  </li>
-                  <li>
-                    <span className="telemetry-chip">{recordSessionAudioLibrary.length} tomas H6</span>
-                  </li>
-                </ul>
-              ) : null}
+                {archiveWorkspace === 'record' ? (
+                  recordSession.status === 'active' ? (
+                    <button
+                      type="button"
+                      onClick={() => setView('point')}
+                      className="ui-button ui-button-primary"
+                    >
+                      <Mic className="h-4 w-4" />
+                      Seguir registrando
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setArchiveWorkspace('session')}
+                      className="ui-button ui-button-primary"
+                    >
+                      <History className="h-4 w-4" />
+                      Volver a salida
+                    </button>
+                  )
+                ) : recordPoint ? (
+                  <button
+                    type="button"
+                    onClick={() => setArchiveWorkspace('record')}
+                    className="ui-button ui-button-primary"
+                  >
+                    <History className="h-4 w-4" />
+                    Abrir ficha
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setArchiveWorkspace('media')}
+                    className="ui-button ui-button-primary"
+                  >
+                    <Camera className="h-4 w-4" />
+                    Ver biblioteca
+                  </button>
+                )}
 
-              <SegmentedControl
-                label="Cambiar área del espacio de trabajo"
-                value={archiveWorkspace}
-                items={[
-                  { value: 'session', label: 'Salida' },
-                  { value: 'media', label: 'Biblioteca' },
-                  { value: 'record', label: 'Registro', disabled: !recordPoint },
-                ]}
-                onChange={setArchiveWorkspace}
-                panelIdBase="archive-workspace"
-                size="sm"
-                fill={isCompactArchiveLayout}
-                className="archive-workspace-switch"
-              />
+                <button
+                  type="button"
+                  onClick={() => void exportSession(recordSession)}
+                  disabled={isExportingSessionId === recordSession.id}
+                  aria-busy={isExportingSessionId === recordSession.id}
+                  className="ui-button ui-button-secondary"
+                >
+                  <Download className="h-4 w-4" />
+                  {isExportingSessionId === recordSession.id ? 'Exportando...' : 'Exportar ZIP'}
+                </button>
+              </div>
+
+              <div className="archive-workspace-actions__nav">
+                <span className="archive-workspace-actions__label">Cambiar área</span>
+                <SegmentedControl
+                  label="Cambiar área del espacio de trabajo"
+                  value={archiveWorkspace}
+                  items={[
+                    { value: 'session', label: 'Salida' },
+                    { value: 'media', label: 'Biblioteca' },
+                    { value: 'record', label: 'Registro', disabled: !recordPoint },
+                  ]}
+                  onChange={setArchiveWorkspace}
+                  panelIdBase="archive-workspace"
+                  size="sm"
+                  fill={isCompactArchiveLayout}
+                  className="archive-workspace-switch"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -6241,25 +6388,56 @@ export default function App() {
     return (
       <div className="archive-session-workspace">
         <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-records-panel panel-tone panel-tone--sky">
-          <div className="panel-heading">
-            <p className="eyebrow">Salida abierta</p>
-            <h3 className="display-heading text-3xl">Registros de {recordSession.name}</h3>
-            <ul className="record-header-card__context" aria-label="Contexto de la salida visible">
-              <li>
-                <span className="telemetry-chip">{resolveProjectName(recordSession.projectName)}</span>
-              </li>
-              <li>
-                <span className="telemetry-chip">{recordSession.region || 'Sin zona'}</span>
-              </li>
-              <li>
-                <span className="telemetry-chip">{formatDateTime(recordSession.startedAt, "d MMM yyyy · HH:mm")}</span>
-              </li>
-            </ul>
+          <div className="archive-session-intro">
+            <div className="archive-session-intro__copy">
+              <p className="eyebrow">Salida abierta</p>
+              <h3 className="display-heading text-3xl">Registros listos para revisar</h3>
+              <p className="module-copy text-sm">
+                {recordSessionPoints.length > 0
+                  ? recordPoint
+                    ? `${recordSessionPoints.length} registros visibles. La ficha preparada es ${recordPoint.placeName}; baja al detalle sólo cuando lo necesites.`
+                    : `${recordSessionPoints.length} registros visibles. Elige uno para abrir su ficha final.`
+                  : 'Esta salida todavía no tiene registros guardados.'}
+              </p>
+            </div>
+
+            <div className="archive-session-intro__actions">
+              {recordPoint ? (
+                <button
+                  type="button"
+                  onClick={() => setArchiveWorkspace('record')}
+                  className="ui-button ui-button-primary"
+                >
+                  <History className="h-4 w-4" />
+                  Abrir ficha
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setArchiveWorkspace('media')}
+                className="ui-button ui-button-secondary"
+              >
+                <Camera className="h-4 w-4" />
+                Ver biblioteca
+              </button>
+            </div>
           </div>
+
+          <ul className="record-header-card__context" aria-label="Contexto de la salida visible">
+            <li>
+              <span className="telemetry-chip">{resolveProjectName(recordSession.projectName)}</span>
+            </li>
+            <li>
+              <span className="telemetry-chip">{recordSession.region || 'Sin zona'}</span>
+            </li>
+            <li>
+              <span className="telemetry-chip">{formatDateTime(recordSession.startedAt, "d MMM yyyy · HH:mm")}</span>
+            </li>
+          </ul>
 
           <SummaryStrip
             compact
-            className="archive-records-panel__summary"
+            className="archive-summary-strip archive-records-panel__summary"
             ariaLabel={`Resumen de ${recordSession.name}`}
             items={recordSessionSummaryItems}
           />
@@ -6298,24 +6476,6 @@ export default function App() {
           ) : (
             <p className="module-copy text-sm">Esta salida todavía no tiene registros guardados.</p>
           )}
-          <div className="archive-session-workspace__footer">
-            {recordPoint ? (
-              <button
-                type="button"
-                onClick={() => setArchiveWorkspace('record')}
-                className="ui-button ui-button-primary"
-              >
-                Abrir ficha del registro
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => setArchiveWorkspace('media')}
-              className="ui-button ui-button-secondary"
-            >
-              Ver biblioteca
-            </button>
-          </div>
         </div>
 
         <details className="manual-details archive-session-workspace__details">
@@ -6342,27 +6502,75 @@ export default function App() {
       return null;
     }
 
+    const linkedAudioCount = recordSessionAudioLibrary.filter((take) => take.associatedPointId).length;
+    const unlinkedAudioCount = recordSessionAudioLibrary.length - linkedAudioCount;
+    const archiveMediaSummaryItems = [
+      { label: 'Fotos', value: recordSessionPhotoLibrary.length, detail: 'Visibles' },
+      { label: 'Tomas asociadas', value: linkedAudioCount, detail: 'Con punto' },
+      {
+        label: 'Sin asociar',
+        value: unlinkedAudioCount,
+        detail: unlinkedAudioCount > 0 ? 'Necesitan revisión' : 'Todo asociado',
+      },
+      {
+        label: 'Ficha lista',
+        value: recordPoint ? recordPoint.placeName : 'Todavía no',
+        detail: recordPoint ? 'Puedes abrirla cuando quieras.' : 'Abre un registro desde salida o biblioteca.',
+      },
+    ];
+
     return (
-      <div className="archive-media-workspace">
-        <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-media-panel panel-tone panel-tone--amber">
-          <div className="panel-heading">
-            <p className="eyebrow">Fotos y audio</p>
-            <h3 className="display-heading text-3xl">Biblioteca visible de la salida</h3>
-            <p className="module-copy text-sm">
-              Recorre imágenes y tomas H6 sin abrir todavía la ficha completa del registro.
-            </p>
+      <div className="archive-media-shell">
+        <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-media-overview-panel panel-tone panel-tone--amber">
+          <div className="archive-media-overview">
+            <div className="archive-media-overview__copy">
+              <p className="eyebrow">Biblioteca visible</p>
+              <h3 className="display-heading text-3xl">Fotos y audio sin perder la salida de vista</h3>
+              <p className="module-copy text-sm">
+                Recorre imágenes y tomas H6 sin abrir todavía la ficha completa del registro.
+              </p>
+            </div>
+
+            <div className="archive-media-overview__actions">
+              {recordPoint ? (
+                <button
+                  type="button"
+                  onClick={() => setArchiveWorkspace('record')}
+                  className="ui-button ui-button-primary"
+                >
+                  <History className="h-4 w-4" />
+                  Abrir ficha
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setArchiveWorkspace('session')}
+                className="ui-button ui-button-secondary"
+              >
+                <History className="h-4 w-4" />
+                Volver a salida
+              </button>
+            </div>
           </div>
 
-          <div className="home-media-section">
-            <div className="home-media-section__header">
-              <span className="telemetry-chip">
-                <Camera className="h-3.5 w-3.5" />
-                {recordSessionPhotoLibrary.length} fotos
-              </span>
-              <span className="telemetry-chip">
-                <AudioWaveform className="h-3.5 w-3.5" />
-                {recordSessionAudioLibrary.filter((take) => take.associatedPointId).length} tomas asociadas
-              </span>
+          <SummaryStrip
+            compact
+            className="archive-summary-strip archive-media-overview__summary"
+            ariaLabel={`Resumen de la biblioteca de ${recordSession.name}`}
+            items={archiveMediaSummaryItems}
+          />
+        </div>
+
+        <div className="archive-media-sections">
+          <section className="panel surface-level--panel surface-emphasis--preview surface-border--subtle archive-media-section panel-tone panel-tone--clay">
+            <div className="panel-heading">
+              <p className="eyebrow">Fotos</p>
+              <h3 className="display-heading text-2xl">Contexto visual del trabajo</h3>
+              <p className="module-copy text-sm">
+                {recordSessionPhotoLibrary.length > 0
+                  ? `${recordSessionPhotoLibrary.length} foto${recordSessionPhotoLibrary.length === 1 ? '' : 's'} listas para abrir en su registro.`
+                  : 'Esta salida todavía no tiene fotos visibles.'}
+              </p>
             </div>
 
             {recordSessionPhotoLibrary.length > 0 ? (
@@ -6385,14 +6593,17 @@ export default function App() {
             ) : (
               <p className="module-copy text-sm">Esta salida todavía no tiene fotos visibles.</p>
             )}
-          </div>
+          </section>
 
-          <div className="home-media-section">
-            <div className="home-media-section__header">
-              <span className="telemetry-chip">
-                <AudioWaveform className="h-3.5 w-3.5" />
-                {recordSessionAudioLibrary.length} tomas H6
-              </span>
+          <section className="panel surface-level--panel surface-emphasis--preview surface-border--subtle archive-media-section panel-tone panel-tone--mint">
+            <div className="panel-heading">
+              <p className="eyebrow">Audio H6</p>
+              <h3 className="display-heading text-2xl">Tomas listas para asociar o revisar</h3>
+              <p className="module-copy text-sm">
+                {recordSessionAudioLibrary.length > 0
+                  ? `${recordSessionAudioLibrary.length} toma${recordSessionAudioLibrary.length === 1 ? '' : 's'} visibles. ${unlinkedAudioCount > 0 ? `${unlinkedAudioCount} siguen sin punto asociado.` : 'Todas están asociadas.'}`
+                  : 'Esta salida todavía no tiene tomas H6 importadas.'}
+              </p>
             </div>
 
             {recordSessionAudioLibrary.length > 0 ? (
@@ -6438,25 +6649,7 @@ export default function App() {
             ) : (
               <p className="module-copy text-sm">Esta salida todavía no tiene tomas H6 importadas.</p>
             )}
-          </div>
-          <div className="archive-media-workspace__footer">
-            {recordPoint ? (
-              <button
-                type="button"
-                onClick={() => setArchiveWorkspace('record')}
-                className="ui-button ui-button-primary"
-              >
-                Abrir ficha del registro
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => setArchiveWorkspace('session')}
-              className="ui-button ui-button-secondary"
-            >
-              Volver a salida
-            </button>
-          </div>
+          </section>
         </div>
       </div>
     );
@@ -6553,267 +6746,306 @@ export default function App() {
       },
     ];
 
+    const recordFactItems = [
+      {
+        id: 'captured',
+        label: 'Capturado',
+        value: formatDateTime(recordPoint.createdAt, "d MMM yyyy"),
+        detail: formatDateTime(recordPoint.createdAt, 'HH:mm:ss'),
+      },
+      {
+        id: 'session',
+        label: 'Salida',
+        value: recordSession.name,
+        detail: `${resolveProjectName(recordSession.projectName)} · ${recordSession.region || 'sin zona'}`,
+      },
+      {
+        id: 'soundscape',
+        label: 'Clima / IA',
+        value: recordPoint.soundscapeClassification?.summary || recordPoint.observedWeather || 'Sin contexto',
+        detail:
+          recordPoint.soundscapeClassification?.details ||
+          recordPoint.automaticWeather?.details ||
+          'Completa la ficha si necesitas más detalle ambiental.',
+      },
+      {
+        id: 'gps',
+        label: 'GPS',
+        value: recordPoint.gps.accuracy ? `${Math.round(recordPoint.gps.accuracy)} m` : 'n/d',
+        detail: `${recordPoint.gps.lat.toFixed(5)}, ${recordPoint.gps.lon.toFixed(5)}`,
+      },
+    ] as const;
+
     return (
-      <>
+      <div className="archive-record-workspace">
         <div className="panel surface-level--panel surface-emphasis--panel surface-border--default record-header-card panel-tone panel-tone--sky">
-          <div className="panel-heading">
-            <p className="eyebrow">Registro seleccionado</p>
-            <h3 className="display-heading text-4xl">{recordPoint.placeName}</h3>
-            <ul className="record-header-card__context" aria-label="Contexto del registro">
-              <li>
-                <span className="telemetry-chip">{recordSession.name}</span>
-              </li>
-              <li>
-                <span className="telemetry-chip">{resolveProjectName(recordSession.projectName)}</span>
-              </li>
-              <li>
-                <span className="telemetry-chip">{formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm:ss")}</span>
-              </li>
-              {recordPoint.soundscapeClassification?.summary ? (
-                <li>
-                  <span className="telemetry-chip">{recordPoint.soundscapeClassification.summary}</span>
-                </li>
-              ) : null}
-            </ul>
-          </div>
+          <div className="archive-record-shell">
+            <div className="archive-record-shell__intro">
+              <div className="archive-record-shell__copy">
+                <p className="eyebrow">Registro seleccionado</p>
+                <h3 className="display-heading text-4xl">{recordPoint.placeName}</h3>
+                <p className="module-copy text-sm">
+                  {recordPoint.notes
+                    ? 'La ficha final ya tiene contexto y notas. Desde aquí exportas, publicas o revisas lo que falte sin moverte entre paneles secundarios.'
+                    : 'La ficha final prioriza exportación, publicación y revisión de metadatos en una sola mesa de trabajo.'}
+                </p>
+              </div>
 
-          <SummaryStrip
-            compact
-            className="record-header-card__summary"
-            ariaLabel="Resumen del registro seleccionado"
-            items={recordHeaderSummaryItems}
-          />
+              <ul className="archive-fact-grid" aria-label="Lectura rápida del registro">
+                {recordFactItems.map((item) => (
+                  <li key={item.id} className="archive-fact-card">
+                    <span className="archive-fact-card__label">{item.label}</span>
+                    <strong className="archive-fact-card__value">{item.value}</strong>
+                    <span className="archive-fact-card__detail">{item.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-          <div className="action-row action-row--compact record-header-card__actions">
-            <button
-              type="button"
-              onClick={() => void exportSelectedRecordCsv()}
-              className="ui-button ui-button-primary"
-            >
-              <FileSpreadsheet className="h-4 w-4" />
-              Exportar CSV
-            </button>
-            <button
-              type="button"
-              onClick={() => void exportSelectedRecordKml()}
-              className="ui-button ui-button-secondary"
-            >
-              <MapIcon className="h-4 w-4" />
-              Exportar KML
-            </button>
-            <button
-              type="button"
-              onClick={() => void exportSession(recordSession)}
-              className="ui-button ui-button-secondary"
-            >
-              <Download className="h-4 w-4" />
-              Exportar ZIP
-            </button>
-            {recordSession.status === 'active' ? (
+            <SummaryStrip
+              compact
+              className="archive-summary-strip record-header-card__summary"
+              ariaLabel="Resumen del registro seleccionado"
+              items={recordHeaderSummaryItems}
+            />
+
+            <div className="archive-record-shell__actions">
               <button
                 type="button"
-                onClick={() => setView('point')}
+                onClick={() => void exportSelectedRecordCsv()}
+                className="ui-button ui-button-primary"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Exportar CSV
+              </button>
+              <button
+                type="button"
+                onClick={() => void exportSelectedRecordKml()}
                 className="ui-button ui-button-secondary"
               >
-                <Mic className="h-4 w-4" />
-                Seguir registrando
+                <MapIcon className="h-4 w-4" />
+                Exportar KML
               </button>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-gallery-card panel-tone panel-tone--clay">
-          <div className="panel-heading">
-            <p className="eyebrow">Fotos del registro</p>
-            <h3 className="display-heading text-3xl">Galería del punto seleccionado</h3>
-          </div>
-
-          {recordPoint.photos.some((photo) => photo.previewUrl) ? (
-            <div className="record-gallery-grid">
-              {recordPoint.photos.map((photo) =>
-                photo.previewUrl ? (
-                  <img
-                    key={photo.id}
-                    src={photo.previewUrl}
-                    alt={photo.fileName}
-                    className="record-gallery-grid__image"
-                  />
-                ) : null,
-              )}
-            </div>
-          ) : (
-            <p className="module-copy text-sm">Este registro no tiene imágenes asociadas.</p>
-          )}
-        </div>
-
-        <div
-          className="panel surface-level--panel surface-emphasis--panel surface-border--default panel-tone panel-tone--amber"
-          aria-busy={isPublishingSelection}
-        >
-          <div className="panel-heading">
-            <p className="eyebrow">Selección web</p>
-            <h3 className="display-heading text-3xl">Imagen + audio publicables</h3>
-            <p className="module-copy text-sm">
-              La publicación sube la imagen y la toma H6 elegidas, guarda una selección remota y te deja URLs directas para consumir desde tu web.
-            </p>
-          </div>
-
-          {recordPointPhotoOptions.length === 0 ? (
-            <p className="module-copy text-sm">Este punto no tiene imágenes para publicar.</p>
-          ) : recordPointAudioOptions.length === 0 ? (
-            <p className="module-copy text-sm">
-              Este punto todavía no tiene ninguna toma H6 asociada. Asígnala primero en el índice de tomas.
-            </p>
-          ) : (
-            <div className="grid gap-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                  <span>Imagen</span>
-                  <select
-                    value={publishPhotoId}
-                    onChange={(event) => setPublishPhotoId(event.target.value)}
-                    className="field-input"
-                  >
-                    {recordPointPhotoOptions.map((photo) => (
-                      <option key={photo.id} value={photo.id}>
-                        {photo.fileName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                  <span>Audio</span>
-                  <select
-                    value={publishAudioTakeId}
-                    onChange={(event) => setPublishAudioTakeId(event.target.value)}
-                    className="field-input"
-                  >
-                    {recordPointAudioOptions.map((take) => (
-                      <option key={take.id} value={take.id}>
-                        {take.fileName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              {selectedPublishPhoto?.previewUrl ? (
-                <img
-                  src={selectedPublishPhoto.previewUrl}
-                  alt={selectedPublishPhoto.fileName}
-                  className="record-gallery-grid__image"
-                />
-              ) : null}
-
-              <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                <span>Caption</span>
-                <textarea
-                  value={publishCaption}
-                  onChange={(event) => setPublishCaption(event.target.value)}
-                  rows={4}
-                  className="field-input min-h-28"
-                  placeholder="Texto breve para tu web"
-                />
-              </label>
-
-              <div className="action-row">
+              <button
+                type="button"
+                onClick={() => void exportSession(recordSession)}
+                className="ui-button ui-button-secondary"
+              >
+                <Download className="h-4 w-4" />
+                Exportar ZIP
+              </button>
+              {recordSession.status === 'active' ? (
                 <button
                   type="button"
-                  onClick={() => void publishCurrentSelection()}
-                  disabled={isPublishingSelection}
-                  aria-busy={isPublishingSelection}
-                  className="ui-button ui-button-primary"
+                  onClick={() => setView('point')}
+                  className="ui-button ui-button-secondary"
                 >
-                  <Globe className="h-4 w-4" />
-                  {isPublishingSelection ? 'Publicando...' : 'Publicar selección'}
+                  <Mic className="h-4 w-4" />
+                  Seguir registrando
                 </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="archive-record-grid">
+          <div className="archive-record-grid__main">
+            <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-gallery-card panel-tone panel-tone--clay">
+              <div className="panel-heading">
+                <p className="eyebrow">Fotos del registro</p>
+                <h3 className="display-heading text-3xl">Galería del punto seleccionado</h3>
               </div>
 
-              {publishedSelectionsForPoint.length > 0 ? (
-                <div className="grid gap-3">
-                  {publishedSelectionsForPoint.slice(0, 3).map((selection) => (
-                    <div key={selection.id} className="soft-card">
-                      <p className="eyebrow">Publicado {formatDateTime(selection.publishedAt, "d MMM yyyy · HH:mm")}</p>
-                      <p className="module-copy text-sm">{selection.caption}</p>
-                      <div className="action-row action-row--compact mt-3">
-                        <a href={selection.imageUrl} target="_blank" rel="noreferrer" className="ui-button ui-button-secondary">
-                          Abrir imagen
-                        </a>
-                        <a href={selection.audioUrl} target="_blank" rel="noreferrer" className="ui-button ui-button-secondary">
-                          Abrir audio
-                        </a>
+              {recordPoint.photos.some((photo) => photo.previewUrl) ? (
+                <div className="record-gallery-grid">
+                  {recordPoint.photos.map((photo) =>
+                    photo.previewUrl ? (
+                      <img
+                        key={photo.id}
+                        src={photo.previewUrl}
+                        alt={photo.fileName}
+                        className="record-gallery-grid__image"
+                      />
+                    ) : null,
+                  )}
+                </div>
+              ) : (
+                <p className="module-copy text-sm">Este registro no tiene imágenes asociadas.</p>
+              )}
+            </div>
+
+            <div className="panel surface-level--panel surface-emphasis--panel surface-border--default record-metadata-card panel-tone panel-tone--mint">
+              <div className="panel-heading">
+                <p className="eyebrow">Ficha del registro</p>
+                <h3 className="display-heading text-3xl">GPS, clima, notas y etiquetas</h3>
+              </div>
+
+              <dl className="record-definition-grid">
+                {recordDefinitionItems.map((item) => (
+                  <div key={item.term} className="record-definition-group">
+                    <dt>{item.term}</dt>
+                    <dd className="record-definition-group__value">{item.value}</dd>
+                    <dd className="record-definition-group__detail">{item.detail}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              {recordTagGroups.length > 0 ? (
+                <div className="record-tag-groups">
+                  {recordTagGroups.map((group) => (
+                    <section key={group.id} className="record-tag-group" aria-label={group.label}>
+                      <p className="record-tag-group__label">{group.label}</p>
+                      <div className="tag-strip">
+                        {group.tags.map((tag) => (
+                          <span key={tag} className="tag-pill">
+                            {tag}
+                          </span>
+                        ))}
                       </div>
-                    </div>
+                    </section>
                   ))}
                 </div>
               ) : null}
-            </div>
-          )}
-        </div>
 
-        <div className="panel surface-level--panel surface-emphasis--panel surface-border--default record-metadata-card panel-tone panel-tone--mint">
-          <div className="panel-heading">
-            <p className="eyebrow">Ficha del registro</p>
-            <h3 className="display-heading text-3xl">GPS, clima, notas y etiquetas</h3>
+              {recordPoint.notes ? (
+                <div className="record-note-block">
+                  <p className="eyebrow">Notas</p>
+                  <p className="module-copy text-sm">{recordPoint.notes}</p>
+                </div>
+              ) : null}
+            </div>
           </div>
 
-          <dl className="record-definition-grid">
-            {recordDefinitionItems.map((item) => (
-              <div key={item.term} className="record-definition-group">
-                <dt>{item.term}</dt>
-                <dd className="record-definition-group__value">{item.value}</dd>
-                <dd className="record-definition-group__detail">{item.detail}</dd>
+          <div className="archive-record-grid__side">
+            <div
+              className="panel surface-level--panel surface-emphasis--panel surface-border--default panel-tone panel-tone--amber"
+              aria-busy={isPublishingSelection}
+            >
+              <div className="panel-heading">
+                <p className="eyebrow">Selección web</p>
+                <h3 className="display-heading text-3xl">Imagen + audio publicables</h3>
+                <p className="module-copy text-sm">
+                  La publicación sube la imagen y la toma H6 elegidas, guarda una selección remota y te deja URLs directas para consumir desde tu web.
+                </p>
               </div>
-            ))}
-          </dl>
 
-          {recordTagGroups.length > 0 ? (
-            <div className="record-tag-groups">
-              {recordTagGroups.map((group) => (
-                <section key={group.id} className="record-tag-group" aria-label={group.label}>
-                  <p className="record-tag-group__label">{group.label}</p>
-                  <div className="tag-strip">
-                    {group.tags.map((tag) => (
-                      <span key={tag} className="tag-pill">
-                        {tag}
-                      </span>
-                    ))}
+              {recordPointPhotoOptions.length === 0 ? (
+                <p className="module-copy text-sm">Este punto no tiene imágenes para publicar.</p>
+              ) : recordPointAudioOptions.length === 0 ? (
+                <p className="module-copy text-sm">
+                  Este punto todavía no tiene ninguna toma H6 asociada. Asígnala primero en el índice de tomas.
+                </p>
+              ) : (
+                <div className="grid gap-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                      <span>Imagen</span>
+                      <select
+                        value={publishPhotoId}
+                        onChange={(event) => setPublishPhotoId(event.target.value)}
+                        className="field-input"
+                      >
+                        {recordPointPhotoOptions.map((photo) => (
+                          <option key={photo.id} value={photo.id}>
+                            {photo.fileName}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                      <span>Audio</span>
+                      <select
+                        value={publishAudioTakeId}
+                        onChange={(event) => setPublishAudioTakeId(event.target.value)}
+                        className="field-input"
+                      >
+                        {recordPointAudioOptions.map((take) => (
+                          <option key={take.id} value={take.id}>
+                            {take.fileName}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
-                </section>
-              ))}
-            </div>
-          ) : null}
 
-          {recordPoint.notes ? (
-            <div className="record-note-block">
-              <p className="eyebrow">Notas</p>
-              <p className="module-copy text-sm">{recordPoint.notes}</p>
-            </div>
-          ) : null}
-        </div>
+                  {selectedPublishPhoto?.previewUrl ? (
+                    <img
+                      src={selectedPublishPhoto.previewUrl}
+                      alt={selectedPublishPhoto.fileName}
+                      className="record-gallery-grid__image"
+                    />
+                  ) : null}
 
-        <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-map-card panel-tone panel-tone--sky">
-          <div className="panel-heading">
-            <p className="eyebrow">Posición</p>
-            <h3 className="display-heading text-3xl">Mapa del registro seleccionado</h3>
+                  <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                    <span>Caption</span>
+                    <textarea
+                      value={publishCaption}
+                      onChange={(event) => setPublishCaption(event.target.value)}
+                      rows={4}
+                      className="field-input min-h-28"
+                      placeholder="Texto breve para tu web"
+                    />
+                  </label>
+
+                  <div className="action-row">
+                    <button
+                      type="button"
+                      onClick={() => void publishCurrentSelection()}
+                      disabled={isPublishingSelection}
+                      aria-busy={isPublishingSelection}
+                      className="ui-button ui-button-primary"
+                    >
+                      <Globe className="h-4 w-4" />
+                      {isPublishingSelection ? 'Publicando...' : 'Publicar selección'}
+                    </button>
+                  </div>
+
+                  {publishedSelectionsForPoint.length > 0 ? (
+                    <div className="grid gap-3">
+                      {publishedSelectionsForPoint.slice(0, 3).map((selection) => (
+                        <div key={selection.id} className="soft-card">
+                          <p className="eyebrow">Publicado {formatDateTime(selection.publishedAt, "d MMM yyyy · HH:mm")}</p>
+                          <p className="module-copy text-sm">{selection.caption}</p>
+                          <div className="action-row action-row--compact mt-3">
+                            <a href={selection.imageUrl} target="_blank" rel="noreferrer" className="ui-button ui-button-secondary">
+                              Abrir imagen
+                            </a>
+                            <a href={selection.audioUrl} target="_blank" rel="noreferrer" className="ui-button ui-button-secondary">
+                              Abrir audio
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            <div className="panel surface-level--panel surface-emphasis--preview surface-border--subtle record-map-card panel-tone panel-tone--sky">
+              <div className="panel-heading">
+                <p className="eyebrow">Posición</p>
+                <h3 className="display-heading text-3xl">Mapa del registro seleccionado</h3>
+              </div>
+
+              <SessionMap
+                points={[
+                  {
+                    id: recordPoint.id,
+                    placeName: recordPoint.placeName,
+                    lat: recordPoint.gps.lat,
+                    lon: recordPoint.gps.lon,
+                    orderLabel: '1',
+                  },
+                ]}
+                selectedPointId={recordPoint.id}
+                onSelectPoint={() => undefined}
+              />
+            </div>
           </div>
-
-          <SessionMap
-            points={[
-              {
-                id: recordPoint.id,
-                placeName: recordPoint.placeName,
-                lat: recordPoint.gps.lat,
-                lon: recordPoint.gps.lon,
-                orderLabel: '1',
-              },
-            ]}
-            selectedPointId={recordPoint.id}
-            onSelectPoint={() => undefined}
-          />
         </div>
-      </>
+      </div>
     );
   }
 

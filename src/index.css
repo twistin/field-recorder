@@ -3164,6 +3164,82 @@ audio {
   gap: 0.92rem;
 }
 
+.archive-browser-shell,
+.archive-workspace-shell,
+.archive-media-shell,
+.archive-record-workspace {
+  display: grid;
+  gap: 1rem;
+}
+
+.archive-browser-intro,
+.archive-workspace-hero,
+.archive-record-shell__intro {
+  display: grid;
+  gap: 0.92rem;
+}
+
+.archive-browser-intro__copy,
+.archive-workspace-hero__copy,
+.archive-session-intro__copy,
+.archive-media-overview__copy,
+.archive-record-shell__copy {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.archive-browser-toolbar,
+.archive-workspace-actions,
+.archive-session-intro,
+.archive-media-overview,
+.archive-record-shell {
+  display: grid;
+  gap: 0.92rem;
+}
+
+.archive-fact-grid {
+  display: grid;
+  gap: 0.72rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.archive-fact-card {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.88rem 0.94rem;
+  border: 1px solid rgba(166, 196, 255, 0.08);
+  border-radius: calc(var(--radius-md) - 2px) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+    rgba(16, 26, 40, 0.42);
+}
+
+.archive-fact-card__label,
+.archive-workspace-actions__label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-meta);
+}
+
+.archive-fact-card__value {
+  font-size: clamp(0.98rem, 1.8vw, 1.18rem);
+  line-height: 1.28;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.archive-fact-card__detail {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-support);
+}
+
 .archive-browser-drawer__backdrop {
   position: fixed;
   inset: 0;
@@ -3236,17 +3312,21 @@ audio {
   line-height: 1.5;
 }
 
-.archive-browser-summary {
+.archive-summary-strip {
   gap: 0.62rem;
 }
 
-.archive-browser-summary .summary-strip__item {
+.archive-summary-strip .summary-strip__item {
   min-height: 72px;
   padding: 0.76rem 0.82rem;
 }
 
-.archive-browser-summary .summary-strip__value {
+.archive-summary-strip .summary-strip__value {
   font-size: clamp(1.2rem, 2vw, 1.6rem);
+}
+
+.archive-browser-summary {
+  margin-top: 0.1rem;
 }
 
 .archive-browser-note {
@@ -3265,6 +3345,48 @@ audio {
 .archive-session-browser {
   display: grid;
   gap: 0.78rem;
+}
+
+.archive-workspace-actions {
+  align-content: start;
+}
+
+.archive-workspace-actions__primary,
+.archive-session-intro__actions,
+.archive-media-overview__actions,
+.archive-record-shell__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.72rem;
+}
+
+.archive-workspace-actions__nav {
+  display: grid;
+  gap: 0.52rem;
+  padding: 0.88rem 0.94rem;
+  border: 1px solid rgba(166, 196, 255, 0.08);
+  border-radius: calc(var(--radius-md) - 2px) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0)),
+    rgba(12, 21, 32, 0.44);
+}
+
+.archive-session-intro,
+.archive-media-overview {
+  align-items: start;
+}
+
+.archive-media-sections,
+.archive-record-grid,
+.archive-record-grid__main,
+.archive-record-grid__side {
+  display: grid;
+  gap: 1rem;
+}
+
+.archive-media-section {
+  display: grid;
+  gap: 0.9rem;
 }
 
 .home-media-section {
@@ -3703,9 +3825,9 @@ audio {
     linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0)),
     rgba(12, 20, 31, 0.44);
   color: var(--text-meta);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
+  font-family: "Sora", sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   transition:
     transform 160ms ease,
@@ -3842,6 +3964,8 @@ audio {
 :root[data-display-mode="sun"] .library-entry-card,
 :root[data-display-mode="sun"] .structured-list-panel,
 :root[data-display-mode="sun"] .home-media-preview-card,
+:root[data-display-mode="sun"] .archive-fact-card,
+:root[data-display-mode="sun"] .archive-workspace-actions__nav,
 :root[data-display-mode="sun"] .archive-filter-button,
 :root[data-display-mode="sun"] .media-thumb-card,
 :root[data-display-mode="sun"] .classification-card,
@@ -5691,6 +5815,12 @@ select:focus-visible {
     align-items: stretch;
   }
 
+  .archive-fact-grid,
+  .archive-media-sections,
+  .archive-record-grid {
+    grid-template-columns: 1fr;
+  }
+
   .archive-workspace-panel__controls {
     justify-items: start;
   }
@@ -5815,6 +5945,13 @@ select:focus-visible {
     width: 100%;
   }
 
+  .archive-workspace-actions__primary > *,
+  .archive-session-intro__actions > *,
+  .archive-media-overview__actions > *,
+  .archive-record-shell__actions > * {
+    width: 100%;
+  }
+
   .mobile-dock__item--capture .dock-button.is-priority {
     transform: translateY(-0.24rem);
   }
@@ -5927,6 +6064,21 @@ select:focus-visible {
     align-items: start;
   }
 
+  .archive-browser-intro,
+  .archive-workspace-hero,
+  .archive-record-shell__intro {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.96fr);
+    align-items: start;
+    column-gap: 1rem;
+  }
+
+  .archive-session-intro,
+  .archive-media-overview {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 1rem;
+  }
+
   .archive-workspace-panel__header {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
@@ -5939,6 +6091,11 @@ select:focus-visible {
 
   .archive-workspace-panel__stats {
     justify-content: flex-end;
+  }
+
+  .archive-media-sections {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
   }
 
   .home-metrics-grid,
@@ -6093,6 +6250,11 @@ select:focus-visible {
 @media (min-width: 1120px) {
   .capture-command-shell {
     grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.92fr);
+    align-items: start;
+  }
+
+  .archive-record-grid {
+    grid-template-columns: minmax(0, 1.02fr) minmax(340px, 0.98fr);
     align-items: start;
   }
 
