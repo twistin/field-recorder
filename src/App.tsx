@@ -4455,44 +4455,22 @@ export default function App() {
       />
     );
   const greetingLabel = getGreetingLabel(now);
-  const homeLauncherTitle = activeSession ? 'Continuar salida' : 'Preparar salida';
+  const homeLauncherTitle = activeSession ? activeSession.name : 'Prepara la próxima salida';
   const homeLauncherCopy = activeSession
-    ? `${activeSession.name} sigue abierta. Registra el siguiente punto y deja el archivo para cuando realmente lo necesites.`
-    : 'Empieza creando o retomando una salida. Todo lo demás queda fuera del camino hasta que haga falta.';
-  const homePrimaryActionLabel = activeSession ? 'Registrar punto' : 'Preparar salida';
-  const homeSessionActionLabel = activeSession ? 'Abrir salida' : 'Ver salidas';
+    ? `${activeSessionProjectName}${activeSession.region ? ` · ${activeSession.region}` : ''}. La captura ya está lista para guardar el siguiente punto sin perder tiempo entre paneles.`
+    : 'Arranca con lo mínimo: nombre, trabajo, zona y equipo. Ruta, notas y automatismos quedan como capa opcional para no sobrecargar el inicio.';
+  const homePrimaryActionLabel = activeSession ? 'Registrar punto' : 'Crear salida';
+  const homeSessionActionLabel = activeSession ? 'Gestionar salida' : 'Ver salidas';
   const homeArchiveActionLabel = 'Abrir archivo';
   const latestRecordLabel = recordPoint ? recordPoint.placeName : 'Sin ficha final todavía';
   const latestRecordSummary = recordPoint
     ? `${formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm")} · ${resolveProjectName(recordSession?.projectName ?? '')}`
     : 'El archivo final aparecerá en cuanto guardes el primer punto.';
-  const homeOperationalFacts = [
-    {
-      id: 'gps',
-      label: 'GPS',
-      value: currentGps ? gpsAccuracyLabel : 'pendiente',
-    },
-    {
-      id: 'place',
-      label: 'Lugar',
-      value: detectedPlace?.placeName || activeSession?.region || 'sin contexto',
-    },
-    {
-      id: 'sync',
-      label: 'Sync',
-      value: syncPendingCount === 0 ? 'activo' : `${syncPendingCount} pendientes`,
-    },
-    {
-      id: 'records',
-      label: 'Registros',
-      value: activeSession ? String(activeSession.points.length) : '0',
-    },
-  ] as const;
   const homeOperationalContext = activeSession
-    ? [activeSessionProjectName, activeSession.region || null, activeSessionStartedLabel ? `Desde ${activeSessionStartedLabel}` : null]
+    ? [activeSessionProjectName, activeSession.region || null, activeSessionStartedLabel ? `Abierta ${activeSessionStartedLabel}` : null]
         .filter(Boolean)
         .join(' · ')
-    : 'Sin salida activa';
+    : 'Define el contexto antes de abrir captura.';
   const homeGpsValue = currentGps ? gpsAccuracyLabel : 'Sin señal';
   const homeGpsCopy = currentGps ? `${gpsLabel} · ${gpsStatusLabel}` : 'Activa el GPS para situar la salida.';
   const homePlaceValue = detectedPlace ? 'Lugar detectado' : currentGps ? 'Buscando lugar' : 'Esperando GPS';
@@ -4595,6 +4573,29 @@ export default function App() {
     { id: 'route', label: 'Ruta', value: sessionDraftRouteValue },
     { id: 'arrival', label: 'Llegada', value: sessionDraftArrivalValue },
   ] as const;
+  const sessionDraftReadinessItems = [
+    { id: 'name', label: 'Nombre', value: sessionDraft.name.trim() || 'Pendiente', ready: Boolean(sessionDraft.name.trim()) },
+    {
+      id: 'project',
+      label: 'Trabajo',
+      value: sessionDraft.projectName.trim() || 'Pendiente',
+      ready: Boolean(sessionDraft.projectName.trim()),
+    },
+    {
+      id: 'region',
+      label: 'Zona',
+      value: sessionDraft.region.trim() || 'Pendiente',
+      ready: Boolean(sessionDraft.region.trim()),
+    },
+    {
+      id: 'equipment',
+      label: 'Equipo',
+      value: sessionDraft.equipmentPreset.trim() || 'Zoom H6 · XY',
+      ready: Boolean(sessionDraft.equipmentPreset.trim()),
+    },
+  ] as const;
+  const sessionDraftBasicsReadyCount = sessionDraftReadinessItems.filter((item) => item.ready).length;
+  const sessionDraftBasicsLabel = `${sessionDraftBasicsReadyCount}/${sessionDraftReadinessItems.length} básicos listos`;
   const sessionDraftSupportCopy = sessionDraft.armCaptureOnArrival
     ? sessionDraftRouteCoordinates
       ? `La captura se podrá armar al entrar dentro de ${sessionDraftRouteRadius} m del destino.`
@@ -4602,6 +4603,50 @@ export default function App() {
     : currentGps
       ? 'La posición actual ya está lista para completar contexto en cuanto abras la salida.'
       : 'Puedes dejar la salida preparada ahora y resolver ubicación o clima más tarde desde captura.';
+  const sessionDraftAdvancedSummary = sessionDraftRouteCoordinates
+    ? `Ruta lista en ${sessionDraftRouteCoordinates.lat.toFixed(4)}, ${sessionDraftRouteCoordinates.lon.toFixed(4)}.`
+    : sessionDraft.routeUrl.trim()
+      ? 'Hay un enlace de navegación preparado.'
+      : sessionDraft.notes.trim()
+        ? 'Ya hay notas operativas para la salida.'
+        : sessionDraft.armCaptureOnArrival
+          ? 'La llegada automática está armada, pero faltan coordenadas.'
+          : 'Sin ruta ni notas avanzadas todavía.';
+  const homeCommandFacts = activeSession
+    ? [
+        {
+          label: 'Trabajo',
+          value: activeSessionProjectName,
+          detail: activeSessionStartedLabel ? `Salida abierta ${activeSessionStartedLabel}.` : 'Salida en curso.',
+        },
+        {
+          label: 'Zona',
+          value: activeSession.region || detectedPlace?.placeName || 'Sin zona definida',
+          detail: activeRoutePlan ? `Ruta armada hacia ${activeRouteDestinationLabel}.` : 'Puedes ajustar la zona desde salidas.',
+        },
+        {
+          label: 'Último registro',
+          value: latestRecordLabel,
+          detail: latestRecordSummary,
+        },
+      ]
+    : [
+        {
+          label: 'Trabajo sugerido',
+          value: sessionDraftProjectHint,
+          detail: preferredProjectName ? 'Recuperado del trabajo más reciente.' : 'Puedes dejarlo vacío y completarlo más tarde.',
+        },
+        {
+          label: 'Zona',
+          value: sessionDraft.region.trim() || detectedPlace?.placeName || 'Todavía sin zona',
+          detail: currentGps ? `${gpsLabel}.` : 'Escribe una zona o usa GPS cuando lo necesites.',
+        },
+        {
+          label: 'Equipo',
+          value: sessionDraft.equipmentPreset.trim() || 'Zoom H6 · XY',
+          detail: 'El preset queda listo para arrancar en cuanto abras la salida.',
+        },
+      ];
   const sessionDraftRouteHint = sessionDraftRouteCoordinates
     ? `Destino listo en ${sessionDraftRouteCoordinates.lat.toFixed(6)}, ${sessionDraftRouteCoordinates.lon.toFixed(6)}.`
     : sessionDraftRouteHasShortMapsUrl
@@ -4737,19 +4782,19 @@ export default function App() {
   ];
   const homeWorkflowCards = [
     {
-      eyebrow: 'Paso 1',
-      title: activeSession ? 'Retomar salida' : 'Preparar salida',
-      description: 'Abre el contexto de trabajo antes de entrar en captura.',
+      eyebrow: 'Salida',
+      title: activeSession ? 'Contexto abierto' : 'Crear o retomar',
+      description: 'Abre la salida, deja trabajo y zona claros, y evita preparar de más antes de salir.',
       status: activeSession ? `${activeSession.points.length} registros en ${activeSession.name}` : `${projectCount} trabajos visibles`,
-      cta: activeSession ? 'Abrir salidas' : 'Preparar salida',
+      cta: activeSession ? 'Gestionar salida' : 'Crear salida',
       icon: MapPinned,
       featured: !activeSession,
       onClick: () => setView('session'),
     },
     {
-      eyebrow: 'Paso 2',
-      title: activeSession ? 'Registrar punto' : 'Activar captura',
-      description: 'GPS, clima, fotos, notas e IA sin salir del flujo de campo.',
+      eyebrow: 'Captura',
+      title: activeSession ? 'Registrar punto' : 'Abrir captura',
+      description: 'GPS, clima, fotos, notas e IA dentro de un flujo corto pensado para trabajar con prisa.',
       status: activeSession ? `${gpsStatusLabel} · ${activeSession.name}` : 'Necesita una salida activa',
       cta: captureEntryLabel,
       icon: Mic,
@@ -4757,9 +4802,9 @@ export default function App() {
       onClick: () => setView(activeSession ? 'point' : 'session'),
     },
     {
-      eyebrow: 'Paso 3',
-      title: 'Revisar archivo',
-      description: 'Registros, galería, tomas H6 y exportación en una vista clara.',
+      eyebrow: 'Archivo',
+      title: 'Revisar y exportar',
+      description: 'Encuentra registros, fotos, tomas H6 y ZIP sin mezclar esa revisión con la captura.',
       status: recordSession ? `${recordSession.name} · ${recordSession.audioTakes.length} tomas H6` : `${totalPhotoCount} fotos · ${totalAudioTakeCount} tomas`,
       cta: 'Abrir archivo',
       icon: History,
@@ -6905,15 +6950,59 @@ export default function App() {
             >
               <div className="home-topbar__masthead">
                 <div className="home-topbar__brand">
-                  <p className="eyebrow">{greetingLabel} · trabajo de campo</p>
+                  <div className="home-topbar__eyebrow-row">
+                    <p className="eyebrow">{greetingLabel} · trabajo de campo</p>
+                    <Badge variant={activeSession ? 'default' : 'muted'}>
+                      {activeSession ? 'Salida activa' : 'Sin salida activa'}
+                    </Badge>
+                  </div>
                   <h1 id="dashboard-home-title" className="display-heading home-topbar__title">{homeLauncherTitle}</h1>
                   <p id="dashboard-home-description" className="module-copy text-sm md:text-base">
                     {homeLauncherCopy}
                   </p>
                   <p className="home-topbar__context-line">{homeOperationalContext}</p>
+
+                  <div className="home-command-meta" aria-label="Contexto principal de la jornada">
+                    {homeCommandFacts.map((fact) => (
+                      <article key={fact.label} className="home-command-meta__item">
+                        <p className="home-command-meta__label">{fact.label}</p>
+                        <p className="home-command-meta__value">{fact.value}</p>
+                        <p className="home-command-meta__detail">{fact.detail}</p>
+                      </article>
+                    ))}
+                  </div>
+
+                  {renderActiveRoutePlanCard('home')}
+
+                  <div className="home-topbar__actions" role="group" aria-label="Acciones principales del inicio">
+                    <Button
+                      variant="primary"
+                      onClick={() => setView(activeSession ? 'point' : 'session')}
+                      className="home-topbar__primary-action"
+                      leadingIcon={<Mic className="h-4 w-4" />}
+                    >
+                      {homePrimaryActionLabel}
+                    </Button>
+                    <div className="home-topbar__support-actions">
+                      <Button
+                        variant="secondary"
+                        onClick={() => activeSession ? openSessionWorkspace(activeSession.id) : setView('session')}
+                        leadingIcon={<MapPinned className="h-4 w-4" />}
+                      >
+                        {homeSessionActionLabel}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setView('export')}
+                        leadingIcon={<History className="h-4 w-4" />}
+                      >
+                        {homeArchiveActionLabel}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="home-topbar__sidecar">
+                <aside className="home-command-aside" aria-label="Estado operativo breve">
                   <div className="home-topbar__controls">
                     <ul className="status-inline-group" aria-label="Estado rápido del resumen">
                       <li>
@@ -6923,9 +7012,6 @@ export default function App() {
                       </li>
                       <li>
                         <Badge variant="muted">{storageSummary}</Badge>
-                      </li>
-                      <li>
-                        <Badge variant="muted">{activeSession ? 'Salida activa' : 'Sin salida activa'}</Badge>
                       </li>
                     </ul>
                     <div className="utility-inline-group">
@@ -6942,57 +7028,24 @@ export default function App() {
                     </div>
                   </div>
 
-                  <HomeHeroVisual />
-                </div>
-              </div>
-
-              <section className="home-status-strip" aria-label="Lectura rápida de la jornada">
-                <p className="eyebrow home-status-strip__eyebrow">Lectura rápida</p>
-                <div className="home-status-strip__grid">
-                  {homeQuickReadItems.map((item) => (
-                    <div key={item.id} className="home-status-strip__item">
-                      <p className="home-status-strip__term">{item.label}</p>
-                      <p className="home-status-strip__value">{item.value}</p>
-                      <p className="home-status-strip__detail">{item.detail}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <ul className="home-operational-facts" aria-label="Estado inmediato de la jornada">
-                {homeOperationalFacts.map((fact) => (
-                  <li key={fact.id} className="home-operational-fact">
-                    <span className="home-operational-fact__label">{fact.label}</span>
-                    <strong className="home-operational-fact__value">{fact.value}</strong>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="home-topbar__actions" role="group" aria-label="Acciones principales del inicio">
-                <Button
-                  variant="primary"
-                  onClick={() => setView(activeSession ? 'point' : 'session')}
-                  className="home-topbar__primary-action"
-                  leadingIcon={<Mic className="h-4 w-4" />}
-                >
-                  {homePrimaryActionLabel}
-                </Button>
-                <div className="home-topbar__support-actions">
-                  <Button
-                    variant="secondary"
-                    onClick={() => activeSession ? openSessionWorkspace(activeSession.id) : setView('session')}
-                    leadingIcon={<MapPinned className="h-4 w-4" />}
-                  >
-                    {homeSessionActionLabel}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => setView('export')}
-                    leadingIcon={<History className="h-4 w-4" />}
-                  >
-                    {homeArchiveActionLabel}
-                  </Button>
-                </div>
+                  <div className="home-command-aside__body">
+                    <p className="eyebrow home-command-aside__eyebrow">Estado operativo</p>
+                    <p className="home-command-aside__title">
+                      {activeSession
+                        ? 'La jornada ya está abierta y lista para seguir capturando.'
+                        : 'Prepara la salida en menos de un minuto y deja la captura limpia.'}
+                    </p>
+                    <ul className="home-command-status-list">
+                      {homeStatusItems.map((item) => (
+                        <li key={item.id} className="home-command-status-list__item">
+                          <span className="home-command-status-list__label">{item.label}</span>
+                          <strong className="home-command-status-list__value">{item.value}</strong>
+                          <span className="home-command-status-list__detail">{item.detail}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </aside>
               </div>
             </Card>
           ) : (
@@ -7140,14 +7193,14 @@ export default function App() {
                   aria-describedby={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
                 >
                   <SectionHeader
-                    eyebrow={activeSession ? 'Captura en curso' : 'Siguiente paso'}
+                    eyebrow={activeSession ? 'Salida en curso' : 'Siguiente movimiento'}
                     titleId="home-session-overview-title"
                     descriptionId={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
-                    title={activeSession ? 'Últimos registros' : 'No hay una salida activa'}
+                    title={activeSession ? 'Actividad reciente' : 'No hay una salida abierta'}
                     description={
                       activeSession
                         ? homeRecentRecordsDescription
-                        : 'Crea o retoma una salida antes de capturar. El historial y la media viven en sus propias vistas.'
+                        : 'Crea una salida nueva o retoma una reciente. En cuanto abras una, aquí quedarán visibles el contexto y la actividad.'
                     }
                     actionLabel={activeSession ? 'Ir a captura' : undefined}
                     onAction={activeSession ? () => setView('point') : undefined}
@@ -7234,17 +7287,49 @@ export default function App() {
                       </div>
                     </>
                   ) : (
-                    <EmptyState
-                      eyebrow="Salida"
-                      title="Prepara una salida antes de capturar"
-                      description="Cuando abras una salida, esta vista se quedará sólo con el contexto operativo y los últimos registros."
-                      icon={<MapPinned className="h-5 w-5" />}
-                      action={
-                        <Button variant="secondary" onClick={() => setView('session')}>
-                          Preparar salida
-                        </Button>
-                      }
-                    />
+                    <div className="home-session-overview__empty-shell">
+                      <EmptyState
+                        eyebrow="Salida"
+                        title="Prepara una salida antes de capturar"
+                        description="Cuando abras una salida, esta vista se quedará sólo con el contexto operativo y los últimos registros."
+                        icon={<MapPinned className="h-5 w-5" />}
+                        action={
+                          <Button variant="secondary" onClick={() => setView('session')}>
+                            Preparar salida
+                          </Button>
+                        }
+                        compact={recentSessions.length > 0}
+                      />
+
+                      {recentSessions.length > 0 ? (
+                        <section
+                          className="home-session-overview__recent-restarts"
+                          aria-labelledby="home-session-restarts-title"
+                        >
+                          <div className="home-session-overview__recent-restarts-header">
+                            <p id="home-session-restarts-title" className="eyebrow">Retomar rápido</p>
+                            <p className="module-copy text-sm">
+                              Últimas salidas visibles para volver al trabajo sin pasar por archivo.
+                            </p>
+                          </div>
+                          <StructuredList>
+                            {recentSessions.slice(0, 3).map((session) => (
+                              <li key={session.id}>
+                                <ListRow
+                                  dense
+                                  onClick={() => openSessionWorkspace(session.id)}
+                                  eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
+                                  title={session.name}
+                                  meta={`${resolveProjectName(session.projectName)} · ${session.region || 'sin zona definida'}`}
+                                  stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                                  actionLabel="Abrir"
+                                />
+                              </li>
+                            ))}
+                          </StructuredList>
+                        </section>
+                      ) : null}
+                    </div>
                   )}
                 </Card>
               </motion.section>
@@ -7404,6 +7489,18 @@ export default function App() {
                     <>
                       <div className="session-draft-shell">
                         <div className="session-draft-main">
+                          <div className="session-setup-intro">
+                            <div className="session-setup-intro__copy">
+                              <p className="eyebrow">Básicos primero</p>
+                              <h4 className="session-draft-context__title">Abre una salida sin rellenar de más</h4>
+                              <p className="module-copy text-sm">
+                                Con nombre, trabajo, zona y equipo ya puedes empezar. Las notas, la ruta y la llegada automática quedan como segunda capa para no frenar el flujo.
+                              </p>
+                            </div>
+                            <span className="session-setup-progress">{sessionDraftBasicsLabel}</span>
+                          </div>
+
+                          <div className="session-setup-basics">
                           <label className="grid gap-2 text-sm panel-primary-label">
                             <span>Nombre de la salida</span>
                             <input
@@ -7449,134 +7546,161 @@ export default function App() {
                               placeholder="Zoom H6 · XY"
                             />
                           </label>
-                          <label className="grid gap-2 text-sm panel-primary-label">
-                            <span>Notas</span>
-                            <textarea
-                              value={sessionDraft.notes}
-                              onChange={(event) => setSessionDraft((previous) => ({ ...previous, notes: event.target.value }))}
-                              rows={4}
-                              className="field-input min-h-28"
-                              placeholder="Objetivo de la salida, ruta o condiciones esperadas..."
-                            />
-                          </label>
-                          <section className="session-draft-route" aria-labelledby="session-draft-route-title">
-                            <div className="session-draft-route__header">
-                              <p className="eyebrow">Ruta opcional</p>
-                              <h4 id="session-draft-route-title" className="session-draft-context__title">
-                                Programa la llegada antes de salir
-                              </h4>
-                              <p className="module-copy text-sm">
-                                Pega tu enlace de Maps y define el punto de llegada para que la captura quede lista al entrar en la zona.
-                              </p>
-                            </div>
+                          </div>
 
-                            <label className="grid gap-2 text-sm panel-primary-label">
-                              <span>Enlace de navegación</span>
-                              <input
-                                value={sessionDraft.routeUrl}
-                                onChange={(event) =>
-                                  setSessionDraft((previous) => ({ ...previous, routeUrl: event.target.value }))
-                                }
-                                className="field-input"
-                                placeholder="https://maps.app.goo.gl/..."
-                                inputMode="url"
-                              />
-                            </label>
+                          <details className="manual-details session-setup-advanced">
+                            <summary className="manual-details__summary">
+                              <div>
+                                <p className="eyebrow">Opcional</p>
+                                <p className="session-draft-context__title">Notas, ruta y automatismos</p>
+                                <p className="module-copy text-sm">{sessionDraftAdvancedSummary}</p>
+                              </div>
+                              <span className="manual-details__hint">Abrir</span>
+                            </summary>
 
-                            <div className="grid gap-4 md:grid-cols-2">
+                            <div className="manual-details__body session-setup-advanced__body">
                               <label className="grid gap-2 text-sm panel-primary-label">
-                                <span>Nombre del destino</span>
-                                <input
-                                  value={sessionDraft.routeDestinationLabel}
-                                  onChange={(event) =>
-                                    setSessionDraft((previous) => ({
-                                      ...previous,
-                                      routeDestinationLabel: event.target.value,
-                                    }))
-                                  }
-                                  className="field-input"
-                                  placeholder="Miradoiro de Mesa de Montes"
+                                <span>Notas operativas</span>
+                                <textarea
+                                  value={sessionDraft.notes}
+                                  onChange={(event) => setSessionDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                                  rows={4}
+                                  className="field-input min-h-28"
+                                  placeholder="Objetivo de la salida, acceso, condiciones esperadas o decisiones previas..."
                                 />
                               </label>
-                              <label className="grid gap-2 text-sm panel-primary-label">
-                                <span>Radio de llegada (m)</span>
-                                <input
-                                  value={sessionDraft.routeArrivalRadiusMeters}
-                                  onChange={(event) =>
-                                    setSessionDraft((previous) => ({
-                                      ...previous,
-                                      routeArrivalRadiusMeters: event.target.value,
-                                    }))
-                                  }
-                                  className="field-input"
-                                  placeholder={String(DEFAULT_ROUTE_ARRIVAL_RADIUS_METERS)}
-                                  inputMode="numeric"
-                                />
-                              </label>
+
+                              <section className="session-draft-route" aria-labelledby="session-draft-route-title">
+                                <div className="session-draft-route__header">
+                                  <p className="eyebrow">Ruta opcional</p>
+                                  <h4 id="session-draft-route-title" className="session-draft-context__title">
+                                    Programa la llegada sin ensuciar la preparación
+                                  </h4>
+                                  <p className="module-copy text-sm">
+                                    Pega tu enlace de Maps y define el punto de llegada sólo si quieres dejar la captura lista al entrar en la zona.
+                                  </p>
+                                </div>
+
+                                <label className="grid gap-2 text-sm panel-primary-label">
+                                  <span>Enlace de navegación</span>
+                                  <input
+                                    value={sessionDraft.routeUrl}
+                                    onChange={(event) =>
+                                      setSessionDraft((previous) => ({ ...previous, routeUrl: event.target.value }))
+                                    }
+                                    className="field-input"
+                                    placeholder="https://maps.app.goo.gl/..."
+                                    inputMode="url"
+                                  />
+                                </label>
+
+                                <div className="grid gap-4 md:grid-cols-2">
+                                  <label className="grid gap-2 text-sm panel-primary-label">
+                                    <span>Nombre del destino</span>
+                                    <input
+                                      value={sessionDraft.routeDestinationLabel}
+                                      onChange={(event) =>
+                                        setSessionDraft((previous) => ({
+                                          ...previous,
+                                          routeDestinationLabel: event.target.value,
+                                        }))
+                                      }
+                                      className="field-input"
+                                      placeholder="Miradoiro de Mesa de Montes"
+                                    />
+                                  </label>
+                                  <label className="grid gap-2 text-sm panel-primary-label">
+                                    <span>Radio de llegada (m)</span>
+                                    <input
+                                      value={sessionDraft.routeArrivalRadiusMeters}
+                                      onChange={(event) =>
+                                        setSessionDraft((previous) => ({
+                                          ...previous,
+                                          routeArrivalRadiusMeters: event.target.value,
+                                        }))
+                                      }
+                                      className="field-input"
+                                      placeholder={String(DEFAULT_ROUTE_ARRIVAL_RADIUS_METERS)}
+                                      inputMode="numeric"
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="grid gap-4 md:grid-cols-2">
+                                  <label className="grid gap-2 text-sm panel-primary-label">
+                                    <span>Latitud destino</span>
+                                    <input
+                                      value={sessionDraft.routeLatitude}
+                                      onChange={(event) =>
+                                        setSessionDraft((previous) => ({ ...previous, routeLatitude: event.target.value }))
+                                      }
+                                      className="field-input"
+                                      placeholder="42.284685"
+                                      inputMode="decimal"
+                                    />
+                                  </label>
+                                  <label className="grid gap-2 text-sm panel-primary-label">
+                                    <span>Longitud destino</span>
+                                    <input
+                                      value={sessionDraft.routeLongitude}
+                                      onChange={(event) =>
+                                        setSessionDraft((previous) => ({ ...previous, routeLongitude: event.target.value }))
+                                      }
+                                      className="field-input"
+                                      placeholder="-8.791661"
+                                      inputMode="decimal"
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="action-row action-row--compact">
+                                  <button
+                                    type="button"
+                                    onClick={() => void applyCurrentGpsToRouteDestination()}
+                                    className="ui-button ui-button-secondary"
+                                  >
+                                    <LocateFixed className="h-4 w-4" />
+                                    Usar GPS actual
+                                  </button>
+                                </div>
+
+                                <label className="session-draft-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={sessionDraft.armCaptureOnArrival}
+                                    onChange={(event) =>
+                                      setSessionDraft((previous) => ({
+                                        ...previous,
+                                        armCaptureOnArrival: event.target.checked,
+                                      }))
+                                    }
+                                  />
+                                  <span className="session-draft-toggle__label">Armar captura al llegar</span>
+                                  <small className="session-draft-toggle__copy">
+                                    Si el GPS entra en el radio, la app marcará la llegada y dejará la captura lista para activarla.
+                                  </small>
+                                </label>
+
+                                <p className="module-copy text-sm">{sessionDraftRouteHint}</p>
+                              </section>
                             </div>
-
-                            <div className="grid gap-4 md:grid-cols-2">
-                              <label className="grid gap-2 text-sm panel-primary-label">
-                                <span>Latitud destino</span>
-                                <input
-                                  value={sessionDraft.routeLatitude}
-                                  onChange={(event) =>
-                                    setSessionDraft((previous) => ({ ...previous, routeLatitude: event.target.value }))
-                                  }
-                                  className="field-input"
-                                  placeholder="42.284685"
-                                  inputMode="decimal"
-                                />
-                              </label>
-                              <label className="grid gap-2 text-sm panel-primary-label">
-                                <span>Longitud destino</span>
-                                <input
-                                  value={sessionDraft.routeLongitude}
-                                  onChange={(event) =>
-                                    setSessionDraft((previous) => ({ ...previous, routeLongitude: event.target.value }))
-                                  }
-                                  className="field-input"
-                                  placeholder="-8.791661"
-                                  inputMode="decimal"
-                                />
-                              </label>
-                            </div>
-
-                            <div className="action-row action-row--compact">
-                              <button
-                                type="button"
-                                onClick={() => void applyCurrentGpsToRouteDestination()}
-                                className="ui-button ui-button-secondary"
-                              >
-                                <LocateFixed className="h-4 w-4" />
-                                Usar GPS actual
-                              </button>
-                            </div>
-
-                            <label className="session-draft-toggle">
-                              <input
-                                type="checkbox"
-                                checked={sessionDraft.armCaptureOnArrival}
-                                onChange={(event) =>
-                                  setSessionDraft((previous) => ({
-                                    ...previous,
-                                    armCaptureOnArrival: event.target.checked,
-                                  }))
-                                }
-                              />
-                              <span className="session-draft-toggle__label">Armar captura al llegar</span>
-                              <small className="session-draft-toggle__copy">
-                                Si el GPS entra en el radio, la app marcará la llegada y dejará la captura lista para activarla.
-                              </small>
-                            </label>
-
-                            <p className="module-copy text-sm">{sessionDraftRouteHint}</p>
-                          </section>
+                          </details>
                         </div>
 
-                        <aside className="session-draft-context" aria-label="Contexto rápido antes de salir">
+                        <aside className="session-draft-context session-setup-sidebar" aria-label="Contexto rápido antes de salir">
                           <p className="eyebrow">Antes de salir</p>
-                          <h4 className="session-draft-context__title">La app ya te deja esto orientado</h4>
+                          <h4 className="session-draft-context__title">Qué quedará listo al abrir la salida</h4>
+                          <ul className="session-setup-readiness" aria-label="Estado de los básicos">
+                            {sessionDraftReadinessItems.map((item) => (
+                              <li key={item.id} className={`session-setup-readiness__item ${item.ready ? 'is-ready' : ''}`}>
+                                <span className="session-setup-readiness__label">{item.label}</span>
+                                <strong className="session-setup-readiness__value">{item.value}</strong>
+                                <span className="session-setup-readiness__state">
+                                  {item.ready ? 'Listo' : 'Pendiente'}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
                           <ul className="session-draft-context__facts">
                             {sessionDraftSupportItems.map((item) => (
                               <li key={item.id} className="session-draft-context__fact">
@@ -7590,6 +7714,12 @@ export default function App() {
                       </div>
 
                       <div className="action-row session-draft-actions">
+                        <div className="session-draft-actions__copy">
+                          <strong>Empieza con lo esencial y completa el resto en campo si hace falta.</strong>
+                          <p className="module-copy text-sm">
+                            La salida queda abierta de inmediato; ruta, notas y enriquecimiento pueden resolverse después sin romper el flujo.
+                          </p>
+                        </div>
                         <button type="button" onClick={createSession} className="ui-button ui-button-primary">
                           Iniciar salida
                         </button>

@@ -1060,6 +1060,13 @@ audio {
   gap: 0.78rem;
 }
 
+.home-topbar__eyebrow-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
 .layout-home--focused {
   max-width: 1040px;
   margin-inline: auto;
@@ -1079,6 +1086,47 @@ audio {
   color: var(--text-meta);
   font-size: 0.92rem;
   line-height: 1.55;
+}
+
+.home-command-meta {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.home-command-meta__item {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(166, 196, 255, 0.08);
+  border-radius: calc(var(--radius-md) - 2px) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0)),
+    rgba(14, 22, 34, 0.48);
+}
+
+.home-command-meta__label {
+  margin: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-meta);
+}
+
+.home-command-meta__value {
+  margin: 0;
+  font-family: "Fraunces", "Sora", sans-serif;
+  font-size: clamp(1.05rem, 2vw, 1.4rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.home-command-meta__detail {
+  margin: 0;
+  color: var(--text-support);
+  font-size: 0.84rem;
+  line-height: 1.5;
 }
 
 .home-topbar__visual {
@@ -1123,6 +1171,76 @@ audio {
   display: grid;
   gap: 0.82rem;
   align-content: start;
+}
+
+.home-command-aside {
+  display: grid;
+  gap: 0.95rem;
+  align-content: start;
+}
+
+.home-command-aside__body {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid rgba(166, 196, 255, 0.1);
+  border-radius: calc(var(--radius-lg) - 2px) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0)),
+    rgba(13, 21, 33, 0.56);
+}
+
+.home-command-aside__eyebrow {
+  color: var(--text-meta);
+}
+
+.home-command-aside__title {
+  margin: 0;
+  font-family: "Fraunces", "Sora", sans-serif;
+  font-size: clamp(1.2rem, 2.2vw, 1.7rem);
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--ink);
+}
+
+.home-command-status-list {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.home-command-status-list__item {
+  display: grid;
+  gap: 0.18rem;
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid rgba(166, 196, 255, 0.08);
+}
+
+.home-command-status-list__item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.home-command-status-list__label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-meta);
+}
+
+.home-command-status-list__value {
+  font-size: 1rem;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.home-command-status-list__detail {
+  color: var(--text-support);
+  font-size: 0.82rem;
+  line-height: 1.5;
 }
 
 .home-topbar__actions {
@@ -1421,6 +1539,27 @@ audio {
   flex-wrap: wrap;
   gap: 0.68rem;
   padding-top: 0.4rem;
+}
+
+.home-session-overview__empty-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.home-session-overview__recent-restarts {
+  display: grid;
+  gap: 0.78rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid rgba(166, 196, 255, 0.08);
+  border-radius: calc(var(--radius-md) - 2px) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0)),
+    rgba(13, 21, 33, 0.42);
+}
+
+.home-session-overview__recent-restarts-header {
+  display: grid;
+  gap: 0.3rem;
 }
 
 .home-session-overview__records .structured-list-row__stats {
@@ -3947,6 +4086,47 @@ audio {
   gap: 1rem;
 }
 
+.session-setup-intro {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.session-setup-intro__copy {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.session-setup-progress {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 2.6rem;
+  padding: 0.62rem 0.9rem;
+  border: 1px solid rgba(255, 181, 121, 0.16);
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.05);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 235, 214, 0.88);
+}
+
+.session-setup-basics {
+  display: grid;
+  gap: 1rem;
+}
+
+.session-setup-advanced {
+  margin-top: 0.15rem;
+}
+
+.session-setup-advanced__body {
+  display: grid;
+  gap: 1rem;
+}
+
 .session-draft-route {
   display: grid;
   gap: 0.9rem;
@@ -3975,6 +4155,10 @@ audio {
     rgba(9, 15, 23, 0.58);
 }
 
+.session-setup-sidebar {
+  gap: 1rem;
+}
+
 .session-draft-context__title {
   margin: 0;
   font-family: "Sora", sans-serif;
@@ -3989,6 +4173,52 @@ audio {
   padding: 0;
   margin: 0;
   list-style: none;
+}
+
+.session-setup-readiness {
+  display: grid;
+  gap: 0.58rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.session-setup-readiness__item {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.78rem 0.82rem;
+  border: 1px solid rgba(166, 196, 255, 0.06);
+  border-radius: var(--radius-sm) !important;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.session-setup-readiness__item.is-ready {
+  border-color: rgba(79, 215, 200, 0.16);
+  background:
+    linear-gradient(180deg, rgba(79, 215, 200, 0.08), rgba(255, 255, 255, 0)),
+    rgba(255, 255, 255, 0.025);
+}
+
+.session-setup-readiness__label,
+.session-setup-readiness__state {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.session-setup-readiness__label {
+  color: var(--text-meta);
+}
+
+.session-setup-readiness__value {
+  font-size: 0.94rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.session-setup-readiness__state {
+  color: var(--accent);
 }
 
 .session-draft-context__fact {
@@ -4048,12 +4278,40 @@ audio {
   margin-top: 1rem;
 }
 
+.session-draft-actions__copy {
+  display: grid;
+  gap: 0.3rem;
+  max-width: 52ch;
+  min-width: 0;
+}
+
 :root[data-display-mode="sun"] .session-draft-route,
 :root[data-display-mode="sun"] .session-draft-context {
   border-color: rgba(23, 33, 43, 0.08);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0)),
     rgba(255, 248, 240, 0.9);
+}
+
+:root[data-display-mode="sun"] .home-command-meta__item,
+:root[data-display-mode="sun"] .home-command-aside__body,
+:root[data-display-mode="sun"] .home-session-overview__recent-restarts {
+  border-color: rgba(23, 33, 43, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0)),
+    rgba(255, 248, 240, 0.88);
+}
+
+:root[data-display-mode="sun"] .session-setup-readiness__item {
+  border-color: rgba(23, 33, 43, 0.08);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+:root[data-display-mode="sun"] .session-setup-readiness__item.is-ready {
+  border-color: rgba(12, 143, 116, 0.16);
+  background:
+    linear-gradient(180deg, rgba(12, 143, 116, 0.08), rgba(255, 255, 255, 0)),
+    rgba(255, 255, 255, 0.7);
 }
 
 :root[data-display-mode="sun"] .session-draft-toggle {
@@ -5318,6 +5576,11 @@ select:focus-visible {
     padding: 0.9rem;
   }
 
+  .home-command-meta,
+  .home-session-overview__empty-shell {
+    grid-template-columns: 1fr;
+  }
+
   .hero-emblem {
     min-height: 148px;
   }
@@ -5476,13 +5739,17 @@ select:focus-visible {
   }
 
   .home-topbar__masthead {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 1rem;
+    grid-template-columns: 1fr;
+    gap: 1.1rem;
     align-items: start;
   }
 
   .home-topbar__controls {
-    justify-items: end;
+    justify-items: start;
+  }
+
+  .home-command-meta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .home-operational-facts {
@@ -5501,6 +5768,11 @@ select:focus-visible {
 
   .dashboard-section-header__action {
     justify-content: flex-end;
+  }
+
+  .session-setup-intro {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
   }
 
   .archive-workspace-panel__header {
@@ -5840,11 +6112,11 @@ select:focus-visible {
   gap: 0.92rem;
 }
 
-.home-topbar__title {
-  max-width: 9ch;
-  font-size: clamp(2.7rem, 6vw, 4.8rem);
-  line-height: 0.9;
-}
+  .home-topbar__title {
+    max-width: 13ch;
+    font-size: clamp(2.7rem, 6vw, 4.8rem);
+    line-height: 0.9;
+  }
 
 .home-topbar__context-line {
   max-width: 48ch;
@@ -5858,18 +6130,32 @@ select:focus-visible {
   align-content: start;
 }
 
-.home-topbar__controls {
-  gap: 0.7rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid rgba(255, 181, 121, 0.12);
-  border-radius: calc(var(--radius-lg) - 2px) !important;
+  .home-topbar__controls {
+    gap: 0.7rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid rgba(255, 181, 121, 0.12);
+    border-radius: calc(var(--radius-lg) - 2px) !important;
   background:
     linear-gradient(180deg, rgba(255, 248, 236, 0.1), rgba(255, 255, 255, 0)),
     rgba(31, 20, 13, 0.46);
-}
+  }
 
-.home-topbar__visual {
-  min-height: 280px;
+  .home-command-meta__item {
+    border-color: rgba(255, 181, 121, 0.12);
+    background:
+      linear-gradient(180deg, rgba(255, 247, 236, 0.06), rgba(255, 255, 255, 0)),
+      rgba(25, 17, 11, 0.48);
+  }
+
+  .home-command-aside__body {
+    border-color: rgba(255, 181, 121, 0.12);
+    background:
+      linear-gradient(180deg, rgba(255, 247, 236, 0.08), rgba(255, 255, 255, 0)),
+      rgba(30, 19, 13, 0.56);
+  }
+
+  .home-topbar__visual {
+    min-height: 280px;
   border-color: rgba(255, 181, 121, 0.18);
   background:
     radial-gradient(circle at top right, rgba(255, 122, 47, 0.24), transparent 28%),
@@ -5929,11 +6215,11 @@ select:focus-visible {
   letter-spacing: -0.03em;
 }
 
-.home-topbar__actions {
-  gap: 0.78rem;
-  padding-top: 0.95rem;
-  border-top-color: rgba(255, 181, 121, 0.12);
-}
+  .home-topbar__actions {
+    gap: 0.78rem;
+    padding-top: 0.95rem;
+    border-top-color: rgba(255, 181, 121, 0.12);
+  }
 
 .home-topbar__support-actions {
   gap: 0.72rem;
@@ -6038,11 +6324,11 @@ select:focus-visible {
     0 0 0 3px rgba(255, 122, 47, 0.08);
 }
 
-.dashboard-session-panel {
-  gap: 1.2rem;
-}
+  .dashboard-session-panel {
+    gap: 1.2rem;
+  }
 
-.dashboard-session-actions-grid {
+  .dashboard-session-actions-grid {
   display: grid;
   gap: 0.9rem;
 }
@@ -6075,26 +6361,36 @@ select:focus-visible {
   padding-top: 0.25rem;
 }
 
-.session-draft-shell {
-  gap: 1.1rem;
-}
+  .session-draft-shell {
+    gap: 1.1rem;
+  }
 
-.session-draft-route,
-.session-draft-context {
+  .session-setup-intro {
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid rgba(255, 181, 121, 0.12);
+  }
+
+  .session-draft-route,
+  .session-draft-context {
   border-color: rgba(255, 181, 121, 0.12);
   background:
     linear-gradient(180deg, rgba(255, 244, 228, 0.05), rgba(255, 255, 255, 0)),
     rgba(29, 20, 14, 0.58);
 }
 
-.session-draft-toggle {
-  border-color: rgba(255, 181, 121, 0.12);
-  background: rgba(35, 23, 15, 0.48);
-}
+  .session-draft-toggle {
+    border-color: rgba(255, 181, 121, 0.12);
+    background: rgba(35, 23, 15, 0.48);
+  }
 
-.route-plan-card {
-  border-color: rgba(255, 122, 47, 0.18);
-}
+  .session-setup-progress {
+    border-color: rgba(255, 181, 121, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .route-plan-card {
+    border-color: rgba(255, 122, 47, 0.18);
+  }
 
 :root[data-display-mode="sun"] .home-topbar {
   border-color: rgba(214, 90, 27, 0.14);
@@ -6105,6 +6401,8 @@ select:focus-visible {
 }
 
 :root[data-display-mode="sun"] .home-topbar__controls,
+:root[data-display-mode="sun"] .home-command-aside__body,
+:root[data-display-mode="sun"] .home-command-meta__item,
 :root[data-display-mode="sun"] .home-status-strip,
 :root[data-display-mode="sun"] .home-operational-fact,
 :root[data-display-mode="sun"] .dashboard-action-block,
@@ -6116,6 +6414,12 @@ select:focus-visible {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0)),
     rgba(255, 249, 239, 0.84);
+}
+
+:root[data-display-mode="sun"] .session-setup-progress {
+  border-color: rgba(214, 90, 27, 0.14);
+  background: rgba(255, 255, 255, 0.8);
+  color: #6e431d;
 }
 
 :root[data-display-mode="sun"] .home-topbar__visual,
