@@ -1,6 +1,9 @@
 import { expect, type Page } from '@playwright/test';
 
 const FIXED_NOW_ISO = '2026-04-19T08:30:00.000Z';
+const DB_NAME = 'field-session-atlas';
+const DB_VERSION = 1;
+const STORE_NAME = 'sessions';
 
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -89,6 +92,54 @@ export async function prepareDeterministicDashboard(page: Page) {
   }, { fixedNowIso: FIXED_NOW_ISO });
 
   await page.goto('/');
+  await expect(page.getByRole('main', { name: 'Contenido principal' })).toBeVisible();
+}
+
+export async function seedFieldSessions(page: Page, sessions: unknown[]) {
+  await page.evaluate(async ({ dbName, dbVersion, storeName, nextSessions }) => {
+    await new Promise<void>((resolve, reject) => {
+      const request = window.indexedDB.open(dbName, dbVersion);
+
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(storeName)) {
+          database.createObjectStore(storeName, { keyPath: 'id' });
+        }
+      };
+
+      request.onerror = () => reject(request.error ?? new Error('Unable to open IndexedDB.'));
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(storeName, 'readwrite');
+        const store = transaction.objectStore(storeName);
+
+        store.clear();
+        nextSessions.forEach((session) => {
+          store.put(session);
+        });
+
+        transaction.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+        transaction.onerror = () => {
+          database.close();
+          reject(transaction.error ?? new Error('Unable to seed field sessions.'));
+        };
+        transaction.onabort = () => {
+          database.close();
+          reject(transaction.error ?? new Error('IndexedDB transaction aborted while seeding.'));
+        };
+      };
+    });
+  }, {
+    dbName: DB_NAME,
+    dbVersion: DB_VERSION,
+    storeName: STORE_NAME,
+    nextSessions: sessions,
+  });
+
+  await page.reload();
   await expect(page.getByRole('main', { name: 'Contenido principal' })).toBeVisible();
 }
 

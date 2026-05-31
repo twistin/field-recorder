@@ -1523,6 +1523,24 @@ export default function App() {
     (fallbackRecord && recordSession?.id === fallbackRecord.sessionId ? fallbackRecord.point : recordSession?.points[0] ?? null);
   const draftPointCoordinates = resolvePointCoordinates(pointDraft, currentGps);
   const draftPointLabel = pointDraft.placeName.trim() || detectedPlace?.placeName || 'Punto preparado';
+  const captureFormFilledCount = [
+    pointDraft.placeName,
+    pointDraft.habitat,
+    pointDraft.zoomTakeReference,
+    pointDraft.notes,
+  ].filter((value) => value.trim()).length;
+  const captureFormProgressLabel =
+    captureFormFilledCount === 0
+      ? 'Empieza por lo esencial'
+      : `${captureFormFilledCount}/4 detalles base`;
+  const captureQuickSaveSupportCopy =
+    [
+      draftPointCoordinates ? 'GPS listo' : 'GPS pendiente',
+      draftPhotos.length > 0 ? `${draftPhotos.length} foto${draftPhotos.length === 1 ? '' : 's'}` : null,
+      draftSoundscapeClassification?.summary ? `IA: ${draftSoundscapeClassification.summary}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ') || 'GPS, fotos e IA se adjuntan cuando ya estén listos.';
   const sessionDraftRouteCoordinates = resolveRouteDestinationCoordinatesFromDraft(sessionDraft);
   const sessionDraftRouteHasShortMapsUrl = isShortGoogleMapsUrl(sessionDraft.routeUrl);
   const sessionDraftRouteRadius =
@@ -3797,6 +3815,8 @@ export default function App() {
         : weatherStatus === 'error'
           ? 'Sin datos de clima'
           : 'Clima pendiente';
+  const livePlaceLabel = pointDraft.placeName.trim() || detectedPlace?.placeName || locationStatusLabel;
+  const liveClimateLabel = weatherSnapshot?.summary || weatherStatusLabel;
   const fileStatusLabel =
     storageMode === 'ready' ? 'WRITE_READY' : storageMode === 'loading' ? 'LOADING...' : 'MEMORY_ONLY';
   const gpsTelemetryValue = currentGps ? gpsLabel : 'SEARCHING...';
@@ -7808,93 +7828,137 @@ export default function App() {
                         </div>
                       ) : null}
 
-                      <SummaryStrip
-                        compact
-                        className="capture-status-summary"
-                        ariaLabel="Estado automático de captura"
-                        items={captureStatusSummaryItems}
-                      />
+                      <div className="capture-command-shell">
+                        <div className="capture-command-main">
+                          <div className="capture-command-intro">
+                            <div className="capture-command-intro__copy">
+                              <p className="eyebrow eyebrow-inverse">Paso 1 · Contexto automático</p>
+                              <h4 className="capture-command-intro__title">La captura queda lista con el mínimo de fricción.</h4>
+                              <p className="module-copy text-sm">
+                                Quédate sólo con los ajustes manuales que falten. El lugar, el clima y el estado del punto se leen desde aquí sin enterrar la acción principal.
+                              </p>
+                            </div>
 
-                      <div className="capture-readiness-strip" aria-label="Preparación del registro">
-                        <div className="capture-readiness-strip__header">
-                          <p className="eyebrow eyebrow-inverse">Preparación rápida</p>
-                          <span className="capture-readiness-strip__count">{captureReadinessLabel}</span>
-                        </div>
-                        <ul className="capture-readiness-strip__list">
-                          {captureReadinessItems.map((item) => (
-                            <li key={item.label}>
-                              <span className={`capture-readiness-pill ${item.ready ? 'is-ready' : ''}`}>
-                                <span>{item.label}</span>
-                                <strong>{item.value}</strong>
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
+                            <ul className="capture-context-facts" aria-label="Lectura inmediata del punto">
+                              <li className="capture-context-facts__item">
+                                <span className="capture-context-facts__label">Hora</span>
+                                <strong className="capture-context-facts__value">{captureTimeLabel}</strong>
+                                <span className="capture-context-facts__detail">{captureDateLabel}</span>
+                              </li>
+                              <li className="capture-context-facts__item">
+                                <span className="capture-context-facts__label">GPS</span>
+                                <strong className="capture-context-facts__value">{gpsAccuracyLabel}</strong>
+                                <span className="capture-context-facts__detail">{gpsLabel}</span>
+                              </li>
+                              <li className="capture-context-facts__item">
+                                <span className="capture-context-facts__label">Lugar</span>
+                                <strong className="capture-context-facts__value">{livePlaceLabel}</strong>
+                                <span className="capture-context-facts__detail">{locationMessage || locationStatusLabel}</span>
+                              </li>
+                              <li className="capture-context-facts__item">
+                                <span className="capture-context-facts__label">Clima</span>
+                                <strong className="capture-context-facts__value">{liveClimateLabel}</strong>
+                                <span className="capture-context-facts__detail">{weatherSnapshot?.details || weatherMessage}</span>
+                              </li>
+                            </ul>
+                          </div>
 
-                      <div className="capture-quick-tools" role="group" aria-label="Acciones rápidas del registro">
-                        <button
-                          type="button"
-                          onClick={() => void addQuickPointToSession()}
-                          className="ui-button ui-button-primary"
-                          disabled={isQuickCapturing}
-                          aria-busy={isQuickCapturing}
-                        >
-                          <Mic className="h-4 w-4" />
-                          {isQuickCapturing ? 'Guardando...' : 'Guardar registro rápido'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void listenAndClassifySoundscape()}
-                          disabled={soundscapeStatus === 'listening'}
-                          aria-busy={soundscapeStatus === 'listening'}
-                          className="listen-button capture-quick-tool"
-                        >
-                          <Sparkles className="h-5 w-5" />
-                          {soundscapeStatus === 'listening' ? 'Analizando 15 s...' : 'DETECTAR AMBIENTE'}
-                        </button>
-                        <label className="ui-button ui-button-secondary ui-button-upload">
-                          <Camera className="h-4 w-4" />
-                          Añadir foto
-                          <input
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            multiple
-                            className="hidden"
-                            onChange={handleDraftPhotosInput}
+                          <SummaryStrip
+                            compact
+                            className="capture-status-summary"
+                            ariaLabel="Estado automático de captura"
+                            items={captureStatusSummaryItems}
                           />
-                        </label>
-                      </div>
 
-                      <div className="capture-maintenance-tools" aria-label="Acciones de mantenimiento del contexto">
-                        <p className="capture-toolbar-label">Actualización manual</p>
-                        <div className="action-row action-row--compact capture-maintenance-tools__actions">
-                          <button type="button" onClick={() => void activateGpsAndApplyToDraft()} className="ui-button ui-button-ghost">
-                            <LocateFixed className="h-4 w-4" />
-                            Activar GPS
-                          </button>
-                          <button
-                            type="button"
-                            onClick={refreshDetectedPlace}
-                            disabled={!canRefreshDetectedPlace}
-                            aria-busy={locationStatus === 'loading'}
-                            className="ui-button ui-button-ghost"
-                          >
-                            <MapPin className="h-4 w-4" />
-                            Releer ubicación
-                          </button>
-                          <button
-                            type="button"
-                            onClick={refreshAutomaticWeather}
-                            disabled={!canRefreshWeather || weatherStatus === 'loading'}
-                            aria-busy={weatherStatus === 'loading'}
-                            className="ui-button ui-button-ghost"
-                          >
-                            <CloudRain className={`h-4 w-4 ${weatherStatus === 'loading' ? 'busy-spin' : ''}`} />
-                            Actualizar clima
-                          </button>
+                          <div className="capture-readiness-strip" aria-label="Preparación del registro">
+                            <div className="capture-readiness-strip__header">
+                              <p className="eyebrow eyebrow-inverse">Preparación rápida</p>
+                              <span className="capture-readiness-strip__count">{captureReadinessLabel}</span>
+                            </div>
+                            <ul className="capture-readiness-strip__list">
+                              {captureReadinessItems.map((item) => (
+                                <li key={item.label}>
+                                  <span className={`capture-readiness-pill ${item.ready ? 'is-ready' : ''}`}>
+                                    <span>{item.label}</span>
+                                    <strong>{item.value}</strong>
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         </div>
+
+                        <aside className="capture-command-actions" aria-label="Acciones principales de captura">
+                          <div className="capture-command-actions__primary">
+                            <p className="eyebrow eyebrow-inverse">Paso 2 · Guardar al instante</p>
+                            <button
+                              type="button"
+                              onClick={() => void addQuickPointToSession()}
+                              className="ui-button ui-button-primary capture-command-actions__primary-button"
+                              disabled={isQuickCapturing}
+                              aria-busy={isQuickCapturing}
+                            >
+                              <Mic className="h-4 w-4" />
+                              {isQuickCapturing ? 'Guardando...' : 'Guardar registro rápido'}
+                            </button>
+                            <p className="module-copy text-sm capture-command-actions__support">{captureQuickSaveSupportCopy}</p>
+                          </div>
+
+                          <div className="capture-command-actions__secondary" role="group" aria-label="Acciones rápidas del registro">
+                            <button
+                              type="button"
+                              onClick={() => void listenAndClassifySoundscape()}
+                              disabled={soundscapeStatus === 'listening'}
+                              aria-busy={soundscapeStatus === 'listening'}
+                              className="listen-button capture-quick-tool"
+                            >
+                              <Sparkles className="h-5 w-5" />
+                              {soundscapeStatus === 'listening' ? 'Analizando 15 s...' : 'Detectar ambiente'}
+                            </button>
+                            <label className="ui-button ui-button-secondary ui-button-upload">
+                              <Camera className="h-4 w-4" />
+                              Añadir foto
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                multiple
+                                className="hidden"
+                                onChange={handleDraftPhotosInput}
+                              />
+                            </label>
+                          </div>
+
+                          <div className="capture-maintenance-tools" aria-label="Acciones de mantenimiento del contexto">
+                            <p className="capture-toolbar-label">Actualización manual</p>
+                            <div className="action-row action-row--compact capture-maintenance-tools__actions">
+                              <button type="button" onClick={() => void activateGpsAndApplyToDraft()} className="ui-button ui-button-ghost">
+                                <LocateFixed className="h-4 w-4" />
+                                Activar GPS
+                              </button>
+                              <button
+                                type="button"
+                                onClick={refreshDetectedPlace}
+                                disabled={!canRefreshDetectedPlace}
+                                aria-busy={locationStatus === 'loading'}
+                                className="ui-button ui-button-ghost"
+                              >
+                                <MapPin className="h-4 w-4" />
+                                Releer ubicación
+                              </button>
+                              <button
+                                type="button"
+                                onClick={refreshAutomaticWeather}
+                                disabled={!canRefreshWeather || weatherStatus === 'loading'}
+                                aria-busy={weatherStatus === 'loading'}
+                                className="ui-button ui-button-ghost"
+                              >
+                                <CloudRain className={`h-4 w-4 ${weatherStatus === 'loading' ? 'busy-spin' : ''}`} />
+                                Actualizar clima
+                              </button>
+                            </div>
+                          </div>
+                        </aside>
                       </div>
                     </div>
 
@@ -7907,7 +7971,17 @@ export default function App() {
                         </p>
                       </div>
 
-                      <div className="quick-form-grid">
+                      <div className="capture-form-intro">
+                        <div className="capture-form-intro__copy">
+                          <p className="eyebrow">Paso 3 · Completar si hace falta</p>
+                          <p className="module-copy text-sm">
+                            Lugar, entorno, referencia H6 y notas. Lo técnico queda plegado para no competir con el guardado.
+                          </p>
+                        </div>
+                        <span className="capture-form-progress">{captureFormProgressLabel}</span>
+                      </div>
+
+                      <div className="quick-form-grid capture-form-basics">
                         <label className="grid gap-2 text-sm text-[color:var(--muted)]">
                           <span>Nombre del lugar</span>
                           <input
@@ -7949,13 +8023,19 @@ export default function App() {
                         </label>
                       </div>
 
-                      <div className="action-row">
+                      <div className="action-row capture-form-actions">
+                        <div className="capture-form-actions__copy">
+                          <strong>El guardado completo conserva el contexto automático y tus ajustes manuales.</strong>
+                          <p className="module-copy text-sm">
+                            Úsalo cuando quieras dejar el punto listo para archivo, revisión o asociación con la Zoom H6.
+                          </p>
+                        </div>
                         <button type="button" onClick={() => void addPointToSession()} className="ui-button ui-button-primary">
                           Guardar registro completo
                         </button>
                       </div>
 
-                      <details className="manual-details">
+                      <details className="manual-details capture-form-advanced">
                         <summary className="manual-details__summary">
                           <div>
                             <p className="eyebrow">Campos avanzados</p>
@@ -7966,7 +8046,7 @@ export default function App() {
                           <span className="manual-details__hint">Abrir</span>
                         </summary>
 
-                        <div className="manual-details__body grid gap-4 md:grid-cols-2">
+                        <div className="manual-details__body grid gap-4 md:grid-cols-2 capture-form-advanced__body">
                           <label className="grid gap-2 text-sm text-[color:var(--muted)]">
                             <span>Clima observado</span>
                             <input
@@ -8044,57 +8124,66 @@ export default function App() {
                       </details>
                     </div>
 
-                    {isCompactCaptureLayout ? (
-                      <section className="capture-secondary-workspace" aria-labelledby="capture-secondary-workspace-title">
-                        <SectionHeader
-                          eyebrow="Herramientas"
-                          titleId="capture-secondary-workspace-title"
-                          title="IA, fotos y exploración"
-                          description="En compacto, las herramientas secundarias se alternan en una sola superficie para que la captura siga sintiéndose rápida."
-                        />
+                    <section
+                      className={`capture-secondary-workspace ${isCompactCaptureLayout ? '' : 'capture-secondary-workspace--expanded'}`}
+                      aria-labelledby="capture-secondary-workspace-title"
+                    >
+                      <SectionHeader
+                        eyebrow="Herramientas"
+                        titleId="capture-secondary-workspace-title"
+                        title={isCompactCaptureLayout ? 'IA, fotos y exploración' : 'Herramientas de apoyo'}
+                        description={
+                          isCompactCaptureLayout
+                            ? 'En compacto, las herramientas secundarias se alternan en una sola superficie para que la captura siga sintiéndose rápida.'
+                            : 'Mapa, fotos, IA y último registro quedan juntos para consulta y ajustes, pero fuera del bloque principal de guardado.'
+                        }
+                      />
 
-                        <SegmentedControl
-                          label="Cambiar herramienta secundaria de captura"
-                          value={captureSupportTab}
-                          items={[
-                            { value: 'map', label: 'Mapa' },
-                            { value: 'photos', label: 'Fotos', count: draftPhotos.length },
-                            { value: 'ai', label: 'IA' },
-                            { value: 'record', label: 'Último' },
-                          ]}
-                          onChange={setCaptureSupportTab}
-                          panelIdBase="capture-support"
-                          size="sm"
-                          fill
-                        />
+                      {isCompactCaptureLayout ? (
+                        <>
+                          <SegmentedControl
+                            label="Cambiar herramienta secundaria de captura"
+                            value={captureSupportTab}
+                            items={[
+                              { value: 'map', label: 'Mapa' },
+                              { value: 'photos', label: 'Fotos', count: draftPhotos.length },
+                              { value: 'ai', label: 'IA' },
+                              { value: 'record', label: 'Último' },
+                            ]}
+                            onChange={setCaptureSupportTab}
+                            panelIdBase="capture-support"
+                            size="sm"
+                            fill
+                          />
 
-                        <AnimatePresence initial={false} mode="wait">
-                          <motion.div
-                            key={`capture-support-${captureSupportTab}`}
-                            id={`capture-support-panel-${captureSupportTab}`}
-                            role="tabpanel"
-                            aria-labelledby={`capture-support-tab-${captureSupportTab}`}
-                            className="content-swap-panel content-swap-panel--workspace"
-                            {...contentSwapMotion}
-                          >
-                            {captureSupportTab === 'map'
-                              ? renderCaptureExplorePanel()
-                              : captureSupportTab === 'photos'
-                                ? renderCapturePhotosPanel()
-                                : captureSupportTab === 'ai'
-                                  ? renderCaptureListenPanel()
-                                  : renderCaptureRecordPreviewPanel()}
-                          </motion.div>
-                        </AnimatePresence>
-                      </section>
-                    ) : (
-                      <>
-                        {renderCaptureListenPanel()}
-                        {renderCapturePhotosPanel()}
-                        {renderCaptureExplorePanel()}
-                        {renderCaptureRecordPreviewPanel()}
-                      </>
-                    )}
+                          <AnimatePresence initial={false} mode="wait">
+                            <motion.div
+                              key={`capture-support-${captureSupportTab}`}
+                              id={`capture-support-panel-${captureSupportTab}`}
+                              role="tabpanel"
+                              aria-labelledby={`capture-support-tab-${captureSupportTab}`}
+                              className="content-swap-panel content-swap-panel--workspace"
+                              {...contentSwapMotion}
+                            >
+                              {captureSupportTab === 'map'
+                                ? renderCaptureExplorePanel()
+                                : captureSupportTab === 'photos'
+                                  ? renderCapturePhotosPanel()
+                                  : captureSupportTab === 'ai'
+                                    ? renderCaptureListenPanel()
+                                    : renderCaptureRecordPreviewPanel()}
+                            </motion.div>
+                          </AnimatePresence>
+                        </>
+                      ) : (
+                        <div className="capture-support-grid">
+                          <div className="capture-support-grid__map">{renderCaptureExplorePanel()}</div>
+                          <div className="capture-support-grid__photos">{renderCapturePhotosPanel()}</div>
+                          <div className="capture-support-grid__ai">{renderCaptureListenPanel()}</div>
+                          <div className="capture-support-grid__record">{renderCaptureRecordPreviewPanel()}</div>
+                        </div>
+                      )}
+                    </section>
                   </>
                 )}
               </motion.section>

@@ -2540,6 +2540,137 @@ audio {
   align-items: center;
 }
 
+.capture-command-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.capture-command-main,
+.capture-command-actions,
+.capture-command-intro,
+.capture-form-intro,
+.capture-secondary-workspace,
+.capture-support-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.capture-command-intro__copy,
+.capture-form-intro__copy,
+.capture-form-actions__copy {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.capture-command-intro__title {
+  margin: 0;
+  font-family: "Fraunces", "Sora", sans-serif;
+  font-size: clamp(1.18rem, 2.2vw, 1.74rem);
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--ink);
+}
+
+.capture-context-facts {
+  display: grid;
+  gap: 0.72rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.capture-context-facts__item,
+.capture-command-actions__primary,
+.capture-maintenance-tools {
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.9rem 0.95rem;
+  border: 1px solid rgba(166, 196, 255, 0.1);
+  border-radius: calc(var(--radius-md) - 2px) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0)),
+    rgba(11, 21, 33, 0.44);
+}
+
+.capture-context-facts__label,
+.capture-toolbar-label,
+.capture-form-progress {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.capture-context-facts__label,
+.capture-toolbar-label {
+  color: var(--text-meta);
+}
+
+.capture-context-facts__value {
+  font-size: 1rem;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.capture-context-facts__detail,
+.capture-command-actions__support {
+  color: var(--text-support);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.capture-command-actions__primary-button {
+  min-height: 3.7rem;
+}
+
+.capture-command-actions__secondary {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.capture-maintenance-tools {
+  gap: 0.72rem;
+}
+
+.capture-maintenance-tools__actions {
+  gap: 0.58rem;
+}
+
+.capture-maintenance-tools__actions > * {
+  flex: 1 1 180px;
+}
+
+.capture-form-progress {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 2.55rem;
+  padding: 0.58rem 0.88rem;
+  border: 1px solid rgba(79, 215, 200, 0.18);
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(231, 247, 255, 0.92);
+}
+
+.capture-form-actions {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.capture-form-actions__copy {
+  max-width: 50ch;
+  min-width: 0;
+}
+
+.capture-form-advanced {
+  margin-top: 0.2rem;
+}
+
+.capture-secondary-workspace--expanded {
+  grid-column: 1 / -1;
+}
+
 .layout-home,
 .layout-dashboard,
 .layout-log,
@@ -4314,6 +4445,21 @@ audio {
     rgba(255, 255, 255, 0.7);
 }
 
+:root[data-display-mode="sun"] .capture-context-facts__item,
+:root[data-display-mode="sun"] .capture-command-actions__primary,
+:root[data-display-mode="sun"] .capture-maintenance-tools {
+  border-color: rgba(23, 33, 43, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0)),
+    rgba(255, 248, 240, 0.82);
+}
+
+:root[data-display-mode="sun"] .capture-form-progress {
+  border-color: rgba(12, 143, 116, 0.16);
+  background: rgba(255, 255, 255, 0.82);
+  color: #245748;
+}
+
 :root[data-display-mode="sun"] .session-draft-toggle {
   border-color: rgba(23, 33, 43, 0.08);
   background: rgba(255, 255, 255, 0.42);
@@ -5676,6 +5822,12 @@ select:focus-visible {
   .action-row > * {
     width: 100%;
   }
+
+  .capture-context-facts,
+  .capture-command-actions__secondary,
+  .capture-support-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (min-width: 760px) and (max-width: 959px) {
@@ -5824,6 +5976,25 @@ select:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .capture-command-intro {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .capture-context-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .capture-command-actions__secondary,
+  .capture-support-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .capture-form-intro {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
   .capture-quick-tools {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -5920,6 +6091,11 @@ select:focus-visible {
 }
 
 @media (min-width: 1120px) {
+  .capture-command-shell {
+    grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.92fr);
+    align-items: start;
+  }
+
   .layout-log {
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
   }
@@ -5952,6 +6128,10 @@ select:focus-visible {
 
   .log-summary-card,
   .log-map-panel {
+    grid-column: 1 / -1;
+  }
+
+  .capture-support-grid__map {
     grid-column: 1 / -1;
   }
 
