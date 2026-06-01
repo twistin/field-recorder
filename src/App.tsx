@@ -3699,7 +3699,7 @@ export default function App() {
       (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
     )[0];
 
-    setSelectedArchiveProjectKey(buildProjectKey(session.projectName));
+    setSelectedArchiveProjectKey('all');
     setRecordSessionId(session.id);
     setRecordPointId(latestPoint?.id ?? null);
     setArchiveWorkspace(workspace);
@@ -3835,7 +3835,6 @@ export default function App() {
     (session) => session.cloudSyncStatus === 'pending' || session.cloudSyncStatus === 'local-only',
   ).length;
   const syncedCloudSessionCount = sessions.filter((session) => session.cloudSyncStatus === 'synced').length;
-  const projectCount = archiveProjectGroups.length;
   const pendingCatalogSessionCount = sessions.filter(
     (session) =>
       session.catalogSyncStatus === 'pending' ||
@@ -3881,7 +3880,7 @@ export default function App() {
           .filter((part): part is string => Boolean(part))
           .join(' · ')
       : 'Sin tareas operativas';
-  const activeSessionProjectName = activeSession ? resolveProjectName(activeSession.projectName) : 'Sin trabajo';
+  const activeSessionCaptureHeading = activeSession ? activeSession.name : 'Sin salida';
   const totalPhotoCount = sessions.reduce(
     (count, session) => count + session.points.reduce((sessionCount, point) => sessionCount + point.photos.length, 0),
     0,
@@ -3894,9 +3893,6 @@ export default function App() {
   const activeSessionPhotoCount = activeSession
     ? activeSession.points.reduce((count, point) => count + point.photos.length, 0)
     : 0;
-  const recentProjectGroups = archiveProjectGroups.slice(0, 4);
-  const recentInsightProjectGroups = recentProjectGroups.slice(0, 3);
-  const recentNamedProjectGroups = archiveProjectGroups.filter((group) => group.key !== 'sin-trabajo').slice(0, 4);
   const recentSessions = sessions.slice(0, 5);
   const recentPhotoLibraryItems = allRecords
     .flatMap((record) =>
@@ -3952,14 +3948,11 @@ export default function App() {
       createdAt: take.inferredRecordedAt,
     })),
   ].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
-  const visibleArchiveSessions = visibleArchiveProjectGroups
-    .flatMap((group) => group.sessions)
-    .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
-  const currentArchiveProject =
-    selectedArchiveProjectKey === 'all'
-      ? null
-      : archiveProjectGroups.find((group) => group.key === selectedArchiveProjectKey) ?? null;
-  const canManageSelectedProject = Boolean(currentArchiveProject) && currentArchiveProject.key !== 'sin-trabajo';
+  const visibleArchiveSessions = [...sessions].sort(
+    (left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime(),
+  );
+  const currentArchiveProject = null;
+  const canManageSelectedProject = false;
   const visibleArchiveRecordCount = visibleArchiveSessions.reduce((count, session) => count + session.points.length, 0);
   const visibleArchivePhotoCount = visibleArchiveSessions.reduce(
     (count, session) => count + session.points.reduce((sessionCount, point) => sessionCount + point.photos.length, 0),
@@ -3970,25 +3963,22 @@ export default function App() {
   const archiveBrowserSummaryItems = [
     {
       label: 'Salidas',
-      value: currentArchiveProject ? currentArchiveProject.sessionCount : visibleArchiveSessions.length,
-      detail:
-        currentArchiveProject?.activeSessionCount || visibleArchiveActiveCount
-          ? `${currentArchiveProject?.activeSessionCount ?? visibleArchiveActiveCount} activas`
-          : 'Sin activas',
+      value: visibleArchiveSessions.length,
+      detail: visibleArchiveActiveCount ? `${visibleArchiveActiveCount} activas` : 'Sin activas',
     },
     {
       label: 'Registros',
-      value: currentArchiveProject ? currentArchiveProject.pointCount : visibleArchiveRecordCount,
-      detail: currentArchiveProject ? 'En trabajo actual' : 'En filtro actual',
+      value: visibleArchiveRecordCount,
+      detail: 'En archivo visible',
     },
     {
       label: 'Fotos',
-      value: currentArchiveProject ? currentArchiveProject.photoCount : visibleArchivePhotoCount,
+      value: visibleArchivePhotoCount,
       detail: 'Visibles',
     },
     {
       label: 'Tomas H6',
-      value: currentArchiveProject ? currentArchiveProject.audioTakeCount : visibleArchiveAudioCount,
+      value: visibleArchiveAudioCount,
       detail: 'Importadas',
     },
   ];
@@ -4139,7 +4129,6 @@ export default function App() {
   const isCompactSessionLayout = viewportWidth < 980;
   const isCompactCaptureLayout = viewportWidth < 1120;
   const isCompactArchiveLayout = viewportWidth < 1120;
-  const homeWorkPreviewGroups = isCompactHomeLayout ? recentNamedProjectGroups.slice(0, 3) : recentNamedProjectGroups;
   const homeWorkPreviewSessions = isCompactHomeLayout ? recentSessions.slice(0, 4) : recentSessions;
   const effectiveHomeSecondaryTab =
     homeSecondaryTab === 'media' && !hasRecentMedia
@@ -4165,99 +4154,39 @@ export default function App() {
   };
   const renderHomeWorkPreview = (compact = false) =>
     hasRecentWork ? (
-      <div className={`dashboard-browser-grid ${compact ? 'dashboard-browser-grid--stacked' : ''}`.trim()}>
-        <section
-          className="dashboard-subsection"
-          aria-labelledby="home-project-groups-title"
-          aria-describedby="home-project-groups-description"
-        >
-          <SectionHeader
-            titleId="home-project-groups-title"
-            descriptionId="home-project-groups-description"
-            title="Trabajos recientes"
-            description={
-              homeWorkPreviewGroups.length > 0
-                ? compact
-                  ? `${homeWorkPreviewGroups.length} trabajos visibles ahora.`
-                  : `${homeWorkPreviewGroups.length} trabajos visibles ahora en el resumen.`
-                : 'Aún no hay trabajos con nombre visibles en el resumen.'
-            }
-            titleAs="h3"
-            compact
-          />
-          {homeWorkPreviewGroups.length > 0 ? (
-            <StructuredList>
-              {homeWorkPreviewGroups.map((group) => (
-                <li key={group.key}>
-                  <ListRow
-                    onClick={() => openProjectArchiveFromHome(group.key)}
-                    eyebrow={group.activeSessionCount > 0 ? 'Con salida activa' : 'Trabajo'}
-                    title={group.name}
-                    meta={
-                      group.activeSessionCount > 0
-                        ? `${group.activeSessionCount} salida${group.activeSessionCount === 1 ? '' : 's'} activa${group.activeSessionCount === 1 ? '' : 's'} ahora.`
-                        : 'Sin actividad abierta ahora.'
-                    }
-                    stats={[
-                      `${group.sessionCount} salidas`,
-                      `${group.pointCount} registros`,
-                      `${group.audioTakeCount} H6`,
-                    ]}
-                    actionLabel="Abrir proyecto"
-                  />
-                </li>
-              ))}
-            </StructuredList>
-          ) : (
-            <EmptyState
-              eyebrow="Trabajos"
-              title="Todavía no hay trabajos"
-              description="Tus salidas pueden existir sin trabajo. El primer trabajo aparecerá cuando crees o edites una salida con nombre de trabajo."
-              icon={<FileSpreadsheet className="h-5 w-5" />}
-              action={
-                <Button variant="ghost" onClick={() => setView('session')}>
-                  Ir a salidas
-                </Button>
-              }
-              compact
-            />
-          )}
-        </section>
-
-        <section
-          className="dashboard-subsection"
-          aria-labelledby="home-recent-sessions-title"
-          aria-describedby="home-recent-sessions-description"
-        >
-          <SectionHeader
-            titleId="home-recent-sessions-title"
-            descriptionId="home-recent-sessions-description"
-            title="Salidas recientes"
-            description={`${homeWorkPreviewSessions.length} salidas recientes con acceso directo.`}
-            titleAs="h3"
-            compact
-          />
-          <StructuredList>
-            {homeWorkPreviewSessions.map((session) => (
-              <li key={session.id}>
-                <ListRow
-                  onClick={() => openSessionArchiveFromHome(session.id)}
-                  eyebrow={session.status === 'active' ? 'Salida activa' : 'Salida cerrada'}
-                  title={session.name}
-                  meta={`${resolveProjectName(session.projectName)} · ${session.region || 'sin zona definida'}`}
-                  stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
-                  actionLabel="Ver salida"
-                />
-              </li>
-            ))}
-          </StructuredList>
-        </section>
-      </div>
+      <section
+        className="dashboard-subsection"
+        aria-labelledby="home-recent-sessions-title"
+        aria-describedby="home-recent-sessions-description"
+      >
+        <SectionHeader
+          titleId="home-recent-sessions-title"
+          descriptionId="home-recent-sessions-description"
+          title="Salidas recientes"
+          description={`${homeWorkPreviewSessions.length} salidas recientes con acceso directo.`}
+          titleAs="h3"
+          compact
+        />
+        <StructuredList>
+          {homeWorkPreviewSessions.map((session) => (
+            <li key={session.id}>
+              <ListRow
+                onClick={() => openSessionArchiveFromHome(session.id)}
+                eyebrow={session.status === 'active' ? 'Salida activa' : 'Salida cerrada'}
+                title={session.name}
+                meta={`${session.region || 'sin zona definida'} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`}
+                stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                actionLabel="Ver salida"
+              />
+            </li>
+          ))}
+        </StructuredList>
+      </section>
     ) : (
       <EmptyState
-        eyebrow="Trabajo"
-        title="Todavía no hay trabajo reciente"
-        description="Cuando guardes la primera salida, esta zona mostrará trabajos, salidas y accesos directos para retomarlos sin buscar."
+        eyebrow="Salidas"
+        title="Todavía no hay salidas recientes"
+        description="Cuando guardes la primera salida, esta zona mostrará accesos directos para retomarla o entrar en archivo sin buscar."
         icon={<History className="h-5 w-5" />}
         action={
           <Button variant="secondary" onClick={() => setView('session')}>
@@ -4376,7 +4305,7 @@ export default function App() {
                               meta={
                                 take.pointName
                                   ? `${take.pointName} · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
-                                  : `${take.projectName} · sin punto asociado · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
+                                  : `${take.sessionName} · sin punto asociado · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
                               }
                             />
                           </li>
@@ -4443,7 +4372,7 @@ export default function App() {
                       meta={
                         take.pointName
                           ? `${take.pointName} · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
-                          : `${take.projectName} · sin punto asociado · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
+                          : `${take.sessionName} · sin punto asociado · ${formatDateTime(take.inferredRecordedAt, "d MMM · HH:mm")}`
                       }
                       actionLabel={take.associatedPointId ? 'Abrir registro' : 'Abrir biblioteca'}
                     />
@@ -4477,17 +4406,17 @@ export default function App() {
   const greetingLabel = getGreetingLabel(now);
   const homeLauncherTitle = activeSession ? activeSession.name : 'Prepara la próxima salida';
   const homeLauncherCopy = activeSession
-    ? `${activeSessionProjectName}${activeSession.region ? ` · ${activeSession.region}` : ''}. La captura ya está lista para guardar el siguiente punto sin perder tiempo entre paneles.`
-    : 'Arranca con lo mínimo: nombre, trabajo, zona y equipo. Ruta, notas y automatismos quedan como capa opcional para no sobrecargar el inicio.';
+    ? `${activeSession.name}${activeSession.region ? ` · ${activeSession.region}` : ''}. La captura ya está lista para guardar el siguiente punto sin perder tiempo entre paneles.`
+    : 'Arranca con lo mínimo: nombre, zona y equipo. Ruta, notas y automatismos quedan como capa opcional para no sobrecargar el inicio.';
   const homePrimaryActionLabel = activeSession ? 'Registrar punto' : 'Crear salida';
   const homeSessionActionLabel = activeSession ? 'Gestionar salida' : 'Ver salidas';
   const homeArchiveActionLabel = 'Abrir archivo';
   const latestRecordLabel = recordPoint ? recordPoint.placeName : 'Sin ficha final todavía';
   const latestRecordSummary = recordPoint
-    ? `${formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm")} · ${resolveProjectName(recordSession?.projectName ?? '')}`
+    ? `${formatDateTime(recordPoint.createdAt, "d MMM yyyy · HH:mm")} · ${recordSession?.name ?? 'Salida seleccionada'}`
     : 'El archivo final aparecerá en cuanto guardes el primer punto.';
   const homeOperationalContext = activeSession
-    ? [activeSessionProjectName, activeSession.region || null, activeSessionStartedLabel ? `Abierta ${activeSessionStartedLabel}` : null]
+    ? [activeSession.name, activeSession.region || null, activeSessionStartedLabel ? `Abierta ${activeSessionStartedLabel}` : null]
         .filter(Boolean)
         .join(' · ')
     : 'Define el contexto antes de abrir captura.';
@@ -4530,7 +4459,7 @@ export default function App() {
       value: activeSession ? activeSession.name : 'Preparar salida',
       detail: activeSession
         ? `${activeSession.points.length} registro${activeSession.points.length === 1 ? '' : 's'} en curso`
-        : 'Define trabajo, zona y equipo antes de salir.',
+        : 'Define nombre, zona y equipo antes de salir.',
     },
     {
       id: 'next',
@@ -4570,12 +4499,12 @@ export default function App() {
     view === 'home'
       ? 'Desde aquí ves qué salida sigue abierta, qué falta por registrar y cómo llegar al archivo sin navegar a ciegas.'
       : view === 'session'
-        ? 'Crea una salida, retoma trabajo reciente y busca registros sin mezclar captura y archivo.'
+        ? 'Crea una salida, retoma una reciente y busca registros sin mezclar captura y archivo.'
         : view === 'point'
           ? 'La captura queda centrada en registrar rápido: ubicación, escucha, fotos y notas en una sola pantalla.'
           : 'El archivo deja visibles registros, fotos, audio H6 y exportación sin esconder acciones ni mezclar edición.';
   const sessionDraftProjectHint =
-    sessionDraft.projectName.trim() || preferredProjectName || latestKnownProjectName || 'Sin trabajo reciente';
+    recentSessions[0]?.name || 'Todavía sin salidas';
   const sessionDraftRegionHint =
     sessionDraft.region.trim() || (currentGps ? homePlaceValue : 'Define la zona al abrir la salida');
   const sessionDraftRouteValue =
@@ -4587,7 +4516,7 @@ export default function App() {
       : 'Faltan coordenadas'
     : 'Activación manual';
   const sessionDraftSupportItems = [
-    { id: 'project', label: 'Trabajo sugerido', value: sessionDraftProjectHint },
+    { id: 'latest', label: 'Última salida', value: sessionDraftProjectHint },
     { id: 'territory', label: 'Territorio', value: sessionDraftRegionHint },
     { id: 'equipment', label: 'Equipo', value: sessionDraft.equipmentPreset.trim() || 'Zoom H6 · XY' },
     { id: 'route', label: 'Ruta', value: sessionDraftRouteValue },
@@ -4595,12 +4524,6 @@ export default function App() {
   ] as const;
   const sessionDraftReadinessItems = [
     { id: 'name', label: 'Nombre', value: sessionDraft.name.trim() || 'Pendiente', ready: Boolean(sessionDraft.name.trim()) },
-    {
-      id: 'project',
-      label: 'Trabajo',
-      value: sessionDraft.projectName.trim() || 'Pendiente',
-      ready: Boolean(sessionDraft.projectName.trim()),
-    },
     {
       id: 'region',
       label: 'Zona',
@@ -4635,8 +4558,8 @@ export default function App() {
   const homeCommandFacts = activeSession
     ? [
         {
-          label: 'Trabajo',
-          value: activeSessionProjectName,
+          label: 'Salida',
+          value: activeSession.name,
           detail: activeSessionStartedLabel ? `Salida abierta ${activeSessionStartedLabel}.` : 'Salida en curso.',
         },
         {
@@ -4652,9 +4575,9 @@ export default function App() {
       ]
     : [
         {
-          label: 'Trabajo sugerido',
+          label: 'Última salida',
           value: sessionDraftProjectHint,
-          detail: preferredProjectName ? 'Recuperado del trabajo más reciente.' : 'Puedes dejarlo vacío y completarlo más tarde.',
+          detail: recentSessions[0] ? 'Útil como referencia antes de abrir la siguiente.' : 'La primera salida definirá el archivo base.',
         },
         {
           label: 'Zona',
@@ -4804,8 +4727,8 @@ export default function App() {
     {
       eyebrow: 'Salida',
       title: activeSession ? 'Contexto abierto' : 'Crear o retomar',
-      description: 'Abre la salida, deja trabajo y zona claros, y evita preparar de más antes de salir.',
-      status: activeSession ? `${activeSession.points.length} registros en ${activeSession.name}` : `${projectCount} trabajos visibles`,
+      description: 'Abre la salida, deja zona y equipo claros, y evita preparar de más antes de salir.',
+      status: activeSession ? `${activeSession.points.length} registros en ${activeSession.name}` : `${sessions.length} salidas visibles`,
       cta: activeSession ? 'Gestionar salida' : 'Crear salida',
       icon: MapPinned,
       featured: !activeSession,
@@ -5483,42 +5406,11 @@ export default function App() {
       <Card variant="preview" tone="mint" className="dashboard-browser-panel dashboard-support-panel">
         <div className="panel-heading panel-heading--compact">
           <p className="eyebrow">Visibles</p>
-          <h3 className="display-heading text-2xl">Trabajos y salidas</h3>
+          <h3 className="display-heading text-2xl">Salidas recientes</h3>
           <p className="module-copy text-sm">Acceso directo a lo ya creado y a la salida activa.</p>
         </div>
 
         <div className="dashboard-browser-grid dashboard-browser-grid--stacked">
-          <section className="dashboard-subsection" aria-labelledby="session-browser-projects-title">
-            <SectionHeader
-              titleId="session-browser-projects-title"
-              title="Trabajos"
-              titleAs="h4"
-              compact
-            />
-            {recentProjectGroups.length > 0 ? (
-              <StructuredList>
-                {recentProjectGroups.map((group) => (
-                  <li key={group.key}>
-                    <ListRow
-                      dense
-                      onClick={() => focusArchiveProject(group.key)}
-                      eyebrow={group.activeSessionCount > 0 ? 'Trabajo activo' : 'Trabajo'}
-                      title={group.name}
-                      meta={`${group.sessionCount} salidas · ${group.pointCount} registros · ${group.audioTakeCount} H6${
-                        group.activeSessionCount > 0
-                          ? ` · ${group.activeSessionCount} activa${group.activeSessionCount === 1 ? '' : 's'}`
-                          : ''
-                      }`}
-                      actionLabel="Abrir trabajo"
-                    />
-                  </li>
-                ))}
-              </StructuredList>
-            ) : (
-              <p className="module-copy text-sm">Todavía no hay trabajos archivados.</p>
-            )}
-          </section>
-
           <section className="dashboard-subsection" aria-labelledby="session-browser-sessions-title">
             <SectionHeader
               titleId="session-browser-sessions-title"
@@ -5530,16 +5422,16 @@ export default function App() {
               <StructuredList>
                 {sessions.slice(0, 6).map((session) => (
                   <li key={session.id}>
-                    <ListRow
-                      dense
-                      onClick={() => openSessionWorkspace(session.id)}
-                      eyebrow={session.status === 'active' ? 'Activa' : 'Cerrada'}
-                      title={session.name}
-                      meta={`${resolveProjectName(session.projectName)} · ${session.points.length} registros · ${session.audioTakes.length} H6`}
-                      actionLabel={session.status === 'active' ? 'Abrir salida' : 'Ver salida'}
-                    />
-                  </li>
-                ))}
+                  <ListRow
+                    dense
+                    onClick={() => openSessionWorkspace(session.id)}
+                    eyebrow={session.status === 'active' ? 'Activa' : 'Cerrada'}
+                    title={session.name}
+                    meta={`${session.region || 'sin zona definida'} · ${session.points.length} registros · ${session.audioTakes.length} H6`}
+                    actionLabel={session.status === 'active' ? 'Abrir salida' : 'Ver salida'}
+                  />
+                </li>
+              ))}
               </StructuredList>
             ) : (
               <p className="module-copy text-sm">No hay salidas creadas todavía.</p>
@@ -5555,8 +5447,8 @@ export default function App() {
       <Card variant="preview" tone="clay" className="dashboard-search-panel dashboard-support-panel">
         <div className="panel-heading panel-heading--compact">
           <p className="eyebrow">Buscar registros</p>
-          <h3 className="display-heading text-2xl">Lugar, trabajo o referencia H6</h3>
-          <p className="module-copy text-sm">Busca por lugar, trabajo o referencia H6.</p>
+          <h3 className="display-heading text-2xl">Lugar, salida o referencia H6</h3>
+          <p className="module-copy text-sm">Busca por lugar, salida o referencia H6.</p>
         </div>
 
         <label className="search-shell">
@@ -5583,7 +5475,7 @@ export default function App() {
                       onClick={() => openRecordView(record.sessionId, record.point.id)}
                       leadingVisual={<BadgeIcon className="h-4 w-4" />}
                       title={record.point.placeName}
-                      meta={`${formatDateTime(record.point.createdAt, "d MMM yyyy · HH:mm")} · ${record.projectName}`}
+                      meta={`${formatDateTime(record.point.createdAt, "d MMM yyyy · HH:mm")} · ${record.sessionName}`}
                       stats={[record.point.soundscapeClassification?.summary || badge.label]}
                     />
                   </li>
@@ -5648,8 +5540,8 @@ export default function App() {
           className="dashboard-insights-summary-strip"
           ariaLabel="Resumen general del archivo"
           items={[
-            { label: 'Trabajos', value: projectCount },
             { label: 'Salidas', value: sessions.length },
+            { label: 'Registros', value: allRecords.length },
             { label: 'Fotos', value: totalPhotoCount },
             { label: 'Tomas H6', value: totalAudioTakeCount },
           ]}
@@ -5698,25 +5590,25 @@ export default function App() {
           </StructuredList>
         </section>
 
-        {recentInsightProjectGroups.length > 0 ? (
+        {recentSessions.length > 0 ? (
           <section className="dashboard-insights-section" aria-labelledby="dashboard-insights-projects-title">
             <SectionHeader
               titleId="dashboard-insights-projects-title"
-              title="Trabajos recientes"
+              title="Salidas recientes"
               titleAs="h4"
               compact
               actionLabel="Abrir archivo"
               onAction={() => setView('export')}
             />
             <StructuredList>
-              {recentInsightProjectGroups.map((group) => (
-                <li key={group.key}>
+              {recentSessions.slice(0, 3).map((session) => (
+                <li key={session.id}>
                   <ListRow
                     dense
-                    onClick={() => focusArchiveProject(group.key)}
-                    title={group.name}
-                    meta={`${group.sessionCount} salidas · última salida ${formatDateTime(group.latestStartedAt, "d MMM")}`}
-                    stats={[`${group.pointCount} registros`, `${group.audioTakeCount} H6`]}
+                    onClick={() => openSessionArchiveFromHome(session.id)}
+                    title={session.name}
+                    meta={`${session.region || 'sin zona'} · ${formatDateTime(session.startedAt, "d MMM")}`}
+                    stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
                     actionLabel="Abrir"
                   />
                 </li>
@@ -6007,17 +5899,17 @@ export default function App() {
   function renderArchiveBrowserPanel() {
     const archiveNavigatorFactItems = [
       {
-        id: 'filter',
-        label: 'Filtro',
-        value: currentArchiveProject?.name || 'Todos los trabajos',
-        detail: `${visibleArchiveSessions.length} ${visibleArchiveSessions.length === 1 ? 'salida visible' : 'salidas visibles'} ahora.`,
+        id: 'visible',
+        label: 'Visibles',
+        value: `${visibleArchiveSessions.length} ${visibleArchiveSessions.length === 1 ? 'salida' : 'salidas'}`,
+        detail: 'Todo el archivo se organiza directamente por salida.',
       },
       {
         id: 'focus',
         label: 'Salida abierta',
         value: recordSession?.name || 'Ninguna todavía',
         detail: recordSession
-          ? `${resolveProjectName(recordSession.projectName)} · ${recordSession.region || 'sin zona'}`
+          ? `${recordSession.region || 'sin zona'} · ${recordSession.points.length} registros`
           : 'Abre una salida para revisar registros, media o ficha final.',
       },
       {
@@ -6038,7 +5930,7 @@ export default function App() {
               <p className="eyebrow">Archivo</p>
               <h3 className="display-heading text-3xl">Elige una salida y baja al detalle después</h3>
               <p className="module-copy text-sm">
-                Filtra por trabajo, cambia de salida y deja la gestión avanzada fuera del camino principal.
+                El archivo se recorre por salida: eliges una, revisas material y bajas a la ficha sólo cuando haga falta.
               </p>
             </div>
 
@@ -6055,30 +5947,8 @@ export default function App() {
 
           <div className="archive-browser-toolbar">
             <p className="archive-browser-panel__selection">
-              {currentArchiveProject
-                ? `Trabajo en foco: ${currentArchiveProject.name}`
-                : 'Mostrando todas las salidas visibles'}
+              Mostrando todas las salidas visibles.
             </p>
-
-            <div className="archive-filter-strip">
-              <button
-                type="button"
-                onClick={() => focusArchiveProject('all')}
-                className={`archive-filter-button ${selectedArchiveProjectKey === 'all' ? 'is-active' : ''}`}
-              >
-                Todos
-              </button>
-              {archiveProjectGroups.map((group) => (
-                <button
-                  key={group.key}
-                  type="button"
-                  onClick={() => focusArchiveProject(group.key)}
-                  className={`archive-filter-button ${selectedArchiveProjectKey === group.key ? 'is-active' : ''}`}
-                >
-                  {group.name}
-                </button>
-              ))}
-            </div>
           </div>
 
           <SummaryStrip
@@ -6088,63 +5958,10 @@ export default function App() {
             items={archiveBrowserSummaryItems}
           />
 
-          {currentArchiveProject ? (
-            canManageSelectedProject ? (
-              <details
-                className="manual-details archive-project-admin"
-                aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
-              >
-                <summary className="manual-details__summary">
-                  <div>
-                    <p className="eyebrow">Gestionar trabajo</p>
-                    <p className="module-copy text-sm">Renombra o limpia la etiqueta del trabajo seleccionado.</p>
-                  </div>
-                  <span className="manual-details__hint">Abrir</span>
-                </summary>
-
-                <div className="manual-details__body archive-project-admin__body">
-                  <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                    <span>Nombre del trabajo</span>
-                    <input
-                      value={projectDraftName}
-                      onChange={(event) => setProjectDraftName(event.target.value)}
-                      className="field-input"
-                      placeholder="Paisajes urbanos de Vigo"
-                    />
-                  </label>
-                  <div className="action-row">
-                    <button
-                      type="button"
-                      onClick={() => void renameProject(currentArchiveProject.key)}
-                      disabled={isUpdatingProjectKey === currentArchiveProject.key}
-                      aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
-                      className="ui-button ui-button-secondary"
-                    >
-                      {isUpdatingProjectKey === currentArchiveProject.key ? 'Guardando...' : 'Renombrar trabajo'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void clearProject(currentArchiveProject.key)}
-                      disabled={isUpdatingProjectKey === currentArchiveProject.key}
-                      aria-busy={isUpdatingProjectKey === currentArchiveProject.key}
-                      className="ui-button ui-button-danger"
-                    >
-                      {isUpdatingProjectKey === currentArchiveProject.key ? 'Actualizando...' : 'Quitar trabajo'}
-                    </button>
-                  </div>
-                </div>
-              </details>
-            ) : (
-              <p className="module-copy text-sm archive-browser-note">
-                <strong>Sin trabajo</strong> agrupa salidas sin etiqueta.
-              </p>
-            )
-          ) : null}
-
           <section className="archive-session-browser" aria-labelledby="archive-session-browser-title">
             <SectionHeader
               titleId="archive-session-browser-title"
-              title={currentArchiveProject ? 'Salidas en foco' : 'Salidas visibles'}
+              title="Salidas visibles"
               description={`${visibleArchiveSessions.length} ${visibleArchiveSessions.length === 1 ? 'salida lista' : 'salidas listas'} para abrir o exportar.`}
               titleAs="h4"
               compact
@@ -6162,11 +5979,7 @@ export default function App() {
                       className={`archive-session-row ${recordSession?.id === session.id ? 'is-active' : ''}`}
                       eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
                       title={session.name}
-                      meta={
-                        currentArchiveProject
-                          ? `${session.region || 'sin zona'} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`
-                          : `${resolveProjectName(session.projectName)} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`
-                      }
+                      meta={`${session.region || 'sin zona'} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`}
                       stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
                       actionLabel={recordSession?.id === session.id ? 'Abierta' : 'Abrir'}
                     />
@@ -6175,7 +5988,7 @@ export default function App() {
               </StructuredList>
             ) : (
               <p className="module-copy text-sm">
-                No hay salidas en el filtro actual.
+                No hay salidas visibles todavía.
               </p>
             )}
           </section>
@@ -6199,10 +6012,13 @@ export default function App() {
             : 'Abre un registro para ver su ficha completa.';
     const archiveWorkspaceFactItems = [
       {
-        id: 'project',
-        label: 'Trabajo',
-        value: resolveProjectName(recordSession.projectName),
-        detail: recordSession.region || 'Sin región definida',
+        id: 'region',
+        label: 'Zona',
+        value: recordSession.region || 'Sin región definida',
+        detail:
+          recordSession.points.length > 0
+            ? `${recordSession.points.length} registros guardados.`
+            : 'Todavía sin registros.',
       },
       {
         id: 'status',
@@ -6425,9 +6241,6 @@ export default function App() {
 
           <ul className="record-header-card__context" aria-label="Contexto de la salida visible">
             <li>
-              <span className="telemetry-chip">{resolveProjectName(recordSession.projectName)}</span>
-            </li>
-            <li>
               <span className="telemetry-chip">{recordSession.region || 'Sin zona'}</span>
             </li>
             <li>
@@ -6565,7 +6378,7 @@ export default function App() {
           <section className="panel surface-level--panel surface-emphasis--preview surface-border--subtle archive-media-section panel-tone panel-tone--clay">
             <div className="panel-heading">
               <p className="eyebrow">Fotos</p>
-              <h3 className="display-heading text-2xl">Contexto visual del trabajo</h3>
+              <h3 className="display-heading text-2xl">Contexto visual de la salida</h3>
               <p className="module-copy text-sm">
                 {recordSessionPhotoLibrary.length > 0
                   ? `${recordSessionPhotoLibrary.length} foto${recordSessionPhotoLibrary.length === 1 ? '' : 's'} listas para abrir en su registro.`
@@ -6740,8 +6553,8 @@ export default function App() {
         detail: `Referencia H6: ${recordPoint.zoomTakeReference || 'Sin ID'}`,
       },
       {
-        term: 'Trabajo',
-        value: resolveProjectName(recordSession.projectName),
+        term: 'Salida',
+        value: recordSession.name,
         detail: recordSession.region || 'Sin región',
       },
     ];
@@ -6757,7 +6570,7 @@ export default function App() {
         id: 'session',
         label: 'Salida',
         value: recordSession.name,
-        detail: `${resolveProjectName(recordSession.projectName)} · ${recordSession.region || 'sin zona'}`,
+        detail: recordSession.region || 'sin zona',
       },
       {
         id: 'soundscape',
@@ -6787,7 +6600,7 @@ export default function App() {
                 <p className="module-copy text-sm">
                   {recordPoint.notes
                     ? 'La ficha final ya tiene contexto y notas. Desde aquí exportas, publicas o revisas lo que falte sin moverte entre paneles secundarios.'
-                    : 'La ficha final prioriza exportación, publicación y revisión de metadatos en una sola mesa de trabajo.'}
+                    : 'La ficha final prioriza exportación, publicación y revisión de metadatos en una sola mesa de revisión.'}
                 </p>
               </div>
 
@@ -7561,7 +7374,7 @@ export default function App() {
                           <div className="home-session-overview__recent-restarts-header">
                             <p id="home-session-restarts-title" className="eyebrow">Retomar rápido</p>
                             <p className="module-copy text-sm">
-                              Últimas salidas visibles para volver al trabajo sin pasar por archivo.
+                              Últimas salidas visibles para volver al campo sin pasar por archivo.
                             </p>
                           </div>
                           <StructuredList>
@@ -7572,7 +7385,7 @@ export default function App() {
                                   onClick={() => openSessionWorkspace(session.id)}
                                   eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
                                   title={session.name}
-                                  meta={`${resolveProjectName(session.projectName)} · ${session.region || 'sin zona definida'}`}
+                                  meta={`${session.region || 'sin zona definida'} · ${session.points.length} registros`}
                                   stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
                                   actionLabel="Abrir"
                                 />
@@ -7601,10 +7414,6 @@ export default function App() {
                     </h3>
                     {activeSession ? (
                       <div className="session-meta-list">
-                        <div className="session-meta-row">
-                          <span className="session-meta-label">Trabajo</span>
-                          <span>{activeSessionProjectName}</span>
-                        </div>
                         <div className="session-meta-row">
                           <span className="session-meta-label">Zona</span>
                           <span>{activeSession.region || 'sin definir'}</span>
@@ -7661,7 +7470,7 @@ export default function App() {
                         <section className="dashboard-action-block dashboard-action-block--primary" aria-label="Acciones de captura">
                           <div className="dashboard-action-block__header">
                             <p className="eyebrow">Operar ahora</p>
-                            <p className="module-copy text-sm">Las acciones de trabajo quedan primero; el resto se aparta del flujo principal.</p>
+                            <p className="module-copy text-sm">Las acciones clave quedan primero; el resto se aparta del flujo principal.</p>
                           </div>
                           <div className="action-row dashboard-session-panel__actions-main">
                             <button type="button" onClick={() => setView('point')} className="ui-button ui-button-primary">
@@ -7746,7 +7555,7 @@ export default function App() {
                               <p className="eyebrow">Básicos primero</p>
                               <h4 className="session-draft-context__title">Abre una salida sin rellenar de más</h4>
                               <p className="module-copy text-sm">
-                                Con nombre, trabajo, zona y equipo ya puedes empezar. Las notas, la ruta y la llegada automática quedan como segunda capa para no frenar el flujo.
+                                Con nombre, zona y equipo ya puedes empezar. Las notas, la ruta y la llegada automática quedan como segunda capa para no frenar el flujo.
                               </p>
                             </div>
                             <span className="session-setup-progress">{sessionDraftBasicsLabel}</span>
@@ -7761,32 +7570,15 @@ export default function App() {
                               className="field-input"
                             />
                           </label>
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <label className="grid gap-2 text-sm panel-primary-label">
-                              <span>Trabajo</span>
-                              <input
-                                value={sessionDraft.projectName}
-                                onChange={(event) =>
-                                  setSessionDraft((previous) => ({ ...previous, projectName: event.target.value }))
-                                }
-                                className="field-input"
-                                placeholder="Paisajes sonoros costa atlántica"
-                                list="project-name-options"
-                              />
-                              <span className="text-xs text-[color:var(--muted)]">
-                                La app recuerda el último trabajo usado y lo propone en las siguientes salidas.
-                              </span>
-                            </label>
-                            <label className="grid gap-2 text-sm panel-primary-label">
-                              <span>Zona / región</span>
-                              <input
-                                value={sessionDraft.region}
-                                onChange={(event) => setSessionDraft((previous) => ({ ...previous, region: event.target.value }))}
-                                className="field-input"
-                                placeholder="Vigo, Galicia"
-                              />
-                            </label>
-                          </div>
+                          <label className="grid gap-2 text-sm panel-primary-label">
+                            <span>Zona / región</span>
+                            <input
+                              value={sessionDraft.region}
+                              onChange={(event) => setSessionDraft((previous) => ({ ...previous, region: event.target.value }))}
+                              className="field-input"
+                              placeholder="Vigo, Galicia"
+                            />
+                          </label>
                           <label className="grid gap-2 text-sm panel-primary-label">
                             <span>Preset de equipo</span>
                             <input
@@ -8013,10 +7805,12 @@ export default function App() {
                     >
                       <div className="panel-heading panel-heading--inverse">
                         <p className="eyebrow eyebrow-inverse">Registro activo</p>
-                        <h3 className="display-heading text-3xl panel-primary-title">{activeSessionProjectName}</h3>
+                        <h3 className="display-heading text-3xl panel-primary-title">{activeSessionCaptureHeading}</h3>
                         <ul className="capture-context-chips" aria-label="Contexto del registro activo">
                           <li>
-                            <span className="telemetry-chip">{activeSession.name}</span>
+                            <span className="telemetry-chip">
+                              {formatDateTime(activeSession.startedAt, "d MMM yyyy · HH:mm")}
+                            </span>
                           </li>
                           <li>
                             <span className="telemetry-chip">{activeSession.region || 'zona sin definir'}</span>
