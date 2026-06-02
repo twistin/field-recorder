@@ -1059,17 +1059,6 @@ function buildActivityClusters(records: RecordEntry[]) {
   return Array.from(clusters.values()).sort((left, right) => right.count - left.count);
 }
 
-function getGreetingLabel(now: number): string {
-  const hours = new Date(now).getHours();
-  if (hours < 12) {
-    return 'Buenos días';
-  }
-  if (hours < 20) {
-    return 'Buenas tardes';
-  }
-  return 'Buenas noches';
-}
-
 function mergeDraftTagsWithSoundscape(tagsText: string, classification: SoundscapeClassification | null): string[] {
   return Array.from(new Set([...normalizeTags(tagsText), ...(classification?.tags ?? [])]));
 }
@@ -4403,7 +4392,6 @@ export default function App() {
         compact={compact}
       />
     );
-  const greetingLabel = getGreetingLabel(now);
   const homeLauncherTitle = activeSession ? activeSession.name : 'Prepara la próxima salida';
   const homeLauncherCopy = activeSession
     ? `${activeSession.name}${activeSession.region ? ` · ${activeSession.region}` : ''}. La captura ya está lista para guardar el siguiente punto sin perder tiempo entre paneles.`
@@ -4758,6 +4746,9 @@ export default function App() {
   const isCatalogApiUnavailable = catalogApiStatus === 'unavailable';
   const showSidebar = true;
   const showMobileDock = isMobileViewport;
+  const showShellHeader = !(isMobileViewport && view === 'home');
+  const mobileHomeRecentSessions = recentSessions.slice(0, 3);
+  const mobileHomeHeroFacts = homeCommandFacts.slice(0, 3);
   const shouldShowOperationalBanner = view !== 'home';
   const shouldShowStatusStack =
     shouldShowOperationalBanner ||
@@ -6895,16 +6886,18 @@ export default function App() {
         ))}
       </datalist>
 
-      <div className="fieldnotes-app">
-        <ShellHeader
-          currentViewLabel={currentViewLabel}
-          supportText={shellSupportText}
-          isSunMode={isSunMode}
-          onToggleDisplayMode={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
-          isDrawerOpen={isNavDrawerOpen}
-          onOpenDrawer={() => setIsNavDrawerOpen(true)}
-          menuButtonRef={drawerMenuButtonRef}
-        />
+      <div className={`fieldnotes-app ${showShellHeader ? '' : 'fieldnotes-app--home-mobile'}`.trim()}>
+        {showShellHeader ? (
+          <ShellHeader
+            currentViewLabel={currentViewLabel}
+            supportText={shellSupportText}
+            isSunMode={isSunMode}
+            onToggleDisplayMode={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
+            isDrawerOpen={isNavDrawerOpen}
+            onOpenDrawer={() => setIsNavDrawerOpen(true)}
+            menuButtonRef={drawerMenuButtonRef}
+          />
+        ) : null}
 
         <div
           className={`fieldnotes-tablet-drawer__backdrop ${isNavDrawerOpen ? 'is-open' : ''}`}
@@ -7008,38 +7001,62 @@ export default function App() {
               key="home-topbar"
               variant="hero"
               tone="sky"
-              className="home-topbar"
+              className={`home-topbar ${isMobileViewport ? 'home-topbar--mobile' : ''}`.trim()}
               aria-labelledby="dashboard-home-title"
               aria-describedby="dashboard-home-description"
               {...surfaceEnterMotion}
             >
-              <div className="home-topbar__masthead">
-                <div className="home-topbar__brand">
-                  <div className="home-topbar__eyebrow-row">
-                    <p className="eyebrow">{greetingLabel} · trabajo de campo</p>
-                    <Badge variant={activeSession ? 'default' : 'muted'}>
-                      {activeSession ? 'Salida activa' : 'Sin salida activa'}
+              {isMobileViewport ? (
+                <div className="home-mobile-hero">
+                  <div className="home-mobile-hero__chrome">
+                    <div className="home-mobile-hero__headline">
+                      <p className="eyebrow">Bitacora de hoy</p>
+                      <Badge variant={activeSession ? 'default' : 'muted'}>
+                        {activeSession ? 'Salida activa' : 'Sin salida'}
+                      </Badge>
+                    </div>
+
+                    <IconButton
+                      label={isSunMode ? 'Activar modo noche' : 'Activar modo sol'}
+                      onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
+                      className="home-mobile-hero__mode-toggle"
+                    >
+                      {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
+                    </IconButton>
+                  </div>
+
+                  <div className="home-mobile-hero__title-block">
+                    <h1 id="dashboard-home-title" className="display-heading home-topbar__title">
+                      {homeLauncherTitle}
+                    </h1>
+                    <p id="dashboard-home-description" className="home-mobile-hero__summary">
+                      {activeSession
+                        ? 'Captura, ubicacion y archivo quedan al alcance del pulgar, sin paneles laterales ni ruido de dashboard.'
+                        : 'Crea una salida en menos de un minuto. Nombre, zona y equipo primero; todo lo demas despues.'}
+                    </p>
+                  </div>
+
+                  <div className="home-mobile-hero__badges" aria-label="Estado rapido del inicio">
+                    <Badge variant={isOnline ? 'default' : 'offline'}>
+                      {isOnline ? 'En linea' : 'Offline'}
                     </Badge>
+                    <Badge variant="muted">{storageSummary}</Badge>
+                    <Badge variant="muted">{homeOperationalContext}</Badge>
                   </div>
-                  <h1 id="dashboard-home-title" className="display-heading home-topbar__title">{homeLauncherTitle}</h1>
-                  <p id="dashboard-home-description" className="module-copy text-sm md:text-base">
-                    {homeLauncherCopy}
-                  </p>
-                  <p className="home-topbar__context-line">{homeOperationalContext}</p>
 
-                  <div className="home-command-meta" aria-label="Contexto principal de la jornada">
-                    {homeCommandFacts.map((fact) => (
-                      <article key={fact.label} className="home-command-meta__item">
-                        <p className="home-command-meta__label">{fact.label}</p>
-                        <p className="home-command-meta__value">{fact.value}</p>
-                        <p className="home-command-meta__detail">{fact.detail}</p>
-                      </article>
+                  <dl className="home-mobile-hero__facts" aria-label="Contexto principal de la jornada">
+                    {mobileHomeHeroFacts.map((fact) => (
+                      <div key={fact.label} className="home-mobile-hero__fact">
+                        <dt>{fact.label}</dt>
+                        <dd>
+                          <strong>{fact.value}</strong>
+                          <span>{fact.detail}</span>
+                        </dd>
+                      </div>
                     ))}
-                  </div>
+                  </dl>
 
-                  {renderActiveRoutePlanCard('home')}
-
-                  <div className="home-topbar__actions" role="group" aria-label="Acciones principales del inicio">
+                  <div className="home-mobile-hero__actions" role="group" aria-label="Acciones principales del inicio">
                     <Button
                       variant="primary"
                       onClick={() => setView(activeSession ? 'point' : 'session')}
@@ -7048,7 +7065,7 @@ export default function App() {
                     >
                       {homePrimaryActionLabel}
                     </Button>
-                    <div className="home-topbar__support-actions">
+                    <div className="home-mobile-hero__support-row">
                       <Button
                         variant="secondary"
                         onClick={() => activeSession ? openSessionWorkspace(activeSession.id) : setView('session')}
@@ -7066,52 +7083,107 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+              ) : (
+                <div className="home-topbar__masthead">
+                  <div className="home-topbar__brand">
+                    <div className="home-topbar__eyebrow-row">
+                      <p className="eyebrow">Bitacora de hoy</p>
+                      <Badge variant={activeSession ? 'default' : 'muted'}>
+                        {activeSession ? 'Salida activa' : 'Sin salida activa'}
+                      </Badge>
+                    </div>
+                    <h1 id="dashboard-home-title" className="display-heading home-topbar__title">{homeLauncherTitle}</h1>
+                    <p id="dashboard-home-description" className="module-copy text-sm md:text-base">
+                      {homeLauncherCopy}
+                    </p>
+                    <p className="home-topbar__context-line">{homeOperationalContext}</p>
 
-                <aside className="home-command-aside" aria-label="Estado operativo breve">
-                  <div className="home-topbar__controls">
-                    <ul className="status-inline-group" aria-label="Estado rápido del resumen">
-                      <li>
-                        <Badge variant={isOnline ? 'default' : 'offline'}>
-                          {isOnline ? 'En línea' : 'Offline'}
-                        </Badge>
-                      </li>
-                      <li>
-                        <Badge variant="muted">{storageSummary}</Badge>
-                      </li>
-                    </ul>
-                    <div className="utility-inline-group">
-                      <button
-                        type="button"
-                        onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
-                        className={`mode-toggle ${isSunMode ? 'is-sun' : ''}`}
+                    <div className="home-command-meta" aria-label="Contexto principal de la jornada">
+                      {homeCommandFacts.map((fact) => (
+                        <article key={fact.label} className="home-command-meta__item">
+                          <p className="home-command-meta__label">{fact.label}</p>
+                          <p className="home-command-meta__value">{fact.value}</p>
+                          <p className="home-command-meta__detail">{fact.detail}</p>
+                        </article>
+                      ))}
+                    </div>
+
+                    {renderActiveRoutePlanCard('home')}
+
+                    <div className="home-topbar__actions" role="group" aria-label="Acciones principales del inicio">
+                      <Button
+                        variant="primary"
+                        onClick={() => setView(activeSession ? 'point' : 'session')}
+                        className="home-topbar__primary-action"
+                        leadingIcon={<Mic className="h-4 w-4" />}
                       >
-                        <span className="mode-toggle__icon">
-                          {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
-                        </span>
-                        {isSunMode ? 'Modo noche' : 'Modo sol'}
-                      </button>
+                        {homePrimaryActionLabel}
+                      </Button>
+                      <div className="home-topbar__support-actions">
+                        <Button
+                          variant="secondary"
+                          onClick={() => activeSession ? openSessionWorkspace(activeSession.id) : setView('session')}
+                          leadingIcon={<MapPinned className="h-4 w-4" />}
+                        >
+                          {homeSessionActionLabel}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => setView('export')}
+                          leadingIcon={<History className="h-4 w-4" />}
+                        >
+                          {homeArchiveActionLabel}
+                        </Button>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="home-command-aside__body">
-                    <p className="eyebrow home-command-aside__eyebrow">Estado operativo</p>
-                    <p className="home-command-aside__title">
-                      {activeSession
-                        ? 'La jornada ya está abierta y lista para seguir capturando.'
-                        : 'Prepara la salida en menos de un minuto y deja la captura limpia.'}
-                    </p>
-                    <ul className="home-command-status-list">
-                      {homeStatusItems.map((item) => (
-                        <li key={item.id} className="home-command-status-list__item">
-                          <span className="home-command-status-list__label">{item.label}</span>
-                          <strong className="home-command-status-list__value">{item.value}</strong>
-                          <span className="home-command-status-list__detail">{item.detail}</span>
+                  <aside className="home-command-aside" aria-label="Estado operativo breve">
+                    <div className="home-topbar__controls">
+                      <ul className="status-inline-group" aria-label="Estado rápido del resumen">
+                        <li>
+                          <Badge variant={isOnline ? 'default' : 'offline'}>
+                            {isOnline ? 'En línea' : 'Offline'}
+                          </Badge>
                         </li>
-                      ))}
-                    </ul>
-                  </div>
-                </aside>
-              </div>
+                        <li>
+                          <Badge variant="muted">{storageSummary}</Badge>
+                        </li>
+                      </ul>
+                      <div className="utility-inline-group">
+                        <button
+                          type="button"
+                          onClick={() => setDisplayMode(isSunMode ? 'night' : 'sun')}
+                          className={`mode-toggle ${isSunMode ? 'is-sun' : ''}`}
+                        >
+                          <span className="mode-toggle__icon">
+                            {isSunMode ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
+                          </span>
+                          {isSunMode ? 'Modo noche' : 'Modo sol'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="home-command-aside__body">
+                      <p className="eyebrow home-command-aside__eyebrow">Estado operativo</p>
+                      <p className="home-command-aside__title">
+                        {activeSession
+                          ? 'La jornada ya está abierta y lista para seguir capturando.'
+                          : 'Prepara la salida en menos de un minuto y deja la captura limpia.'}
+                      </p>
+                      <ul className="home-command-status-list">
+                        {homeStatusItems.map((item) => (
+                          <li key={item.id} className="home-command-status-list__item">
+                            <span className="home-command-status-list__label">{item.label}</span>
+                            <strong className="home-command-status-list__value">{item.value}</strong>
+                            <span className="home-command-status-list__detail">{item.detail}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </aside>
+                </div>
+              )}
             </Card>
           ) : (
             <Card
@@ -7228,70 +7300,63 @@ export default function App() {
             {view === 'home' ? (
               <motion.section
                 key="home"
-                className="layout-home layout-home--focused"
+                className={`layout-home layout-home--focused ${isMobileViewport ? 'home-mobile-layout' : ''}`.trim()}
                 {...viewTransitionMotion}
               >
-                <section className="home-workflow-grid" aria-label="Flujo principal de la jornada">
-                  {homeWorkflowCards.map((card) => (
-                    <React.Fragment key={card.title}>
-                      <WorkflowCard
-                        eyebrow={card.eyebrow}
-                        title={card.title}
-                        description={card.description}
-                        status={card.status}
-                        cta={card.cta}
-                        icon={card.icon}
-                        featured={card.featured}
-                        onClick={card.onClick}
-                      />
-                    </React.Fragment>
-                  ))}
-                </section>
+                {isMobileViewport ? (
+                  <>
+                    <section className="home-mobile-shortcuts" aria-label="Moverse rápido">
+                      {homeWorkflowCards.map((card) => {
+                        const ShortcutIcon = card.icon;
 
-                <Card
-                  as="section"
-                  variant="panel"
-                  tone="sky"
-                  border="strong"
-                  className="home-session-overview"
-                  aria-labelledby="home-session-overview-title"
-                  aria-describedby={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
-                >
-                  <SectionHeader
-                    eyebrow={activeSession ? 'Salida en curso' : 'Siguiente movimiento'}
-                    titleId="home-session-overview-title"
-                    descriptionId={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
-                    title={activeSession ? 'Actividad reciente' : 'No hay una salida abierta'}
-                    description={
-                      activeSession
-                        ? homeRecentRecordsDescription
-                        : 'Crea una salida nueva o retoma una reciente. En cuanto abras una, aquí quedarán visibles el contexto y la actividad.'
-                    }
-                    actionLabel={activeSession ? 'Ir a captura' : undefined}
-                    onAction={activeSession ? () => setView('point') : undefined}
-                  />
+                        return (
+                          <button
+                            key={card.title}
+                            type="button"
+                            onClick={card.onClick}
+                            className={`home-mobile-shortcut ${card.featured ? 'is-featured' : ''}`}
+                          >
+                            <span className="home-mobile-shortcut__icon" aria-hidden="true">
+                              <ShortcutIcon className="h-4 w-4" />
+                            </span>
+                            <span className="home-mobile-shortcut__body">
+                              <span className="home-mobile-shortcut__eyebrow">{card.eyebrow}</span>
+                              <strong className="home-mobile-shortcut__title">{card.title}</strong>
+                              <span className="home-mobile-shortcut__status">{card.status}</span>
+                            </span>
+                            <span className="home-mobile-shortcut__cta">{card.cta}</span>
+                          </button>
+                        );
+                      })}
+                    </section>
 
-                  {activeSession ? (
-                    <>
-                      <div className="home-session-overview__summaryline" aria-label="Resumen compacto de la salida actual">
-                        {homeSessionSummaryItems.map((item) => (
-                          <div key={item.label} className="home-session-overview__summarystat">
-                            <span>{item.label}</span>
-                            <strong>{item.value}</strong>
-                          </div>
-                        ))}
+                    {renderActiveRoutePlanCard('home')}
+
+                    <Card
+                      as="section"
+                      variant="panel"
+                      tone="sky"
+                      border="strong"
+                      className="home-mobile-panel home-mobile-panel--activity"
+                      aria-labelledby="home-mobile-activity-title"
+                    >
+                      <div className="home-mobile-panel__header">
+                        <p className="eyebrow">{activeSession ? 'Actividad' : 'Salidas recientes'}</p>
+                        <h2 id="home-mobile-activity-title" className="display-heading home-mobile-panel__title">
+                          {activeSession ? 'Ultimos registros' : 'Retoma sin buscar'}
+                        </h2>
+                        <p className="home-mobile-panel__copy">
+                          {activeSession
+                            ? 'Abre un punto o sigue capturando. Todo lo reciente queda en una sola lista.'
+                            : recentSessions.length > 0
+                              ? 'Las ultimas salidas quedan visibles con nombre, zona y progreso.'
+                              : 'Cuando abras la primera salida, aqui apareceran los accesos rapidos para volver al campo.'}
+                        </p>
                       </div>
 
-                      {renderActiveRoutePlanCard('home')}
-
-                      {latestActivePoints.length > 0 ? (
-                        <section
-                          className="home-session-overview__records"
-                          aria-labelledby="home-recent-records-title"
-                          aria-describedby="home-recent-records-description"
-                        >
-                          <p id="home-recent-records-title" className="sr-only">Últimos registros</p>
-                          <StructuredList>
+                      {activeSession ? (
+                        latestActivePoints.length > 0 ? (
+                          <StructuredList className="home-mobile-panel__list">
                             {latestActivePoints.map((point) => {
                               const hasLinkedAudio =
                                 activeSession.audioTakes.some((take) => take.associatedPointId === point.id) ?? false;
@@ -7302,12 +7367,7 @@ export default function App() {
                                     dense
                                     onClick={() => openRecordView(activeSession.id, point.id)}
                                     title={point.placeName}
-                                    meta={
-                                      <>
-                                        {formatDateTime(point.createdAt, "d MMM · HH:mm")} ·{' '}
-                                        {point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}
-                                      </>
-                                    }
+                                    meta={`${formatDateTime(point.createdAt, "d MMM · HH:mm")} · ${point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}`}
                                     stats={[
                                       `${point.photos.length} foto${point.photos.length === 1 ? '' : 's'}`,
                                       hasLinkedAudio ? 'H6 asociado' : 'Sin H6',
@@ -7318,85 +7378,257 @@ export default function App() {
                               );
                             })}
                           </StructuredList>
-                        </section>
-                      ) : (
-                        <EmptyState
-                          eyebrow="Salida"
-                          title="La salida está lista, pero aún no hay registros"
-                          description="Entra en captura y guarda el primer punto. Después podrás revisar el material desde archivo."
-                          icon={<Mic className="h-5 w-5" />}
-                          action={
-                            <Button variant="secondary" onClick={() => setView('point')}>
+                        ) : (
+                          <div className="home-mobile-empty">
+                            <p className="display-heading home-mobile-empty__title">Salida abierta, sin registros</p>
+                            <p className="module-copy text-sm">
+                              Entra en captura y guarda el primer punto. El archivo empezará a ordenarse solo.
+                            </p>
+                            <Button
+                              variant="secondary"
+                              onClick={() => setView('point')}
+                              leadingIcon={<Mic className="h-4 w-4" />}
+                            >
                               Ir a captura
                             </Button>
-                          }
-                          compact
-                        />
-                      )}
-
-                      <div className="home-session-overview__footer">
-                        <Button
-                          variant="secondary"
-                          onClick={() => setView('point')}
-                          leadingIcon={<Mic className="h-4 w-4" />}
-                        >
-                          Registrar punto
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => setView('export')}
-                          leadingIcon={<History className="h-4 w-4" />}
-                        >
-                          Abrir archivo
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="home-session-overview__empty-shell">
-                      <EmptyState
-                        eyebrow="Salida"
-                        title="Prepara una salida antes de capturar"
-                        description="Cuando abras una salida, esta vista se quedará sólo con el contexto operativo y los últimos registros."
-                        icon={<MapPinned className="h-5 w-5" />}
-                        action={
-                          <Button variant="secondary" onClick={() => setView('session')}>
+                          </div>
+                        )
+                      ) : mobileHomeRecentSessions.length > 0 ? (
+                        <StructuredList className="home-mobile-panel__list">
+                          {mobileHomeRecentSessions.map((session) => (
+                            <li key={session.id}>
+                              <ListRow
+                                dense
+                                onClick={() => openSessionWorkspace(session.id)}
+                                eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
+                                title={session.name}
+                                meta={`${session.region || 'sin zona definida'} · ${session.points.length} registros`}
+                                stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                                actionLabel="Abrir"
+                              />
+                            </li>
+                          ))}
+                        </StructuredList>
+                      ) : (
+                        <div className="home-mobile-empty">
+                          <p className="display-heading home-mobile-empty__title">Empieza por una salida</p>
+                          <p className="module-copy text-sm">
+                            Nombre, zona y equipo. Eso basta para arrancar desde el iPhone sin cargar la interfaz.
+                          </p>
+                          <Button
+                            variant="secondary"
+                            onClick={() => setView('session')}
+                            leadingIcon={<MapPinned className="h-4 w-4" />}
+                          >
                             Preparar salida
                           </Button>
+                        </div>
+                      )}
+                    </Card>
+
+                    <Card
+                      as="section"
+                      variant="panel"
+                      tone="amber"
+                      border="strong"
+                      className="home-mobile-panel home-mobile-panel--status"
+                      aria-labelledby="home-mobile-status-title"
+                    >
+                      <div className="home-mobile-panel__header">
+                        <p className="eyebrow">Estado operativo</p>
+                        <h2 id="home-mobile-status-title" className="display-heading home-mobile-panel__title">
+                          {activeSession ? 'Senal, lugar y respaldo' : 'Comprueba antes de salir'}
+                        </h2>
+                        <p className="home-mobile-panel__copy">
+                          {activeSession
+                            ? 'GPS, lugar detectado y sincronizacion en una sola lectura rapida.'
+                            : 'La salida puede abrirse en cuanto tengas el contexto minimo y el almacenamiento listo.'}
+                        </p>
+                      </div>
+
+                      <dl className="home-mobile-status-list">
+                        {homeStatusItems.map((item) => (
+                          <div key={item.id} className="home-mobile-status-list__item">
+                            <dt>{item.label}</dt>
+                            <dd>
+                              <strong>{item.value}</strong>
+                              <span>{item.detail}</span>
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </Card>
+                  </>
+                ) : (
+                  <>
+                    <section className="home-workflow-grid" aria-label="Flujo principal de la jornada">
+                      {homeWorkflowCards.map((card) => (
+                        <React.Fragment key={card.title}>
+                          <WorkflowCard
+                            eyebrow={card.eyebrow}
+                            title={card.title}
+                            description={card.description}
+                            status={card.status}
+                            cta={card.cta}
+                            icon={card.icon}
+                            featured={card.featured}
+                            onClick={card.onClick}
+                          />
+                        </React.Fragment>
+                      ))}
+                    </section>
+
+                    <Card
+                      as="section"
+                      variant="panel"
+                      tone="sky"
+                      border="strong"
+                      className="home-session-overview"
+                      aria-labelledby="home-session-overview-title"
+                      aria-describedby={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
+                    >
+                      <SectionHeader
+                        eyebrow={activeSession ? 'Salida en curso' : 'Siguiente movimiento'}
+                        titleId="home-session-overview-title"
+                        descriptionId={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
+                        title={activeSession ? 'Actividad reciente' : 'No hay una salida abierta'}
+                        description={
+                          activeSession
+                            ? homeRecentRecordsDescription
+                            : 'Crea una salida nueva o retoma una reciente. En cuanto abras una, aquí quedarán visibles el contexto y la actividad.'
                         }
-                        compact={recentSessions.length > 0}
+                        actionLabel={activeSession ? 'Ir a captura' : undefined}
+                        onAction={activeSession ? () => setView('point') : undefined}
                       />
 
-                      {recentSessions.length > 0 ? (
-                        <section
-                          className="home-session-overview__recent-restarts"
-                          aria-labelledby="home-session-restarts-title"
-                        >
-                          <div className="home-session-overview__recent-restarts-header">
-                            <p id="home-session-restarts-title" className="eyebrow">Retomar rápido</p>
-                            <p className="module-copy text-sm">
-                              Últimas salidas visibles para volver al campo sin pasar por archivo.
-                            </p>
-                          </div>
-                          <StructuredList>
-                            {recentSessions.slice(0, 3).map((session) => (
-                              <li key={session.id}>
-                                <ListRow
-                                  dense
-                                  onClick={() => openSessionWorkspace(session.id)}
-                                  eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
-                                  title={session.name}
-                                  meta={`${session.region || 'sin zona definida'} · ${session.points.length} registros`}
-                                  stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
-                                  actionLabel="Abrir"
-                                />
-                              </li>
+                      {activeSession ? (
+                        <>
+                          <div className="home-session-overview__summaryline" aria-label="Resumen compacto de la salida actual">
+                            {homeSessionSummaryItems.map((item) => (
+                              <div key={item.label} className="home-session-overview__summarystat">
+                                <span>{item.label}</span>
+                                <strong>{item.value}</strong>
+                              </div>
                             ))}
-                          </StructuredList>
-                        </section>
-                      ) : null}
-                    </div>
-                  )}
-                </Card>
+                          </div>
+
+                          {renderActiveRoutePlanCard('home')}
+
+                          {latestActivePoints.length > 0 ? (
+                            <section
+                              className="home-session-overview__records"
+                              aria-labelledby="home-recent-records-title"
+                              aria-describedby="home-recent-records-description"
+                            >
+                              <p id="home-recent-records-title" className="sr-only">Últimos registros</p>
+                              <StructuredList>
+                                {latestActivePoints.map((point) => {
+                                  const hasLinkedAudio =
+                                    activeSession.audioTakes.some((take) => take.associatedPointId === point.id) ?? false;
+
+                                  return (
+                                    <li key={point.id}>
+                                      <ListRow
+                                        dense
+                                        onClick={() => openRecordView(activeSession.id, point.id)}
+                                        title={point.placeName}
+                                        meta={
+                                          <>
+                                            {formatDateTime(point.createdAt, "d MMM · HH:mm")} ·{' '}
+                                            {point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}
+                                          </>
+                                        }
+                                        stats={[
+                                          `${point.photos.length} foto${point.photos.length === 1 ? '' : 's'}`,
+                                          hasLinkedAudio ? 'H6 asociado' : 'Sin H6',
+                                        ]}
+                                        actionLabel="Abrir"
+                                      />
+                                    </li>
+                                  );
+                                })}
+                              </StructuredList>
+                            </section>
+                          ) : (
+                            <EmptyState
+                              eyebrow="Salida"
+                              title="La salida está lista, pero aún no hay registros"
+                              description="Entra en captura y guarda el primer punto. Después podrás revisar el material desde archivo."
+                              icon={<Mic className="h-5 w-5" />}
+                              action={
+                                <Button variant="secondary" onClick={() => setView('point')}>
+                                  Ir a captura
+                                </Button>
+                              }
+                              compact
+                            />
+                          )}
+
+                          <div className="home-session-overview__footer">
+                            <Button
+                              variant="secondary"
+                              onClick={() => setView('point')}
+                              leadingIcon={<Mic className="h-4 w-4" />}
+                            >
+                              Registrar punto
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              onClick={() => setView('export')}
+                              leadingIcon={<History className="h-4 w-4" />}
+                            >
+                              Abrir archivo
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="home-session-overview__empty-shell">
+                          <EmptyState
+                            eyebrow="Salida"
+                            title="Prepara una salida antes de capturar"
+                            description="Cuando abras una salida, esta vista se quedará sólo con el contexto operativo y los últimos registros."
+                            icon={<MapPinned className="h-5 w-5" />}
+                            action={
+                              <Button variant="secondary" onClick={() => setView('session')}>
+                                Preparar salida
+                              </Button>
+                            }
+                            compact={recentSessions.length > 0}
+                          />
+
+                          {recentSessions.length > 0 ? (
+                            <section
+                              className="home-session-overview__recent-restarts"
+                              aria-labelledby="home-session-restarts-title"
+                            >
+                              <div className="home-session-overview__recent-restarts-header">
+                                <p id="home-session-restarts-title" className="eyebrow">Retomar rápido</p>
+                                <p className="module-copy text-sm">
+                                  Últimas salidas visibles para volver al campo sin pasar por archivo.
+                                </p>
+                              </div>
+                              <StructuredList>
+                                {recentSessions.slice(0, 3).map((session) => (
+                                  <li key={session.id}>
+                                    <ListRow
+                                      dense
+                                      onClick={() => openSessionWorkspace(session.id)}
+                                      eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
+                                      title={session.name}
+                                      meta={`${session.region || 'sin zona definida'} · ${session.points.length} registros`}
+                                      stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                                      actionLabel="Abrir"
+                                    />
+                                  </li>
+                                ))}
+                              </StructuredList>
+                            </section>
+                          ) : null}
+                        </div>
+                      )}
+                    </Card>
+                  </>
+                )}
               </motion.section>
             ) : null}
 
@@ -7406,87 +7638,59 @@ export default function App() {
                 className="layout-dashboard layout-dashboard--focused"
                 {...viewTransitionMotion}
               >
-                <Card variant="hero" tone="sky" className="dashboard-session-panel">
-                  <div className="panel-heading panel-heading--inverse">
-                    <p className="eyebrow eyebrow-inverse">{activeSession ? 'Salida activa' : 'Preparar salida'}</p>
-                    <h3 className="display-heading text-3xl panel-primary-title">
-                      {activeSession ? activeSession.name : 'Prepara la próxima salida'}
-                    </h3>
+                {isMobileViewport ? (
+                  <>
                     {activeSession ? (
-                      <div className="session-meta-list">
-                        <div className="session-meta-row">
-                          <span className="session-meta-label">Zona</span>
-                          <span>{activeSession.region || 'sin definir'}</span>
-                        </div>
-                        <div className="session-meta-row">
-                          <span className="session-meta-label">Registros</span>
-                          <span>{activeSession.points.length}</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="module-copy text-sm">
-                        Define la salida y deja el contexto listo antes de empezar.
-                      </p>
-                    )}
-                  </div>
-
-                  {activeSession ? (
-                    <>
-                      {activeSessionDateWarning ? (
-                        <div className="capture-alert capture-alert--warning mb-4">
-                          <TriangleAlert className="h-4 w-4" />
-                          <div>{activeSessionDateWarning}</div>
-                        </div>
-                      ) : null}
-
-                      <SummaryStrip
-                        compact
-                        className="dashboard-session-summary-strip"
-                        ariaLabel="Resumen de la salida activa"
-                        items={[
-                          {
-                            label: 'Registros',
-                            value: activeSession.points.length,
-                          },
-                          {
-                            label: 'Fotos',
-                            value: activeSessionPhotoCount,
-                          },
-                          {
-                            label: 'Tomas H6',
-                            value: activeSession.audioTakes.length,
-                          },
-                          {
-                            label: 'Pendientes',
-                            value: totalOperationalPendingCount,
-                            detail: operationalPendingSummary,
-                          },
-                        ]}
-                      />
-
-                      {renderActiveRoutePlanCard('session')}
-
-                      <div className="dashboard-session-actions-grid">
-                        <section className="dashboard-action-block dashboard-action-block--primary" aria-label="Acciones de captura">
-                          <div className="dashboard-action-block__header">
-                            <p className="eyebrow">Operar ahora</p>
-                            <p className="module-copy text-sm">Las acciones clave quedan primero; el resto se aparta del flujo principal.</p>
+                      <>
+                        <Card variant="hero" tone="sky" className="dashboard-session-panel session-mobile-hero">
+                          <div className="session-mobile-hero__header">
+                            <p className="eyebrow eyebrow-inverse">Salida activa</p>
+                            <h3 className="display-heading text-3xl panel-primary-title">{activeSession.name}</h3>
+                            <p className="module-copy text-sm">
+                              {activeSession.region || 'Zona pendiente'} · abierta {formatDateTime(activeSession.startedAt, "d MMM · HH:mm")}
+                            </p>
                           </div>
-                          <div className="action-row dashboard-session-panel__actions-main">
+
+                          {activeSessionDateWarning ? (
+                            <div className="capture-alert capture-alert--warning">
+                              <TriangleAlert className="h-4 w-4" />
+                              <div>{activeSessionDateWarning}</div>
+                            </div>
+                          ) : null}
+
+                          <SummaryStrip
+                            compact
+                            className="dashboard-session-summary-strip session-mobile-summary-strip"
+                            ariaLabel="Resumen de la salida activa"
+                            items={[
+                              { label: 'Registros', value: activeSession.points.length },
+                              { label: 'Fotos', value: activeSessionPhotoCount },
+                              { label: 'Tomas H6', value: activeSession.audioTakes.length },
+                              { label: 'Pendientes', value: totalOperationalPendingCount, detail: operationalPendingSummary },
+                            ]}
+                          />
+
+                          <div className="session-mobile-action-stack">
                             <button type="button" onClick={() => setView('point')} className="ui-button ui-button-primary">
                               <Mic className="h-4 w-4" />
                               Ir a captura
                             </button>
-                            {activeRoutePlan?.navigationUrl ? (
-                              <button
-                                type="button"
-                                onClick={() => openNavigationRoute(activeRoutePlan)}
-                                className="ui-button ui-button-secondary"
-                              >
-                                <CarFront className="h-4 w-4" />
-                                Abrir ruta
+                            <div className="session-mobile-action-row">
+                              {activeRoutePlan?.navigationUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openNavigationRoute(activeRoutePlan)}
+                                  className="ui-button ui-button-secondary"
+                                >
+                                  <CarFront className="h-4 w-4" />
+                                  Abrir ruta
+                                </button>
+                              ) : null}
+                              <button type="button" onClick={() => setView('export')} className="ui-button ui-button-ghost">
+                                <History className="h-4 w-4" />
+                                Archivo
                               </button>
-                            ) : null}
+                            </div>
                             {recordPoint && recordSession ? (
                               <button
                                 type="button"
@@ -7498,14 +7702,20 @@ export default function App() {
                               </button>
                             ) : null}
                           </div>
-                        </section>
+                        </Card>
 
-                        <section className="dashboard-action-block" aria-label="Acciones de mantenimiento">
-                          <div className="dashboard-action-block__header">
+                        {renderActiveRoutePlanCard('session')}
+
+                        <Card variant="panel" tone="amber" className="session-mobile-panel">
+                          <div className="session-mobile-panel__header">
                             <p className="eyebrow">Preparar y ordenar</p>
-                            <p className="module-copy text-sm">Importación, separación de registros y relevo de salida sin entorpecer la captura.</p>
+                            <h4 className="display-heading text-2xl">Mantenimiento sin entorpecer la captura</h4>
+                            <p className="module-copy text-sm">
+                              Audio H6, cierres y separación de jornadas quedan juntos y fuera del CTA principal.
+                            </p>
                           </div>
-                          <div className="action-row dashboard-session-panel__actions-main">
+
+                          <div className="session-mobile-action-grid">
                             <button
                               type="button"
                               onClick={() => openZoomImportPicker(activeSession.id)}
@@ -7536,32 +7746,34 @@ export default function App() {
                               <RefreshCw className="h-4 w-4" />
                               Cerrar y nueva salida
                             </button>
+                            <button type="button" onClick={() => void closeActiveSession()} className="ui-button ui-button-danger">
+                              Cerrar salida
+                            </button>
                           </div>
-                        </section>
-
-                        <div className="action-row action-row--compact dashboard-session-panel__actions-danger">
-                          <button type="button" onClick={() => void closeActiveSession()} className="ui-button ui-button-danger">
-                            Cerrar salida
-                          </button>
+                        </Card>
+                      </>
+                    ) : (
+                      <Card variant="hero" tone="sky" className="dashboard-session-panel session-mobile-setup">
+                        <div className="session-mobile-setup__header">
+                          <p className="eyebrow eyebrow-inverse">Nueva salida</p>
+                          <h3 className="display-heading text-3xl panel-primary-title">Abrir una salida en menos de un minuto</h3>
+                          <p className="module-copy text-sm">
+                            Nombre, zona y equipo primero. Ruta, notas y automatismos quedan plegados para no frenar el arranque.
+                          </p>
                         </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="session-draft-shell">
-                        <div className="session-draft-main">
-                          <div className="session-setup-intro">
-                            <div className="session-setup-intro__copy">
-                              <p className="eyebrow">Básicos primero</p>
-                              <h4 className="session-draft-context__title">Abre una salida sin rellenar de más</h4>
-                              <p className="module-copy text-sm">
-                                Con nombre, zona y equipo ya puedes empezar. Las notas, la ruta y la llegada automática quedan como segunda capa para no frenar el flujo.
-                              </p>
-                            </div>
-                            <span className="session-setup-progress">{sessionDraftBasicsLabel}</span>
-                          </div>
 
-                          <div className="session-setup-basics">
+                        <div className="session-mobile-setup__progress">{sessionDraftBasicsLabel}</div>
+
+                        <ul className="session-mobile-setup__facts" aria-label="Contexto rápido antes de salir">
+                          {sessionDraftSupportItems.slice(0, 3).map((item) => (
+                            <li key={item.id} className="session-mobile-setup__fact">
+                              <span>{item.label}</span>
+                              <strong>{item.value}</strong>
+                            </li>
+                          ))}
+                        </ul>
+
+                        <div className="session-setup-basics session-mobile-setup__basics">
                           <label className="grid gap-2 text-sm panel-primary-label">
                             <span>Nombre de la salida</span>
                             <input
@@ -7590,189 +7802,528 @@ export default function App() {
                               placeholder="Zoom H6 · XY"
                             />
                           </label>
-                          </div>
+                        </div>
 
-                          <details className="manual-details session-setup-advanced">
-                            <summary className="manual-details__summary">
-                              <div>
-                                <p className="eyebrow">Opcional</p>
-                                <p className="session-draft-context__title">Notas, ruta y automatismos</p>
-                                <p className="module-copy text-sm">{sessionDraftAdvancedSummary}</p>
+                        <details className="manual-details session-setup-advanced session-mobile-setup__advanced">
+                          <summary className="manual-details__summary">
+                            <div>
+                              <p className="eyebrow">Opcional</p>
+                              <p className="session-draft-context__title">Notas, ruta y automatismos</p>
+                              <p className="module-copy text-sm">{sessionDraftAdvancedSummary}</p>
+                            </div>
+                            <span className="manual-details__hint">Abrir</span>
+                          </summary>
+
+                          <div className="manual-details__body session-setup-advanced__body">
+                            <label className="grid gap-2 text-sm panel-primary-label">
+                              <span>Notas operativas</span>
+                              <textarea
+                                value={sessionDraft.notes}
+                                onChange={(event) => setSessionDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                                rows={4}
+                                className="field-input min-h-28"
+                                placeholder="Objetivo de la salida, acceso, condiciones esperadas o decisiones previas..."
+                              />
+                            </label>
+
+                            <section className="session-draft-route" aria-labelledby="session-draft-route-title-mobile">
+                              <div className="session-draft-route__header">
+                                <p className="eyebrow">Ruta opcional</p>
+                                <h4 id="session-draft-route-title-mobile" className="session-draft-context__title">
+                                  Programa la llegada sólo si hace falta
+                                </h4>
+                                <p className="module-copy text-sm">
+                                  Añade Maps y radio de llegada cuando quieras dejar la captura lista en destino.
+                                </p>
                               </div>
-                              <span className="manual-details__hint">Abrir</span>
-                            </summary>
 
-                            <div className="manual-details__body session-setup-advanced__body">
                               <label className="grid gap-2 text-sm panel-primary-label">
-                                <span>Notas operativas</span>
-                                <textarea
-                                  value={sessionDraft.notes}
-                                  onChange={(event) => setSessionDraft((previous) => ({ ...previous, notes: event.target.value }))}
-                                  rows={4}
-                                  className="field-input min-h-28"
-                                  placeholder="Objetivo de la salida, acceso, condiciones esperadas o decisiones previas..."
+                                <span>Enlace de navegación</span>
+                                <input
+                                  value={sessionDraft.routeUrl}
+                                  onChange={(event) =>
+                                    setSessionDraft((previous) => ({ ...previous, routeUrl: event.target.value }))
+                                  }
+                                  className="field-input"
+                                  placeholder="https://maps.app.goo.gl/..."
+                                  inputMode="url"
                                 />
                               </label>
 
-                              <section className="session-draft-route" aria-labelledby="session-draft-route-title">
-                                <div className="session-draft-route__header">
-                                  <p className="eyebrow">Ruta opcional</p>
-                                  <h4 id="session-draft-route-title" className="session-draft-context__title">
-                                    Programa la llegada sin ensuciar la preparación
-                                  </h4>
-                                  <p className="module-copy text-sm">
-                                    Pega tu enlace de Maps y define el punto de llegada sólo si quieres dejar la captura lista al entrar en la zona.
-                                  </p>
-                                </div>
-
+                              <div className="grid gap-4 md:grid-cols-2">
                                 <label className="grid gap-2 text-sm panel-primary-label">
-                                  <span>Enlace de navegación</span>
+                                  <span>Nombre del destino</span>
                                   <input
-                                    value={sessionDraft.routeUrl}
-                                    onChange={(event) =>
-                                      setSessionDraft((previous) => ({ ...previous, routeUrl: event.target.value }))
-                                    }
-                                    className="field-input"
-                                    placeholder="https://maps.app.goo.gl/..."
-                                    inputMode="url"
-                                  />
-                                </label>
-
-                                <div className="grid gap-4 md:grid-cols-2">
-                                  <label className="grid gap-2 text-sm panel-primary-label">
-                                    <span>Nombre del destino</span>
-                                    <input
-                                      value={sessionDraft.routeDestinationLabel}
-                                      onChange={(event) =>
-                                        setSessionDraft((previous) => ({
-                                          ...previous,
-                                          routeDestinationLabel: event.target.value,
-                                        }))
-                                      }
-                                      className="field-input"
-                                      placeholder="Miradoiro de Mesa de Montes"
-                                    />
-                                  </label>
-                                  <label className="grid gap-2 text-sm panel-primary-label">
-                                    <span>Radio de llegada (m)</span>
-                                    <input
-                                      value={sessionDraft.routeArrivalRadiusMeters}
-                                      onChange={(event) =>
-                                        setSessionDraft((previous) => ({
-                                          ...previous,
-                                          routeArrivalRadiusMeters: event.target.value,
-                                        }))
-                                      }
-                                      className="field-input"
-                                      placeholder={String(DEFAULT_ROUTE_ARRIVAL_RADIUS_METERS)}
-                                      inputMode="numeric"
-                                    />
-                                  </label>
-                                </div>
-
-                                <div className="grid gap-4 md:grid-cols-2">
-                                  <label className="grid gap-2 text-sm panel-primary-label">
-                                    <span>Latitud destino</span>
-                                    <input
-                                      value={sessionDraft.routeLatitude}
-                                      onChange={(event) =>
-                                        setSessionDraft((previous) => ({ ...previous, routeLatitude: event.target.value }))
-                                      }
-                                      className="field-input"
-                                      placeholder="42.284685"
-                                      inputMode="decimal"
-                                    />
-                                  </label>
-                                  <label className="grid gap-2 text-sm panel-primary-label">
-                                    <span>Longitud destino</span>
-                                    <input
-                                      value={sessionDraft.routeLongitude}
-                                      onChange={(event) =>
-                                        setSessionDraft((previous) => ({ ...previous, routeLongitude: event.target.value }))
-                                      }
-                                      className="field-input"
-                                      placeholder="-8.791661"
-                                      inputMode="decimal"
-                                    />
-                                  </label>
-                                </div>
-
-                                <div className="action-row action-row--compact">
-                                  <button
-                                    type="button"
-                                    onClick={() => void applyCurrentGpsToRouteDestination()}
-                                    className="ui-button ui-button-secondary"
-                                  >
-                                    <LocateFixed className="h-4 w-4" />
-                                    Usar GPS actual
-                                  </button>
-                                </div>
-
-                                <label className="session-draft-toggle">
-                                  <input
-                                    type="checkbox"
-                                    checked={sessionDraft.armCaptureOnArrival}
+                                    value={sessionDraft.routeDestinationLabel}
                                     onChange={(event) =>
                                       setSessionDraft((previous) => ({
                                         ...previous,
-                                        armCaptureOnArrival: event.target.checked,
+                                        routeDestinationLabel: event.target.value,
                                       }))
                                     }
+                                    className="field-input"
+                                    placeholder="Miradoiro de Mesa de Montes"
                                   />
-                                  <span className="session-draft-toggle__label">Armar captura al llegar</span>
-                                  <small className="session-draft-toggle__copy">
-                                    Si el GPS entra en el radio, la app marcará la llegada y dejará la captura lista para activarla.
-                                  </small>
                                 </label>
+                                <label className="grid gap-2 text-sm panel-primary-label">
+                                  <span>Radio de llegada (m)</span>
+                                  <input
+                                    value={sessionDraft.routeArrivalRadiusMeters}
+                                    onChange={(event) =>
+                                      setSessionDraft((previous) => ({
+                                        ...previous,
+                                        routeArrivalRadiusMeters: event.target.value,
+                                      }))
+                                    }
+                                    className="field-input"
+                                    placeholder={String(DEFAULT_ROUTE_ARRIVAL_RADIUS_METERS)}
+                                    inputMode="numeric"
+                                  />
+                                </label>
+                              </div>
 
-                                <p className="module-copy text-sm">{sessionDraftRouteHint}</p>
-                              </section>
-                            </div>
-                          </details>
-                        </div>
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <label className="grid gap-2 text-sm panel-primary-label">
+                                  <span>Latitud destino</span>
+                                  <input
+                                    value={sessionDraft.routeLatitude}
+                                    onChange={(event) =>
+                                      setSessionDraft((previous) => ({ ...previous, routeLatitude: event.target.value }))
+                                    }
+                                    className="field-input"
+                                    placeholder="42.284685"
+                                    inputMode="decimal"
+                                  />
+                                </label>
+                                <label className="grid gap-2 text-sm panel-primary-label">
+                                  <span>Longitud destino</span>
+                                  <input
+                                    value={sessionDraft.routeLongitude}
+                                    onChange={(event) =>
+                                      setSessionDraft((previous) => ({ ...previous, routeLongitude: event.target.value }))
+                                    }
+                                    className="field-input"
+                                    placeholder="-8.791661"
+                                    inputMode="decimal"
+                                  />
+                                </label>
+                              </div>
 
-                        <aside className="session-draft-context session-setup-sidebar" aria-label="Contexto rápido antes de salir">
-                          <p className="eyebrow">Antes de salir</p>
-                          <h4 className="session-draft-context__title">Qué quedará listo al abrir la salida</h4>
-                          <ul className="session-setup-readiness" aria-label="Estado de los básicos">
-                            {sessionDraftReadinessItems.map((item) => (
-                              <li key={item.id} className={`session-setup-readiness__item ${item.ready ? 'is-ready' : ''}`}>
-                                <span className="session-setup-readiness__label">{item.label}</span>
-                                <strong className="session-setup-readiness__value">{item.value}</strong>
-                                <span className="session-setup-readiness__state">
-                                  {item.ready ? 'Listo' : 'Pendiente'}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                          <ul className="session-draft-context__facts">
-                            {sessionDraftSupportItems.map((item) => (
-                              <li key={item.id} className="session-draft-context__fact">
-                                <span className="session-draft-context__label">{item.label}</span>
-                                <strong className="session-draft-context__value">{item.value}</strong>
-                              </li>
-                            ))}
-                          </ul>
+                              <div className="action-row action-row--compact">
+                                <button
+                                  type="button"
+                                  onClick={() => void applyCurrentGpsToRouteDestination()}
+                                  className="ui-button ui-button-secondary"
+                                >
+                                  <LocateFixed className="h-4 w-4" />
+                                  Usar GPS actual
+                                </button>
+                              </div>
+
+                              <label className="session-draft-toggle">
+                                <input
+                                  type="checkbox"
+                                  checked={sessionDraft.armCaptureOnArrival}
+                                  onChange={(event) =>
+                                    setSessionDraft((previous) => ({
+                                      ...previous,
+                                      armCaptureOnArrival: event.target.checked,
+                                    }))
+                                  }
+                                />
+                                <span className="session-draft-toggle__label">Armar captura al llegar</span>
+                                <small className="session-draft-toggle__copy">
+                                  Si el GPS entra en el radio, la app marcará la llegada y dejará la captura lista para activarla.
+                                </small>
+                              </label>
+
+                              <p className="module-copy text-sm">{sessionDraftRouteHint}</p>
+                            </section>
+                          </div>
+                        </details>
+
+                        <div className="session-mobile-action-stack">
+                          <button type="button" onClick={createSession} className="ui-button ui-button-primary">
+                            Iniciar salida
+                          </button>
                           <p className="module-copy text-sm">{sessionDraftSupportCopy}</p>
-                        </aside>
-                      </div>
-
-                      <div className="action-row session-draft-actions">
-                        <div className="session-draft-actions__copy">
-                          <strong>Empieza con lo esencial y completa el resto en campo si hace falta.</strong>
-                          <p className="module-copy text-sm">
-                            La salida queda abierta de inmediato; ruta, notas y enriquecimiento pueden resolverse después sin romper el flujo.
-                          </p>
                         </div>
-                        <button type="button" onClick={createSession} className="ui-button ui-button-primary">
-                          Iniciar salida
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </Card>
+                      </Card>
+                    )}
 
-                {renderSessionSupportWorkspace()}
+                    {renderSessionSupportWorkspace()}
+                  </>
+                ) : (
+                  <>
+                    <Card variant="hero" tone="sky" className="dashboard-session-panel">
+                      <div className="panel-heading panel-heading--inverse">
+                        <p className="eyebrow eyebrow-inverse">{activeSession ? 'Salida activa' : 'Preparar salida'}</p>
+                        <h3 className="display-heading text-3xl panel-primary-title">
+                          {activeSession ? activeSession.name : 'Prepara la próxima salida'}
+                        </h3>
+                        {activeSession ? (
+                          <div className="session-meta-list">
+                            <div className="session-meta-row">
+                              <span className="session-meta-label">Zona</span>
+                              <span>{activeSession.region || 'sin definir'}</span>
+                            </div>
+                            <div className="session-meta-row">
+                              <span className="session-meta-label">Registros</span>
+                              <span>{activeSession.points.length}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="module-copy text-sm">
+                            Define la salida y deja el contexto listo antes de empezar.
+                          </p>
+                        )}
+                      </div>
+
+                      {activeSession ? (
+                        <>
+                          {activeSessionDateWarning ? (
+                            <div className="capture-alert capture-alert--warning mb-4">
+                              <TriangleAlert className="h-4 w-4" />
+                              <div>{activeSessionDateWarning}</div>
+                            </div>
+                          ) : null}
+
+                          <SummaryStrip
+                            compact
+                            className="dashboard-session-summary-strip"
+                            ariaLabel="Resumen de la salida activa"
+                            items={[
+                              {
+                                label: 'Registros',
+                                value: activeSession.points.length,
+                              },
+                              {
+                                label: 'Fotos',
+                                value: activeSessionPhotoCount,
+                              },
+                              {
+                                label: 'Tomas H6',
+                                value: activeSession.audioTakes.length,
+                              },
+                              {
+                                label: 'Pendientes',
+                                value: totalOperationalPendingCount,
+                                detail: operationalPendingSummary,
+                              },
+                            ]}
+                          />
+
+                          {renderActiveRoutePlanCard('session')}
+
+                          <div className="dashboard-session-actions-grid">
+                            <section className="dashboard-action-block dashboard-action-block--primary" aria-label="Acciones de captura">
+                              <div className="dashboard-action-block__header">
+                                <p className="eyebrow">Operar ahora</p>
+                                <p className="module-copy text-sm">Las acciones clave quedan primero; el resto se aparta del flujo principal.</p>
+                              </div>
+                              <div className="action-row dashboard-session-panel__actions-main">
+                                <button type="button" onClick={() => setView('point')} className="ui-button ui-button-primary">
+                                  <Mic className="h-4 w-4" />
+                                  Ir a captura
+                                </button>
+                                {activeRoutePlan?.navigationUrl ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openNavigationRoute(activeRoutePlan)}
+                                    className="ui-button ui-button-secondary"
+                                  >
+                                    <CarFront className="h-4 w-4" />
+                                    Abrir ruta
+                                  </button>
+                                ) : null}
+                                {recordPoint && recordSession ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openRecordView(recordSession.id, recordPoint.id)}
+                                    className="ui-button ui-button-secondary"
+                                  >
+                                    <History className="h-4 w-4" />
+                                    Abrir último registro
+                                  </button>
+                                ) : null}
+                              </div>
+                            </section>
+
+                            <section className="dashboard-action-block" aria-label="Acciones de mantenimiento">
+                              <div className="dashboard-action-block__header">
+                                <p className="eyebrow">Preparar y ordenar</p>
+                                <p className="module-copy text-sm">Importación, separación de registros y relevo de salida sin entorpecer la captura.</p>
+                              </div>
+                              <div className="action-row dashboard-session-panel__actions-main">
+                                <button
+                                  type="button"
+                                  onClick={() => openZoomImportPicker(activeSession.id)}
+                                  className="ui-button ui-button-secondary"
+                                >
+                                  <AudioWaveform className="h-4 w-4" />
+                                  Importar Zoom H6
+                                </button>
+                                {activeSessionLatestSpilloverPointAt ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void splitSessionRecordsFromLatestSpilloverDay(activeSession.id)}
+                                    disabled={isSplittingSessionId === activeSession.id}
+                                    aria-busy={isSplittingSessionId === activeSession.id}
+                                    className="ui-button ui-button-secondary"
+                                  >
+                                    <RefreshCw className="h-4 w-4" />
+                                    {isSplittingSessionId === activeSession.id
+                                      ? 'Separando...'
+                                      : `Separar ${formatDateTime(activeSessionLatestSpilloverPointAt, "d MMM")}`}
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => void closeActiveSessionAndPrepareNext()}
+                                  className="ui-button ui-button-secondary"
+                                >
+                                  <RefreshCw className="h-4 w-4" />
+                                  Cerrar y nueva salida
+                                </button>
+                              </div>
+                            </section>
+
+                            <div className="action-row action-row--compact dashboard-session-panel__actions-danger">
+                              <button type="button" onClick={() => void closeActiveSession()} className="ui-button ui-button-danger">
+                                Cerrar salida
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="session-draft-shell">
+                            <div className="session-draft-main">
+                              <div className="session-setup-intro">
+                                <div className="session-setup-intro__copy">
+                                  <p className="eyebrow">Básicos primero</p>
+                                  <h4 className="session-draft-context__title">Abre una salida sin rellenar de más</h4>
+                                  <p className="module-copy text-sm">
+                                    Con nombre, zona y equipo ya puedes empezar. Las notas, la ruta y la llegada automática quedan como segunda capa para no frenar el flujo.
+                                  </p>
+                                </div>
+                                <span className="session-setup-progress">{sessionDraftBasicsLabel}</span>
+                              </div>
+
+                              <div className="session-setup-basics">
+                              <label className="grid gap-2 text-sm panel-primary-label">
+                                <span>Nombre de la salida</span>
+                                <input
+                                  value={sessionDraft.name}
+                                  onChange={(event) => setSessionDraft((previous) => ({ ...previous, name: event.target.value }))}
+                                  className="field-input"
+                                />
+                              </label>
+                              <label className="grid gap-2 text-sm panel-primary-label">
+                                <span>Zona / región</span>
+                                <input
+                                  value={sessionDraft.region}
+                                  onChange={(event) => setSessionDraft((previous) => ({ ...previous, region: event.target.value }))}
+                                  className="field-input"
+                                  placeholder="Vigo, Galicia"
+                                />
+                              </label>
+                              <label className="grid gap-2 text-sm panel-primary-label">
+                                <span>Preset de equipo</span>
+                                <input
+                                  value={sessionDraft.equipmentPreset}
+                                  onChange={(event) =>
+                                    setSessionDraft((previous) => ({ ...previous, equipmentPreset: event.target.value }))
+                                  }
+                                  className="field-input"
+                                  placeholder="Zoom H6 · XY"
+                                />
+                              </label>
+                              </div>
+
+                              <details className="manual-details session-setup-advanced">
+                                <summary className="manual-details__summary">
+                                  <div>
+                                    <p className="eyebrow">Opcional</p>
+                                    <p className="session-draft-context__title">Notas, ruta y automatismos</p>
+                                    <p className="module-copy text-sm">{sessionDraftAdvancedSummary}</p>
+                                  </div>
+                                  <span className="manual-details__hint">Abrir</span>
+                                </summary>
+
+                                <div className="manual-details__body session-setup-advanced__body">
+                                  <label className="grid gap-2 text-sm panel-primary-label">
+                                    <span>Notas operativas</span>
+                                    <textarea
+                                      value={sessionDraft.notes}
+                                      onChange={(event) => setSessionDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                                      rows={4}
+                                      className="field-input min-h-28"
+                                      placeholder="Objetivo de la salida, acceso, condiciones esperadas o decisiones previas..."
+                                    />
+                                  </label>
+
+                                  <section className="session-draft-route" aria-labelledby="session-draft-route-title">
+                                    <div className="session-draft-route__header">
+                                      <p className="eyebrow">Ruta opcional</p>
+                                      <h4 id="session-draft-route-title" className="session-draft-context__title">
+                                        Programa la llegada sin ensuciar la preparación
+                                      </h4>
+                                      <p className="module-copy text-sm">
+                                        Pega tu enlace de Maps y define el punto de llegada sólo si quieres dejar la captura lista al entrar en la zona.
+                                      </p>
+                                    </div>
+
+                                    <label className="grid gap-2 text-sm panel-primary-label">
+                                      <span>Enlace de navegación</span>
+                                      <input
+                                        value={sessionDraft.routeUrl}
+                                        onChange={(event) =>
+                                          setSessionDraft((previous) => ({ ...previous, routeUrl: event.target.value }))
+                                        }
+                                        className="field-input"
+                                        placeholder="https://maps.app.goo.gl/..."
+                                        inputMode="url"
+                                      />
+                                    </label>
+
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                      <label className="grid gap-2 text-sm panel-primary-label">
+                                        <span>Nombre del destino</span>
+                                        <input
+                                          value={sessionDraft.routeDestinationLabel}
+                                          onChange={(event) =>
+                                            setSessionDraft((previous) => ({
+                                              ...previous,
+                                              routeDestinationLabel: event.target.value,
+                                            }))
+                                          }
+                                          className="field-input"
+                                          placeholder="Miradoiro de Mesa de Montes"
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm panel-primary-label">
+                                        <span>Radio de llegada (m)</span>
+                                        <input
+                                          value={sessionDraft.routeArrivalRadiusMeters}
+                                          onChange={(event) =>
+                                            setSessionDraft((previous) => ({
+                                              ...previous,
+                                              routeArrivalRadiusMeters: event.target.value,
+                                            }))
+                                          }
+                                          className="field-input"
+                                          placeholder={String(DEFAULT_ROUTE_ARRIVAL_RADIUS_METERS)}
+                                          inputMode="numeric"
+                                        />
+                                      </label>
+                                    </div>
+
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                      <label className="grid gap-2 text-sm panel-primary-label">
+                                        <span>Latitud destino</span>
+                                        <input
+                                          value={sessionDraft.routeLatitude}
+                                          onChange={(event) =>
+                                            setSessionDraft((previous) => ({ ...previous, routeLatitude: event.target.value }))
+                                          }
+                                          className="field-input"
+                                          placeholder="42.284685"
+                                          inputMode="decimal"
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm panel-primary-label">
+                                        <span>Longitud destino</span>
+                                        <input
+                                          value={sessionDraft.routeLongitude}
+                                          onChange={(event) =>
+                                            setSessionDraft((previous) => ({ ...previous, routeLongitude: event.target.value }))
+                                          }
+                                          className="field-input"
+                                          placeholder="-8.791661"
+                                          inputMode="decimal"
+                                        />
+                                      </label>
+                                    </div>
+
+                                    <div className="action-row action-row--compact">
+                                      <button
+                                        type="button"
+                                        onClick={() => void applyCurrentGpsToRouteDestination()}
+                                        className="ui-button ui-button-secondary"
+                                      >
+                                        <LocateFixed className="h-4 w-4" />
+                                        Usar GPS actual
+                                      </button>
+                                    </div>
+
+                                    <label className="session-draft-toggle">
+                                      <input
+                                        type="checkbox"
+                                        checked={sessionDraft.armCaptureOnArrival}
+                                        onChange={(event) =>
+                                          setSessionDraft((previous) => ({
+                                            ...previous,
+                                            armCaptureOnArrival: event.target.checked,
+                                          }))
+                                        }
+                                      />
+                                      <span className="session-draft-toggle__label">Armar captura al llegar</span>
+                                      <small className="session-draft-toggle__copy">
+                                        Si el GPS entra en el radio, la app marcará la llegada y dejará la captura lista para activarla.
+                                      </small>
+                                    </label>
+
+                                    <p className="module-copy text-sm">{sessionDraftRouteHint}</p>
+                                  </section>
+                                </div>
+                              </details>
+                            </div>
+
+                            <aside className="session-draft-context session-setup-sidebar" aria-label="Contexto rápido antes de salir">
+                              <p className="eyebrow">Antes de salir</p>
+                              <h4 className="session-draft-context__title">Qué quedará listo al abrir la salida</h4>
+                              <ul className="session-setup-readiness" aria-label="Estado de los básicos">
+                                {sessionDraftReadinessItems.map((item) => (
+                                  <li key={item.id} className={`session-setup-readiness__item ${item.ready ? 'is-ready' : ''}`}>
+                                    <span className="session-setup-readiness__label">{item.label}</span>
+                                    <strong className="session-setup-readiness__value">{item.value}</strong>
+                                    <span className="session-setup-readiness__state">
+                                      {item.ready ? 'Listo' : 'Pendiente'}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                              <ul className="session-draft-context__facts">
+                                {sessionDraftSupportItems.map((item) => (
+                                  <li key={item.id} className="session-draft-context__fact">
+                                    <span className="session-draft-context__label">{item.label}</span>
+                                    <strong className="session-draft-context__value">{item.value}</strong>
+                                  </li>
+                                ))}
+                              </ul>
+                              <p className="module-copy text-sm">{sessionDraftSupportCopy}</p>
+                            </aside>
+                          </div>
+
+                          <div className="action-row session-draft-actions">
+                            <div className="session-draft-actions__copy">
+                              <strong>Empieza con lo esencial y completa el resto en campo si hace falta.</strong>
+                              <p className="module-copy text-sm">
+                                La salida queda abierta de inmediato; ruta, notas y enriquecimiento pueden resolverse después sin romper el flujo.
+                              </p>
+                            </div>
+                            <button type="button" onClick={createSession} className="ui-button ui-button-primary">
+                              Iniciar salida
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </Card>
+
+                    {renderSessionSupportWorkspace()}
+                  </>
+                )}
               </motion.section>
             ) : null}
 
@@ -7793,424 +8344,753 @@ export default function App() {
                     </button>
                   </div>
                 ) : (
-                  <>
-                    <div
-                      className="panel surface-level--panel surface-emphasis--hero surface-border--strong panel-primary log-summary-card panel-tone panel-tone--sky"
-                      aria-busy={
-                        isQuickCapturing ||
-                        soundscapeStatus === 'listening' ||
-                        locationStatus === 'loading' ||
-                        weatherStatus === 'loading'
-                      }
-                    >
-                      <div className="panel-heading panel-heading--inverse">
-                        <p className="eyebrow eyebrow-inverse">Registro activo</p>
-                        <h3 className="display-heading text-3xl panel-primary-title">{activeSessionCaptureHeading}</h3>
-                        <ul className="capture-context-chips" aria-label="Contexto del registro activo">
-                          <li>
-                            <span className="telemetry-chip">
-                              {formatDateTime(activeSession.startedAt, "d MMM yyyy · HH:mm")}
-                            </span>
-                          </li>
-                          <li>
-                            <span className="telemetry-chip">{activeSession.region || 'zona sin definir'}</span>
-                          </li>
-                          <li>
-                            <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
-                              {isOnline ? 'En línea' : 'Offline'}
-                            </span>
-                          </li>
-                        </ul>
-                      </div>
+                  isMobileViewport ? (
+                    <>
+                      <div
+                        className="panel surface-level--panel surface-emphasis--hero surface-border--strong panel-primary log-summary-card panel-tone panel-tone--sky capture-mobile-hero"
+                        aria-busy={
+                          isQuickCapturing ||
+                          soundscapeStatus === 'listening' ||
+                          locationStatus === 'loading' ||
+                          weatherStatus === 'loading'
+                        }
+                      >
+                        <div className="capture-mobile-hero__header">
+                          <p className="eyebrow eyebrow-inverse">Registro activo</p>
+                          <h3 className="display-heading text-3xl panel-primary-title">{activeSessionCaptureHeading}</h3>
+                          <p className="module-copy text-sm">
+                            {activeSession.region || 'zona sin definir'} · {formatDateTime(activeSession.startedAt, "d MMM · HH:mm")}
+                          </p>
+                        </div>
 
-                      {activeSessionDateWarning ? (
-                        <div className="capture-status-stack" aria-label="Avisos de antigüedad de la salida">
+                        {activeSessionDateWarning ? (
                           <div className="capture-alert capture-alert--warning">
                             <TriangleAlert className="h-4 w-4" />
                             <div>{activeSessionDateWarning}</div>
                           </div>
-                        </div>
-                      ) : null}
+                        ) : null}
 
-                      {!isOnline || storageMode === 'memory-only' ? (
-                        <div className="capture-status-stack" aria-label="Avisos del registro activo">
-                          {!isOnline ? (
-                            <div className="capture-alert capture-alert--offline">
-                              <WifiOff className="h-4 w-4" />
-                              <div>
-                                <strong>Modo offline activo.</strong> Guarda puntos ahora y la app resolverá lugar y clima cuando vuelva la conexión.
+                        {!isOnline || storageMode === 'memory-only' ? (
+                          <div className="capture-status-stack" aria-label="Avisos del registro activo">
+                            {!isOnline ? (
+                              <div className="capture-alert capture-alert--offline">
+                                <WifiOff className="h-4 w-4" />
+                                <div>
+                                  <strong>Modo offline activo.</strong> La app completará lugar y clima cuando vuelva la conexión.
+                                </div>
                               </div>
-                            </div>
-                          ) : null}
+                            ) : null}
 
-                          {storageMode === 'memory-only' ? (
-                            <div className="capture-alert capture-alert--warning">
-                              <RefreshCw className="h-4 w-4" />
-                              <div>
-                                <strong>Archivo local no disponible.</strong> Puedes seguir trabajando, pero esta salida sólo queda en memoria hasta recuperar almacenamiento.
+                            {storageMode === 'memory-only' ? (
+                              <div className="capture-alert capture-alert--warning">
+                                <RefreshCw className="h-4 w-4" />
+                                <div>
+                                  <strong>Sin archivo local.</strong> El punto queda en memoria hasta recuperar almacenamiento.
+                                </div>
                               </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-
-                      <div className="capture-command-shell">
-                        <div className="capture-command-main">
-                          <div className="capture-command-intro">
-                            <div className="capture-command-intro__copy">
-                              <p className="eyebrow eyebrow-inverse">Paso 1 · Contexto automático</p>
-                              <h4 className="capture-command-intro__title">La captura queda lista con el mínimo de fricción.</h4>
-                              <p className="module-copy text-sm">
-                                Quédate sólo con los ajustes manuales que falten. El lugar, el clima y el estado del punto se leen desde aquí sin enterrar la acción principal.
-                              </p>
-                            </div>
-
-                            <ul className="capture-context-facts" aria-label="Lectura inmediata del punto">
-                              <li className="capture-context-facts__item">
-                                <span className="capture-context-facts__label">Hora</span>
-                                <strong className="capture-context-facts__value">{captureTimeLabel}</strong>
-                                <span className="capture-context-facts__detail">{captureDateLabel}</span>
-                              </li>
-                              <li className="capture-context-facts__item">
-                                <span className="capture-context-facts__label">GPS</span>
-                                <strong className="capture-context-facts__value">{gpsAccuracyLabel}</strong>
-                                <span className="capture-context-facts__detail">{gpsLabel}</span>
-                              </li>
-                              <li className="capture-context-facts__item">
-                                <span className="capture-context-facts__label">Lugar</span>
-                                <strong className="capture-context-facts__value">{livePlaceLabel}</strong>
-                                <span className="capture-context-facts__detail">{locationMessage || locationStatusLabel}</span>
-                              </li>
-                              <li className="capture-context-facts__item">
-                                <span className="capture-context-facts__label">Clima</span>
-                                <strong className="capture-context-facts__value">{liveClimateLabel}</strong>
-                                <span className="capture-context-facts__detail">{weatherSnapshot?.details || weatherMessage}</span>
-                              </li>
-                            </ul>
+                            ) : null}
                           </div>
+                        ) : null}
 
-                          <SummaryStrip
-                            compact
-                            className="capture-status-summary"
-                            ariaLabel="Estado automático de captura"
-                            items={captureStatusSummaryItems}
-                          />
+                        <ul className="capture-context-facts capture-mobile-facts" aria-label="Lectura inmediata del punto">
+                          <li className="capture-context-facts__item">
+                            <span className="capture-context-facts__label">Hora</span>
+                            <strong className="capture-context-facts__value">{captureTimeLabel}</strong>
+                            <span className="capture-context-facts__detail">{captureDateLabel}</span>
+                          </li>
+                          <li className="capture-context-facts__item">
+                            <span className="capture-context-facts__label">GPS</span>
+                            <strong className="capture-context-facts__value">{gpsAccuracyLabel}</strong>
+                            <span className="capture-context-facts__detail">{gpsLabel}</span>
+                          </li>
+                          <li className="capture-context-facts__item">
+                            <span className="capture-context-facts__label">Lugar</span>
+                            <strong className="capture-context-facts__value">{livePlaceLabel}</strong>
+                            <span className="capture-context-facts__detail">{locationMessage || locationStatusLabel}</span>
+                          </li>
+                          <li className="capture-context-facts__item">
+                            <span className="capture-context-facts__label">Clima</span>
+                            <strong className="capture-context-facts__value">{liveClimateLabel}</strong>
+                            <span className="capture-context-facts__detail">{weatherSnapshot?.details || weatherMessage}</span>
+                          </li>
+                        </ul>
 
-                          <div className="capture-readiness-strip" aria-label="Preparación del registro">
-                            <div className="capture-readiness-strip__header">
-                              <p className="eyebrow eyebrow-inverse">Preparación rápida</p>
-                              <span className="capture-readiness-strip__count">{captureReadinessLabel}</span>
-                            </div>
-                            <ul className="capture-readiness-strip__list">
-                              {captureReadinessItems.map((item) => (
-                                <li key={item.label}>
-                                  <span className={`capture-readiness-pill ${item.ready ? 'is-ready' : ''}`}>
-                                    <span>{item.label}</span>
-                                    <strong>{item.value}</strong>
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
+                        <div className="capture-mobile-primary">
+                          <button
+                            type="button"
+                            onClick={() => void addQuickPointToSession()}
+                            className="ui-button ui-button-primary capture-command-actions__primary-button"
+                            disabled={isQuickCapturing}
+                            aria-busy={isQuickCapturing}
+                          >
+                            <Mic className="h-4 w-4" />
+                            {isQuickCapturing ? 'Guardando...' : 'Guardar registro rápido'}
+                          </button>
+                          <p className="module-copy text-sm capture-command-actions__support">{captureQuickSaveSupportCopy}</p>
                         </div>
 
-                        <aside className="capture-command-actions" aria-label="Acciones principales de captura">
-                          <div className="capture-command-actions__primary">
-                            <p className="eyebrow eyebrow-inverse">Paso 2 · Guardar al instante</p>
-                            <button
-                              type="button"
-                              onClick={() => void addQuickPointToSession()}
-                              className="ui-button ui-button-primary capture-command-actions__primary-button"
-                              disabled={isQuickCapturing}
-                              aria-busy={isQuickCapturing}
-                            >
-                              <Mic className="h-4 w-4" />
-                              {isQuickCapturing ? 'Guardando...' : 'Guardar registro rápido'}
-                            </button>
-                            <p className="module-copy text-sm capture-command-actions__support">{captureQuickSaveSupportCopy}</p>
-                          </div>
+                        <div className="capture-mobile-toolgrid" role="group" aria-label="Acciones rápidas del registro">
+                          <button
+                            type="button"
+                            onClick={() => void listenAndClassifySoundscape()}
+                            disabled={soundscapeStatus === 'listening'}
+                            aria-busy={soundscapeStatus === 'listening'}
+                            className="listen-button capture-quick-tool"
+                          >
+                            <Sparkles className="h-5 w-5" />
+                            {soundscapeStatus === 'listening' ? 'Analizando...' : 'Detectar ambiente'}
+                          </button>
+                          <label className="ui-button ui-button-secondary ui-button-upload">
+                            <Camera className="h-4 w-4" />
+                            Añadir foto
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              multiple
+                              className="hidden"
+                              onChange={handleDraftPhotosInput}
+                            />
+                          </label>
+                          <button type="button" onClick={() => void activateGpsAndApplyToDraft()} className="ui-button ui-button-ghost">
+                            <LocateFixed className="h-4 w-4" />
+                            Activar GPS
+                          </button>
+                        </div>
 
-                          <div className="capture-command-actions__secondary" role="group" aria-label="Acciones rápidas del registro">
-                            <button
-                              type="button"
-                              onClick={() => void listenAndClassifySoundscape()}
-                              disabled={soundscapeStatus === 'listening'}
-                              aria-busy={soundscapeStatus === 'listening'}
-                              className="listen-button capture-quick-tool"
-                            >
-                              <Sparkles className="h-5 w-5" />
-                              {soundscapeStatus === 'listening' ? 'Analizando 15 s...' : 'Detectar ambiente'}
-                            </button>
-                            <label className="ui-button ui-button-secondary ui-button-upload">
-                              <Camera className="h-4 w-4" />
-                              Añadir foto
-                              <input
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                multiple
-                                className="hidden"
-                                onChange={handleDraftPhotosInput}
-                              />
-                            </label>
-                          </div>
-
-                          <div className="capture-maintenance-tools" aria-label="Acciones de mantenimiento del contexto">
-                            <p className="capture-toolbar-label">Actualización manual</p>
-                            <div className="action-row action-row--compact capture-maintenance-tools__actions">
-                              <button type="button" onClick={() => void activateGpsAndApplyToDraft()} className="ui-button ui-button-ghost">
-                                <LocateFixed className="h-4 w-4" />
-                                Activar GPS
-                              </button>
-                              <button
-                                type="button"
-                                onClick={refreshDetectedPlace}
-                                disabled={!canRefreshDetectedPlace}
-                                aria-busy={locationStatus === 'loading'}
-                                className="ui-button ui-button-ghost"
-                              >
-                                <MapPin className="h-4 w-4" />
-                                Releer ubicación
-                              </button>
-                              <button
-                                type="button"
-                                onClick={refreshAutomaticWeather}
-                                disabled={!canRefreshWeather || weatherStatus === 'loading'}
-                                aria-busy={weatherStatus === 'loading'}
-                                className="ui-button ui-button-ghost"
-                              >
-                                <CloudRain className={`h-4 w-4 ${weatherStatus === 'loading' ? 'busy-spin' : ''}`} />
-                                Actualizar clima
-                              </button>
-                            </div>
-                          </div>
-                        </aside>
-                      </div>
-                    </div>
-
-                    <div className="panel surface-level--panel surface-emphasis--panel surface-border--default log-form-card panel-tone panel-tone--mint">
-                      <div className="panel-heading">
-                        <p className="eyebrow">Datos esenciales</p>
-                        <h3 className="display-heading text-3xl">Lo mínimo para cerrar un buen registro</h3>
-                        <p className="module-copy text-sm">
-                          Ajusta sólo lo que la app no haya resuelto sola. Los campos técnicos viven en avanzado para que la pantalla siga limpia bajo presión.
-                        </p>
+                        <div className="capture-mobile-toolbar">
+                          <button
+                            type="button"
+                            onClick={refreshDetectedPlace}
+                            disabled={!canRefreshDetectedPlace}
+                            aria-busy={locationStatus === 'loading'}
+                            className="ui-button ui-button-ghost"
+                          >
+                            <MapPin className="h-4 w-4" />
+                            Releer ubicación
+                          </button>
+                          <button
+                            type="button"
+                            onClick={refreshAutomaticWeather}
+                            disabled={!canRefreshWeather || weatherStatus === 'loading'}
+                            aria-busy={weatherStatus === 'loading'}
+                            className="ui-button ui-button-ghost"
+                          >
+                            <CloudRain className={`h-4 w-4 ${weatherStatus === 'loading' ? 'busy-spin' : ''}`} />
+                            Actualizar clima
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="capture-form-intro">
-                        <div className="capture-form-intro__copy">
-                          <p className="eyebrow">Paso 3 · Completar si hace falta</p>
+                      <div className="panel surface-level--panel surface-emphasis--panel surface-border--default log-form-card panel-tone panel-tone--mint capture-mobile-form">
+                        <div className="panel-heading">
+                          <p className="eyebrow">Completar si hace falta</p>
+                          <h3 className="display-heading text-3xl">Lo mínimo para cerrar el punto</h3>
                           <p className="module-copy text-sm">
-                            Lugar, entorno, referencia H6 y notas. Lo técnico queda plegado para no competir con el guardado.
+                            Lugar, entorno, referencia H6 y notas. El resto queda plegado para no competir con el guardado.
                           </p>
                         </div>
+
                         <span className="capture-form-progress">{captureFormProgressLabel}</span>
-                      </div>
 
-                      <div className="quick-form-grid capture-form-basics">
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Nombre del lugar</span>
-                          <input
-                            value={pointDraft.placeName}
-                            onChange={(event) => setPointDraft((previous) => ({ ...previous, placeName: event.target.value }))}
-                            className="field-input"
-                            placeholder="Ría interior, orilla sur"
-                          />
-                        </label>
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>Hábitat / entorno</span>
-                          <input
-                            value={pointDraft.habitat}
-                            onChange={(event) => setPointDraft((previous) => ({ ...previous, habitat: event.target.value }))}
-                            className="field-input"
-                            placeholder="Costa, ribera, bosque, urbano..."
-                          />
-                        </label>
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                          <span>ID / referencia Zoom H6</span>
-                          <input
-                            value={pointDraft.zoomTakeReference}
-                            onChange={(event) =>
-                              setPointDraft((previous) => ({ ...previous, zoomTakeReference: event.target.value }))
-                            }
-                            className="field-input"
-                            placeholder="H6-032"
-                          />
-                        </label>
-                        <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
-                          <span>Notas</span>
-                          <textarea
-                            value={pointDraft.notes}
-                            onChange={(event) => setPointDraft((previous) => ({ ...previous, notes: event.target.value }))}
-                            rows={4}
-                            className="field-input min-h-28"
-                            placeholder="Incidencias, decisiones de microfonía, acceso, observaciones..."
-                          />
-                        </label>
-                      </div>
-
-                      <div className="action-row capture-form-actions">
-                        <div className="capture-form-actions__copy">
-                          <strong>El guardado completo conserva el contexto automático y tus ajustes manuales.</strong>
-                          <p className="module-copy text-sm">
-                            Úsalo cuando quieras dejar el punto listo para archivo, revisión o asociación con la Zoom H6.
-                          </p>
+                        <div className="quick-form-grid capture-form-basics">
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Nombre del lugar</span>
+                            <input
+                              value={pointDraft.placeName}
+                              onChange={(event) => setPointDraft((previous) => ({ ...previous, placeName: event.target.value }))}
+                              className="field-input"
+                              placeholder="Ría interior, orilla sur"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>Hábitat / entorno</span>
+                            <input
+                              value={pointDraft.habitat}
+                              onChange={(event) => setPointDraft((previous) => ({ ...previous, habitat: event.target.value }))}
+                              className="field-input"
+                              placeholder="Costa, ribera, bosque, urbano..."
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>ID / referencia Zoom H6</span>
+                            <input
+                              value={pointDraft.zoomTakeReference}
+                              onChange={(event) =>
+                                setPointDraft((previous) => ({ ...previous, zoomTakeReference: event.target.value }))
+                              }
+                              className="field-input"
+                              placeholder="H6-032"
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
+                            <span>Notas</span>
+                            <textarea
+                              value={pointDraft.notes}
+                              onChange={(event) => setPointDraft((previous) => ({ ...previous, notes: event.target.value }))}
+                              rows={4}
+                              className="field-input min-h-28"
+                              placeholder="Incidencias, decisiones de microfonía, acceso, observaciones..."
+                            />
+                          </label>
                         </div>
+
                         <button type="button" onClick={() => void addPointToSession()} className="ui-button ui-button-primary">
                           Guardar registro completo
                         </button>
+
+                        <details className="manual-details capture-form-advanced">
+                          <summary className="manual-details__summary">
+                            <div>
+                              <p className="eyebrow">Campos avanzados</p>
+                              <p className="module-copy text-sm">
+                                Coordenadas manuales, clima observado, etiquetas y setup técnico cuando necesites más precisión.
+                              </p>
+                            </div>
+                            <span className="manual-details__hint">Abrir</span>
+                          </summary>
+
+                          <div className="manual-details__body grid gap-4 md:grid-cols-2 capture-form-advanced__body">
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Clima observado</span>
+                              <input
+                                value={pointDraft.observedWeather}
+                                onChange={(event) =>
+                                  setPointDraft((previous) => ({ ...previous, observedWeather: event.target.value }))
+                                }
+                                className="field-input"
+                                placeholder="Bruma ligera, 14 ºC, viento suave"
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Etiquetas manuales</span>
+                              <input
+                                value={pointDraft.tagsText}
+                                onChange={(event) => setPointDraft((previous) => ({ ...previous, tagsText: event.target.value }))}
+                                className="field-input"
+                                placeholder="agua, costa, amanecer"
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
+                              <span>Características del paisaje</span>
+                              <textarea
+                                value={pointDraft.characteristics}
+                                onChange={(event) =>
+                                  setPointDraft((previous) => ({ ...previous, characteristics: event.target.value }))
+                                }
+                                rows={4}
+                                className="field-input min-h-28"
+                                placeholder="Distancia a la fuente, relieve, reverberación, presencia humana..."
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Latitud</span>
+                              <input
+                                value={pointDraft.latitude}
+                                onChange={(event) =>
+                                  setPointDraft((previous) => ({
+                                    ...previous,
+                                    latitude: event.target.value,
+                                    coordinateSource: 'manual',
+                                  }))
+                                }
+                                className="field-input telemetry-text"
+                                placeholder="42.240598"
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Longitud</span>
+                              <input
+                                value={pointDraft.longitude}
+                                onChange={(event) =>
+                                  setPointDraft((previous) => ({
+                                    ...previous,
+                                    longitude: event.target.value,
+                                    coordinateSource: 'manual',
+                                  }))
+                                }
+                                className="field-input telemetry-text"
+                                placeholder="-8.720727"
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
+                              <span>Setup de micros</span>
+                              <input
+                                value={pointDraft.microphoneSetup}
+                                onChange={(event) =>
+                                  setPointDraft((previous) => ({ ...previous, microphoneSetup: event.target.value }))
+                                }
+                                className="field-input"
+                                placeholder="Zoom H6 · XY 90º"
+                              />
+                            </label>
+                          </div>
+                        </details>
                       </div>
 
-                      <details className="manual-details capture-form-advanced">
-                        <summary className="manual-details__summary">
-                          <div>
-                            <p className="eyebrow">Campos avanzados</p>
+                      <section className="capture-secondary-workspace" aria-labelledby="capture-secondary-workspace-title">
+                        <SectionHeader
+                          eyebrow="Herramientas"
+                          titleId="capture-secondary-workspace-title"
+                          title="Mapa, fotos e IA"
+                          description="Lo secundario se alterna en una sola superficie para que la captura siga sintiéndose corta."
+                        />
+
+                        <SegmentedControl
+                          label="Cambiar herramienta secundaria de captura"
+                          value={captureSupportTab}
+                          items={[
+                            { value: 'map', label: 'Mapa' },
+                            { value: 'photos', label: 'Fotos', count: draftPhotos.length },
+                            { value: 'ai', label: 'IA' },
+                            { value: 'record', label: 'Último' },
+                          ]}
+                          onChange={setCaptureSupportTab}
+                          panelIdBase="capture-support"
+                          size="sm"
+                          fill
+                        />
+
+                        <AnimatePresence initial={false} mode="wait">
+                          <motion.div
+                            key={`capture-support-${captureSupportTab}`}
+                            id={`capture-support-panel-${captureSupportTab}`}
+                            role="tabpanel"
+                            aria-labelledby={`capture-support-tab-${captureSupportTab}`}
+                            className="content-swap-panel content-swap-panel--workspace"
+                            {...contentSwapMotion}
+                          >
+                            {captureSupportTab === 'map'
+                              ? renderCaptureExplorePanel()
+                              : captureSupportTab === 'photos'
+                                ? renderCapturePhotosPanel()
+                                : captureSupportTab === 'ai'
+                                  ? renderCaptureListenPanel()
+                                  : renderCaptureRecordPreviewPanel()}
+                          </motion.div>
+                        </AnimatePresence>
+                      </section>
+                    </>
+                  ) : (
+                    <>
+                      <div
+                        className="panel surface-level--panel surface-emphasis--hero surface-border--strong panel-primary log-summary-card panel-tone panel-tone--sky"
+                        aria-busy={
+                          isQuickCapturing ||
+                          soundscapeStatus === 'listening' ||
+                          locationStatus === 'loading' ||
+                          weatherStatus === 'loading'
+                        }
+                      >
+                        <div className="panel-heading panel-heading--inverse">
+                          <p className="eyebrow eyebrow-inverse">Registro activo</p>
+                          <h3 className="display-heading text-3xl panel-primary-title">{activeSessionCaptureHeading}</h3>
+                          <ul className="capture-context-chips" aria-label="Contexto del registro activo">
+                            <li>
+                              <span className="telemetry-chip">
+                                {formatDateTime(activeSession.startedAt, "d MMM yyyy · HH:mm")}
+                              </span>
+                            </li>
+                            <li>
+                              <span className="telemetry-chip">{activeSession.region || 'zona sin definir'}</span>
+                            </li>
+                            <li>
+                              <span className={`telemetry-chip ${isOnline ? '' : 'telemetry-chip--offline'}`}>
+                                {isOnline ? 'En línea' : 'Offline'}
+                              </span>
+                            </li>
+                          </ul>
+                        </div>
+
+                        {activeSessionDateWarning ? (
+                          <div className="capture-status-stack" aria-label="Avisos de antigüedad de la salida">
+                            <div className="capture-alert capture-alert--warning">
+                              <TriangleAlert className="h-4 w-4" />
+                              <div>{activeSessionDateWarning}</div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {!isOnline || storageMode === 'memory-only' ? (
+                          <div className="capture-status-stack" aria-label="Avisos del registro activo">
+                            {!isOnline ? (
+                              <div className="capture-alert capture-alert--offline">
+                                <WifiOff className="h-4 w-4" />
+                                <div>
+                                  <strong>Modo offline activo.</strong> Guarda puntos ahora y la app resolverá lugar y clima cuando vuelva la conexión.
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {storageMode === 'memory-only' ? (
+                              <div className="capture-alert capture-alert--warning">
+                                <RefreshCw className="h-4 w-4" />
+                                <div>
+                                  <strong>Archivo local no disponible.</strong> Puedes seguir trabajando, pero esta salida sólo queda en memoria hasta recuperar almacenamiento.
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        <div className="capture-command-shell">
+                          <div className="capture-command-main">
+                            <div className="capture-command-intro">
+                              <div className="capture-command-intro__copy">
+                                <p className="eyebrow eyebrow-inverse">Paso 1 · Contexto automático</p>
+                                <h4 className="capture-command-intro__title">La captura queda lista con el mínimo de fricción.</h4>
+                                <p className="module-copy text-sm">
+                                  Quédate sólo con los ajustes manuales que falten. El lugar, el clima y el estado del punto se leen desde aquí sin enterrar la acción principal.
+                                </p>
+                              </div>
+
+                              <ul className="capture-context-facts" aria-label="Lectura inmediata del punto">
+                                <li className="capture-context-facts__item">
+                                  <span className="capture-context-facts__label">Hora</span>
+                                  <strong className="capture-context-facts__value">{captureTimeLabel}</strong>
+                                  <span className="capture-context-facts__detail">{captureDateLabel}</span>
+                                </li>
+                                <li className="capture-context-facts__item">
+                                  <span className="capture-context-facts__label">GPS</span>
+                                  <strong className="capture-context-facts__value">{gpsAccuracyLabel}</strong>
+                                  <span className="capture-context-facts__detail">{gpsLabel}</span>
+                                </li>
+                                <li className="capture-context-facts__item">
+                                  <span className="capture-context-facts__label">Lugar</span>
+                                  <strong className="capture-context-facts__value">{livePlaceLabel}</strong>
+                                  <span className="capture-context-facts__detail">{locationMessage || locationStatusLabel}</span>
+                                </li>
+                                <li className="capture-context-facts__item">
+                                  <span className="capture-context-facts__label">Clima</span>
+                                  <strong className="capture-context-facts__value">{liveClimateLabel}</strong>
+                                  <span className="capture-context-facts__detail">{weatherSnapshot?.details || weatherMessage}</span>
+                                </li>
+                              </ul>
+                            </div>
+
+                            <SummaryStrip
+                              compact
+                              className="capture-status-summary"
+                              ariaLabel="Estado automático de captura"
+                              items={captureStatusSummaryItems}
+                            />
+
+                            <div className="capture-readiness-strip" aria-label="Preparación del registro">
+                              <div className="capture-readiness-strip__header">
+                                <p className="eyebrow eyebrow-inverse">Preparación rápida</p>
+                                <span className="capture-readiness-strip__count">{captureReadinessLabel}</span>
+                              </div>
+                              <ul className="capture-readiness-strip__list">
+                                {captureReadinessItems.map((item) => (
+                                  <li key={item.label}>
+                                    <span className={`capture-readiness-pill ${item.ready ? 'is-ready' : ''}`}>
+                                      <span>{item.label}</span>
+                                      <strong>{item.value}</strong>
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+
+                          <aside className="capture-command-actions" aria-label="Acciones principales de captura">
+                            <div className="capture-command-actions__primary">
+                              <p className="eyebrow eyebrow-inverse">Paso 2 · Guardar al instante</p>
+                              <button
+                                type="button"
+                                onClick={() => void addQuickPointToSession()}
+                                className="ui-button ui-button-primary capture-command-actions__primary-button"
+                                disabled={isQuickCapturing}
+                                aria-busy={isQuickCapturing}
+                              >
+                                <Mic className="h-4 w-4" />
+                                {isQuickCapturing ? 'Guardando...' : 'Guardar registro rápido'}
+                              </button>
+                              <p className="module-copy text-sm capture-command-actions__support">{captureQuickSaveSupportCopy}</p>
+                            </div>
+
+                            <div className="capture-command-actions__secondary" role="group" aria-label="Acciones rápidas del registro">
+                              <button
+                                type="button"
+                                onClick={() => void listenAndClassifySoundscape()}
+                                disabled={soundscapeStatus === 'listening'}
+                                aria-busy={soundscapeStatus === 'listening'}
+                                className="listen-button capture-quick-tool"
+                              >
+                                <Sparkles className="h-5 w-5" />
+                                {soundscapeStatus === 'listening' ? 'Analizando 15 s...' : 'Detectar ambiente'}
+                              </button>
+                              <label className="ui-button ui-button-secondary ui-button-upload">
+                                <Camera className="h-4 w-4" />
+                                Añadir foto
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  multiple
+                                  className="hidden"
+                                  onChange={handleDraftPhotosInput}
+                                />
+                              </label>
+                            </div>
+
+                            <div className="capture-maintenance-tools" aria-label="Acciones de mantenimiento del contexto">
+                              <p className="capture-toolbar-label">Actualización manual</p>
+                              <div className="action-row action-row--compact capture-maintenance-tools__actions">
+                                <button type="button" onClick={() => void activateGpsAndApplyToDraft()} className="ui-button ui-button-ghost">
+                                  <LocateFixed className="h-4 w-4" />
+                                  Activar GPS
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={refreshDetectedPlace}
+                                  disabled={!canRefreshDetectedPlace}
+                                  aria-busy={locationStatus === 'loading'}
+                                  className="ui-button ui-button-ghost"
+                                >
+                                  <MapPin className="h-4 w-4" />
+                                  Releer ubicación
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={refreshAutomaticWeather}
+                                  disabled={!canRefreshWeather || weatherStatus === 'loading'}
+                                  aria-busy={weatherStatus === 'loading'}
+                                  className="ui-button ui-button-ghost"
+                                >
+                                  <CloudRain className={`h-4 w-4 ${weatherStatus === 'loading' ? 'busy-spin' : ''}`} />
+                                  Actualizar clima
+                                </button>
+                              </div>
+                            </div>
+                          </aside>
+                        </div>
+                      </div>
+
+                      <div className="panel surface-level--panel surface-emphasis--panel surface-border--default log-form-card panel-tone panel-tone--mint">
+                        <div className="panel-heading">
+                          <p className="eyebrow">Datos esenciales</p>
+                          <h3 className="display-heading text-3xl">Lo mínimo para cerrar un buen registro</h3>
+                          <p className="module-copy text-sm">
+                            Ajusta sólo lo que la app no haya resuelto sola. Los campos técnicos viven en avanzado para que la pantalla siga limpia bajo presión.
+                          </p>
+                        </div>
+
+                        <div className="capture-form-intro">
+                          <div className="capture-form-intro__copy">
+                            <p className="eyebrow">Paso 3 · Completar si hace falta</p>
                             <p className="module-copy text-sm">
-                              Coordenadas manuales, clima observado, etiquetas y setup técnico cuando necesites más precisión.
+                              Lugar, entorno, referencia H6 y notas. Lo técnico queda plegado para no competir con el guardado.
                             </p>
                           </div>
-                          <span className="manual-details__hint">Abrir</span>
-                        </summary>
+                          <span className="capture-form-progress">{captureFormProgressLabel}</span>
+                        </div>
 
-                        <div className="manual-details__body grid gap-4 md:grid-cols-2 capture-form-advanced__body">
+                        <div className="quick-form-grid capture-form-basics">
                           <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                            <span>Clima observado</span>
+                            <span>Nombre del lugar</span>
                             <input
-                              value={pointDraft.observedWeather}
-                              onChange={(event) =>
-                                setPointDraft((previous) => ({ ...previous, observedWeather: event.target.value }))
-                              }
+                              value={pointDraft.placeName}
+                              onChange={(event) => setPointDraft((previous) => ({ ...previous, placeName: event.target.value }))}
                               className="field-input"
-                              placeholder="Bruma ligera, 14 ºC, viento suave"
+                              placeholder="Ría interior, orilla sur"
                             />
                           </label>
                           <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                            <span>Etiquetas manuales</span>
+                            <span>Hábitat / entorno</span>
                             <input
-                              value={pointDraft.tagsText}
-                              onChange={(event) => setPointDraft((previous) => ({ ...previous, tagsText: event.target.value }))}
+                              value={pointDraft.habitat}
+                              onChange={(event) => setPointDraft((previous) => ({ ...previous, habitat: event.target.value }))}
                               className="field-input"
-                              placeholder="agua, costa, amanecer"
+                              placeholder="Costa, ribera, bosque, urbano..."
+                            />
+                          </label>
+                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                            <span>ID / referencia Zoom H6</span>
+                            <input
+                              value={pointDraft.zoomTakeReference}
+                              onChange={(event) =>
+                                setPointDraft((previous) => ({ ...previous, zoomTakeReference: event.target.value }))
+                              }
+                              className="field-input"
+                              placeholder="H6-032"
                             />
                           </label>
                           <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
-                            <span>Características del paisaje</span>
+                            <span>Notas</span>
                             <textarea
-                              value={pointDraft.characteristics}
-                              onChange={(event) =>
-                                setPointDraft((previous) => ({ ...previous, characteristics: event.target.value }))
-                              }
+                              value={pointDraft.notes}
+                              onChange={(event) => setPointDraft((previous) => ({ ...previous, notes: event.target.value }))}
                               rows={4}
                               className="field-input min-h-28"
-                              placeholder="Distancia a la fuente, relieve, reverberación, presencia humana..."
-                            />
-                          </label>
-                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                            <span>Latitud</span>
-                            <input
-                              value={pointDraft.latitude}
-                              onChange={(event) =>
-                                setPointDraft((previous) => ({
-                                  ...previous,
-                                  latitude: event.target.value,
-                                  coordinateSource: 'manual',
-                                }))
-                              }
-                              className="field-input telemetry-text"
-                              placeholder="42.240598"
-                            />
-                          </label>
-                          <label className="grid gap-2 text-sm text-[color:var(--muted)]">
-                            <span>Longitud</span>
-                            <input
-                              value={pointDraft.longitude}
-                              onChange={(event) =>
-                                setPointDraft((previous) => ({
-                                  ...previous,
-                                  longitude: event.target.value,
-                                  coordinateSource: 'manual',
-                                }))
-                              }
-                              className="field-input telemetry-text"
-                              placeholder="-8.720727"
-                            />
-                          </label>
-                          <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
-                            <span>Setup de micros</span>
-                            <input
-                              value={pointDraft.microphoneSetup}
-                              onChange={(event) =>
-                                setPointDraft((previous) => ({ ...previous, microphoneSetup: event.target.value }))
-                              }
-                              className="field-input"
-                              placeholder="Zoom H6 · XY 90º"
+                              placeholder="Incidencias, decisiones de microfonía, acceso, observaciones..."
                             />
                           </label>
                         </div>
-                      </details>
-                    </div>
 
-                    <section
-                      className={`capture-secondary-workspace ${isCompactCaptureLayout ? '' : 'capture-secondary-workspace--expanded'}`}
-                      aria-labelledby="capture-secondary-workspace-title"
-                    >
-                      <SectionHeader
-                        eyebrow="Herramientas"
-                        titleId="capture-secondary-workspace-title"
-                        title={isCompactCaptureLayout ? 'IA, fotos y exploración' : 'Herramientas de apoyo'}
-                        description={
-                          isCompactCaptureLayout
-                            ? 'En compacto, las herramientas secundarias se alternan en una sola superficie para que la captura siga sintiéndose rápida.'
-                            : 'Mapa, fotos, IA y último registro quedan juntos para consulta y ajustes, pero fuera del bloque principal de guardado.'
-                        }
-                      />
-
-                      {isCompactCaptureLayout ? (
-                        <>
-                          <SegmentedControl
-                            label="Cambiar herramienta secundaria de captura"
-                            value={captureSupportTab}
-                            items={[
-                              { value: 'map', label: 'Mapa' },
-                              { value: 'photos', label: 'Fotos', count: draftPhotos.length },
-                              { value: 'ai', label: 'IA' },
-                              { value: 'record', label: 'Último' },
-                            ]}
-                            onChange={setCaptureSupportTab}
-                            panelIdBase="capture-support"
-                            size="sm"
-                            fill
-                          />
-
-                          <AnimatePresence initial={false} mode="wait">
-                            <motion.div
-                              key={`capture-support-${captureSupportTab}`}
-                              id={`capture-support-panel-${captureSupportTab}`}
-                              role="tabpanel"
-                              aria-labelledby={`capture-support-tab-${captureSupportTab}`}
-                              className="content-swap-panel content-swap-panel--workspace"
-                              {...contentSwapMotion}
-                            >
-                              {captureSupportTab === 'map'
-                                ? renderCaptureExplorePanel()
-                                : captureSupportTab === 'photos'
-                                  ? renderCapturePhotosPanel()
-                                  : captureSupportTab === 'ai'
-                                    ? renderCaptureListenPanel()
-                                    : renderCaptureRecordPreviewPanel()}
-                            </motion.div>
-                          </AnimatePresence>
-                        </>
-                      ) : (
-                        <div className="capture-support-grid">
-                          <div className="capture-support-grid__map">{renderCaptureExplorePanel()}</div>
-                          <div className="capture-support-grid__photos">{renderCapturePhotosPanel()}</div>
-                          <div className="capture-support-grid__ai">{renderCaptureListenPanel()}</div>
-                          <div className="capture-support-grid__record">{renderCaptureRecordPreviewPanel()}</div>
+                        <div className="action-row capture-form-actions">
+                          <div className="capture-form-actions__copy">
+                            <strong>El guardado completo conserva el contexto automático y tus ajustes manuales.</strong>
+                            <p className="module-copy text-sm">
+                              Úsalo cuando quieras dejar el punto listo para archivo, revisión o asociación con la Zoom H6.
+                            </p>
+                          </div>
+                          <button type="button" onClick={() => void addPointToSession()} className="ui-button ui-button-primary">
+                            Guardar registro completo
+                          </button>
                         </div>
-                      )}
-                    </section>
-                  </>
+
+                        <details className="manual-details capture-form-advanced">
+                          <summary className="manual-details__summary">
+                            <div>
+                              <p className="eyebrow">Campos avanzados</p>
+                              <p className="module-copy text-sm">
+                                Coordenadas manuales, clima observado, etiquetas y setup técnico cuando necesites más precisión.
+                              </p>
+                            </div>
+                            <span className="manual-details__hint">Abrir</span>
+                          </summary>
+
+                          <div className="manual-details__body grid gap-4 md:grid-cols-2 capture-form-advanced__body">
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Clima observado</span>
+                              <input
+                                value={pointDraft.observedWeather}
+                                onChange={(event) =>
+                                  setPointDraft((previous) => ({ ...previous, observedWeather: event.target.value }))
+                                }
+                                className="field-input"
+                                placeholder="Bruma ligera, 14 ºC, viento suave"
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Etiquetas manuales</span>
+                              <input
+                                value={pointDraft.tagsText}
+                                onChange={(event) => setPointDraft((previous) => ({ ...previous, tagsText: event.target.value }))}
+                                className="field-input"
+                                placeholder="agua, costa, amanecer"
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
+                              <span>Características del paisaje</span>
+                              <textarea
+                                value={pointDraft.characteristics}
+                                onChange={(event) =>
+                                  setPointDraft((previous) => ({ ...previous, characteristics: event.target.value }))
+                                }
+                                rows={4}
+                                className="field-input min-h-28"
+                                placeholder="Distancia a la fuente, relieve, reverberación, presencia humana..."
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Latitud</span>
+                              <input
+                                value={pointDraft.latitude}
+                                onChange={(event) =>
+                                  setPointDraft((previous) => ({
+                                    ...previous,
+                                    latitude: event.target.value,
+                                    coordinateSource: 'manual',
+                                  }))
+                                }
+                                className="field-input telemetry-text"
+                                placeholder="42.240598"
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)]">
+                              <span>Longitud</span>
+                              <input
+                                value={pointDraft.longitude}
+                                onChange={(event) =>
+                                  setPointDraft((previous) => ({
+                                    ...previous,
+                                    longitude: event.target.value,
+                                    coordinateSource: 'manual',
+                                  }))
+                                }
+                                className="field-input telemetry-text"
+                                placeholder="-8.720727"
+                              />
+                            </label>
+                            <label className="grid gap-2 text-sm text-[color:var(--muted)] md:col-span-2">
+                              <span>Setup de micros</span>
+                              <input
+                                value={pointDraft.microphoneSetup}
+                                onChange={(event) =>
+                                  setPointDraft((previous) => ({ ...previous, microphoneSetup: event.target.value }))
+                                }
+                                className="field-input"
+                                placeholder="Zoom H6 · XY 90º"
+                              />
+                            </label>
+                          </div>
+                        </details>
+                      </div>
+
+                      <section
+                        className={`capture-secondary-workspace ${isCompactCaptureLayout ? '' : 'capture-secondary-workspace--expanded'}`}
+                        aria-labelledby="capture-secondary-workspace-title"
+                      >
+                        <SectionHeader
+                          eyebrow="Herramientas"
+                          titleId="capture-secondary-workspace-title"
+                          title={isCompactCaptureLayout ? 'IA, fotos y exploración' : 'Herramientas de apoyo'}
+                          description={
+                            isCompactCaptureLayout
+                              ? 'En compacto, las herramientas secundarias se alternan en una sola superficie para que la captura siga sintiéndose rápida.'
+                              : 'Mapa, fotos, IA y último registro quedan juntos para consulta y ajustes, pero fuera del bloque principal de guardado.'
+                          }
+                        />
+
+                        {isCompactCaptureLayout ? (
+                          <>
+                            <SegmentedControl
+                              label="Cambiar herramienta secundaria de captura"
+                              value={captureSupportTab}
+                              items={[
+                                { value: 'map', label: 'Mapa' },
+                                { value: 'photos', label: 'Fotos', count: draftPhotos.length },
+                                { value: 'ai', label: 'IA' },
+                                { value: 'record', label: 'Último' },
+                              ]}
+                              onChange={setCaptureSupportTab}
+                              panelIdBase="capture-support"
+                              size="sm"
+                              fill
+                            />
+
+                            <AnimatePresence initial={false} mode="wait">
+                              <motion.div
+                                key={`capture-support-${captureSupportTab}`}
+                                id={`capture-support-panel-${captureSupportTab}`}
+                                role="tabpanel"
+                                aria-labelledby={`capture-support-tab-${captureSupportTab}`}
+                                className="content-swap-panel content-swap-panel--workspace"
+                                {...contentSwapMotion}
+                              >
+                                {captureSupportTab === 'map'
+                                  ? renderCaptureExplorePanel()
+                                  : captureSupportTab === 'photos'
+                                    ? renderCapturePhotosPanel()
+                                    : captureSupportTab === 'ai'
+                                      ? renderCaptureListenPanel()
+                                      : renderCaptureRecordPreviewPanel()}
+                              </motion.div>
+                            </AnimatePresence>
+                          </>
+                        ) : (
+                          <div className="capture-support-grid">
+                            <div className="capture-support-grid__map">{renderCaptureExplorePanel()}</div>
+                            <div className="capture-support-grid__photos">{renderCapturePhotosPanel()}</div>
+                            <div className="capture-support-grid__ai">{renderCaptureListenPanel()}</div>
+                            <div className="capture-support-grid__record">{renderCaptureRecordPreviewPanel()}</div>
+                          </div>
+                        )}
+                      </section>
+                    </>
+                  )
                 )}
               </motion.section>
             ) : null}
@@ -8218,11 +9098,11 @@ export default function App() {
             {view === 'export' ? (
               <motion.section
                 key="record"
-                className="layout-record"
+                className={`layout-record ${isMobileViewport ? 'layout-record--mobile' : ''}`.trim()}
                 {...viewTransitionMotion}
               >
                 {!recordSession ? (
-                  <div className="panel empty-state-card">
+                  <div className={`panel empty-state-card ${isMobileViewport ? 'archive-mobile-empty' : ''}`.trim()}>
                     <p className="display-heading text-3xl">Todavía no hay salidas archivadas</p>
                     <p className="module-copy text-sm">
                       Abre una salida desde el navegador lateral para entrar en su espacio de trabajo y revisar registros, biblioteca o ficha completa.
@@ -8243,6 +9123,39 @@ export default function App() {
                   </div>
                 ) : (
                   <>
+                    {isMobileViewport ? (
+                      <Card variant="panel" tone="sky" className="archive-mobile-toolbar">
+                        <div className="archive-mobile-toolbar__copy">
+                          <p className="eyebrow">Archivo</p>
+                          <h3 className="display-heading text-2xl">{recordSession.name}</h3>
+                          <p className="module-copy text-sm">
+                            Cambia de salida, mueve el foco entre salida, biblioteca y registro, y exporta sin abrir un navegador pesado.
+                          </p>
+                        </div>
+
+                        <div className="archive-mobile-toolbar__actions">
+                          <button
+                            ref={archiveDrawerTriggerRef}
+                            type="button"
+                            onClick={() => setIsArchiveBrowserOpen(true)}
+                            className="ui-button ui-button-primary"
+                          >
+                            <History className="h-4 w-4" />
+                            Cambiar salida
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void exportSession(recordSession)}
+                            disabled={isExportingSessionId === recordSession.id}
+                            aria-busy={isExportingSessionId === recordSession.id}
+                            className="ui-button ui-button-secondary"
+                          >
+                            <Download className="h-4 w-4" />
+                            {isExportingSessionId === recordSession.id ? 'Exportando...' : 'Exportar ZIP'}
+                          </button>
+                        </div>
+                      </Card>
+                    ) : null}
                     {!isCompactArchiveLayout ? renderArchiveBrowserPanel() : null}
                     {renderArchiveWorkspaceStack()}
                   </>

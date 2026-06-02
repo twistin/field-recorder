@@ -75,6 +75,30 @@ test.describe('dashboard visual coverage', () => {
       await prepareDeterministicDashboard(page);
       await expect(page).toHaveScreenshot('dashboard-home-mobile.png');
     });
+
+    test('session mobile shell stays stable in the empty-state flow', async ({ page }) => {
+      await prepareDeterministicDashboard(page);
+      await openPrimaryView(page, 'Salidas');
+      await expect(page).toHaveScreenshot('dashboard-session-mobile.png');
+    });
+
+    test('capture mobile layout stays stable with an active session', async ({ page }) => {
+      await prepareDeterministicDashboard(page);
+      await seedFieldSessions(page, [ACTIVE_CAPTURE_SESSION]);
+      await openPrimaryView(page, 'Captura');
+
+      await expect(page.getByRole('button', { name: 'Guardar registro rápido', exact: true })).toBeVisible();
+      await expect(page).toHaveScreenshot('dashboard-capture-mobile.png');
+    });
+
+    test('archive mobile layout stays stable with a selected session', async ({ page }) => {
+      await prepareDeterministicDashboard(page);
+      await seedFieldSessions(page, [ACTIVE_CAPTURE_SESSION]);
+      await openPrimaryView(page, 'Archivo');
+
+      await expect(page.getByRole('button', { name: 'Cambiar salida', exact: true }).first()).toBeVisible();
+      await expect(page).toHaveScreenshot('dashboard-archive-mobile.png');
+    });
   });
 
   test('session desktop layout stays stable in the empty-state flow', async ({ page }) => {
