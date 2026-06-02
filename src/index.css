@@ -7436,3 +7436,379 @@ select:focus-visible {
       rgba(255, 249, 239, 0.94);
   }
 }
+
+@media (min-width: 980px) {
+  .fieldnotes-sidebar {
+    width: min(280px, 100%);
+  }
+
+  .sidebar-nav-panel {
+    padding: 0.95rem;
+    border-color: rgba(255, 181, 121, 0.12);
+    background:
+      linear-gradient(180deg, rgba(255, 244, 231, 0.04), rgba(255, 255, 255, 0)),
+      rgba(21, 14, 10, 0.82);
+  }
+
+  .sidebar-nav .dock-button {
+    min-height: 4.15rem;
+    padding: 0.78rem 0.92rem;
+    border-radius: 20px !important;
+  }
+
+  .sidebar-nav .dock-button__description {
+    display: none;
+  }
+
+  .section-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 1rem;
+    padding: 1.28rem 1.35rem;
+  }
+
+  .section-header__copy {
+    gap: 0.48rem;
+  }
+
+  .section-header__copy h1 {
+    max-width: none;
+    font-size: clamp(2.55rem, 4vw, 4rem);
+  }
+
+  .section-header__rail {
+    justify-content: flex-end;
+    align-items: end;
+  }
+
+  .home-topbar {
+    gap: 1rem;
+    padding: 1.35rem;
+  }
+
+  .home-topbar__masthead {
+    grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+    align-items: start;
+    gap: 1.1rem;
+  }
+
+  .home-topbar__brand,
+  .home-command-aside {
+    gap: 0.82rem;
+  }
+
+  .home-topbar__title {
+    max-width: 10ch;
+    font-size: clamp(2.8rem, 5vw, 4.35rem);
+  }
+
+  .home-command-meta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .home-desktop-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .home-desktop-sidecar {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+  }
+
+  .home-desktop-actions,
+  .home-desktop-status,
+  .home-desktop-activity {
+    gap: 1rem;
+  }
+
+  .home-desktop-action-list {
+    display: grid;
+    gap: 0.72rem;
+  }
+
+  .home-desktop-action-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.88rem;
+    width: 100%;
+    padding: 0.92rem 0.96rem;
+    border: 1px solid rgba(255, 181, 121, 0.12);
+    border-radius: calc(var(--radius-md) - 2px) !important;
+    background:
+      linear-gradient(180deg, rgba(255, 244, 231, 0.05), rgba(255, 255, 255, 0)),
+      rgba(25, 17, 11, 0.52);
+    text-align: left;
+    transition:
+      border-color 160ms ease,
+      background 160ms ease,
+      transform 160ms ease;
+  }
+
+  .home-desktop-action-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 122, 47, 0.22);
+  }
+
+  .home-desktop-action-card.is-featured {
+    border-color: rgba(255, 122, 47, 0.22);
+    background:
+      radial-gradient(circle at top right, rgba(255, 122, 47, 0.12), transparent 30%),
+      linear-gradient(180deg, rgba(255, 244, 231, 0.06), rgba(255, 255, 255, 0)),
+      rgba(32, 21, 14, 0.58);
+  }
+
+  .home-desktop-action-card__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.8rem;
+    height: 2.8rem;
+    border: 1px solid rgba(255, 181, 121, 0.18);
+    border-radius: 18px !important;
+    background: rgba(255, 122, 47, 0.12);
+    color: var(--signal-strong);
+  }
+
+  .home-desktop-action-card__body {
+    display: grid;
+    gap: 0.24rem;
+    min-width: 0;
+  }
+
+  .home-desktop-action-card__eyebrow,
+  .home-desktop-quickread__item dt,
+  .home-desktop-status-list__item dt {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.64rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-meta);
+  }
+
+  .home-desktop-action-card__title {
+    font-family: "Fraunces", "Sora", sans-serif;
+    font-size: 1.2rem;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+  }
+
+  .home-desktop-action-card__meta {
+    color: var(--text-support);
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
+  .home-desktop-action-card__cta {
+    align-self: center;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .home-desktop-quickread {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.72rem;
+    margin: 0;
+  }
+
+  .home-desktop-quickread__item,
+  .home-desktop-status-list__item {
+    display: grid;
+    gap: 0.22rem;
+    padding: 0.82rem 0.88rem;
+    border: 1px solid rgba(255, 181, 121, 0.1);
+    border-radius: calc(var(--radius-md) - 4px) !important;
+    background:
+      linear-gradient(180deg, rgba(255, 244, 231, 0.05), rgba(255, 255, 255, 0)),
+      rgba(22, 15, 11, 0.48);
+  }
+
+  .home-desktop-quickread__item dd,
+  .home-desktop-status-list__item dd {
+    display: grid;
+    gap: 0.18rem;
+    margin: 0;
+  }
+
+  .home-desktop-quickread__item strong,
+  .home-desktop-status-list__item strong {
+    font-size: 1rem;
+    line-height: 1.25;
+    color: var(--ink);
+  }
+
+  .home-desktop-quickread__item span,
+  .home-desktop-status-list__item span {
+    color: var(--text-support);
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
+  .home-desktop-status-list {
+    display: grid;
+    gap: 0.62rem;
+    margin: 0;
+  }
+
+  .home-desktop-activity .structured-list-panel {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0)),
+      rgba(15, 23, 34, 0.52);
+  }
+
+  .session-desktop-panel {
+    gap: 1rem;
+  }
+
+  .session-desktop-panel__body {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .session-desktop-panel__summary {
+    display: grid;
+    gap: 0.9rem;
+    align-content: start;
+  }
+
+  .session-desktop-panel__summary-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .session-desktop-panel__actions-grid {
+    align-content: start;
+  }
+
+  .session-desktop-panel .dashboard-session-panel__actions-main {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.72rem;
+  }
+
+  .session-desktop-panel__body--setup {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .session-desktop-panel__body--setup .session-draft-shell {
+    grid-template-columns: minmax(0, 1.14fr) minmax(280px, 0.86fr);
+    gap: 1rem;
+  }
+
+  .session-desktop-panel__body--setup .session-setup-basics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .session-draft-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 1rem;
+  }
+}
+
+@media (min-width: 1120px) {
+  .layout-record {
+    grid-template-columns: minmax(330px, 370px) minmax(0, 1fr);
+    gap: 1rem;
+  }
+
+  .archive-browser-panel--desktop,
+  .archive-workspace-panel--desktop {
+    padding: 1.18rem 1.22rem;
+  }
+
+  .archive-browser-shell--desktop {
+    gap: 0.9rem;
+  }
+
+  .archive-browser-intro--desktop {
+    gap: 1rem;
+  }
+
+  .archive-browser-desktop-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.48rem;
+  }
+
+  .archive-browser-panel--desktop .archive-session-list {
+    max-height: 56rem;
+  }
+
+  .archive-browser-panel--desktop .archive-session-browser {
+    gap: 0.7rem;
+  }
+
+  .archive-workspace-panel--desktop .archive-workspace-panel__header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .archive-workspace-panel--desktop .archive-workspace-panel__controls {
+    display: grid;
+    gap: 0.78rem;
+    align-content: start;
+  }
+
+  .archive-workspace-panel__nav {
+    display: grid;
+    gap: 0.48rem;
+    padding: 0.84rem 0.9rem;
+    border: 1px solid rgba(255, 181, 121, 0.1);
+    border-radius: calc(var(--radius-md) - 2px) !important;
+    background:
+      linear-gradient(180deg, rgba(255, 244, 231, 0.04), rgba(255, 255, 255, 0)),
+      rgba(24, 17, 12, 0.46);
+  }
+
+  .archive-workspace-panel--desktop .archive-summary-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .archive-workspace-panel--desktop .archive-summary-strip .summary-strip__item,
+  .archive-browser-panel--desktop .archive-summary-strip .summary-strip__item {
+    min-height: 72px;
+  }
+
+  .archive-session-intro,
+  .archive-media-overview {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 1rem;
+  }
+
+  .archive-session-intro__actions,
+  .archive-media-overview__actions {
+    justify-content: flex-end;
+  }
+}
+
+:root[data-display-mode="sun"] .home-desktop-action-card,
+:root[data-display-mode="sun"] .home-desktop-quickread__item,
+:root[data-display-mode="sun"] .home-desktop-status-list__item,
+:root[data-display-mode="sun"] .archive-workspace-panel__nav {
+  border-color: rgba(214, 90, 27, 0.1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0)),
+    rgba(255, 250, 242, 0.9);
+}
+
+:root[data-display-mode="sun"] .home-desktop-action-card.is-featured {
+  background:
+    radial-gradient(circle at top right, rgba(214, 90, 27, 0.12), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0)),
+    rgba(255, 248, 239, 0.94);
+}

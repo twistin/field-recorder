@@ -5913,6 +5913,70 @@ export default function App() {
       },
     ] as const;
 
+    if (!isCompactArchiveLayout && !isMobileViewport) {
+      return (
+        <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-browser-panel archive-browser-panel--desktop panel-tone panel-tone--mint">
+          <div className="archive-browser-shell archive-browser-shell--desktop">
+            <div className="archive-browser-intro archive-browser-intro--desktop">
+              <div className="archive-browser-intro__copy">
+                <p className="eyebrow">Salidas</p>
+                <h3 className="display-heading text-2xl">Abrir salida</h3>
+                <p className="module-copy text-sm">
+                  Elige la salida y luego baja a registros, biblioteca o ficha final.
+                </p>
+              </div>
+
+              <div className="archive-browser-desktop-meta" aria-label="Estado rápido del archivo">
+                <span className="telemetry-chip">{visibleArchiveSessions.length} visibles</span>
+                <span className="telemetry-chip">
+                  {totalOperationalPendingCount > 0 ? `${totalOperationalPendingCount} pendientes` : 'Al día'}
+                </span>
+              </div>
+            </div>
+
+            <p className="archive-browser-panel__selection">
+              Mostrando todas las salidas visibles.
+            </p>
+
+            <section className="archive-session-browser" aria-labelledby="archive-session-browser-title">
+              <SectionHeader
+                titleId="archive-session-browser-title"
+                title="Salidas recientes"
+                description={`${visibleArchiveSessions.length} ${visibleArchiveSessions.length === 1 ? 'salida lista' : 'salidas listas'} para abrir o exportar.`}
+                titleAs="h4"
+                compact
+              />
+              {visibleArchiveSessions.length > 0 ? (
+                <StructuredList className="archive-session-list">
+                  {visibleArchiveSessions.map((session) => (
+                    <li key={session.id}>
+                      <ListRow
+                        dense
+                        onClick={() => {
+                          focusArchiveSession(session.id);
+                          setIsArchiveBrowserOpen(false);
+                        }}
+                        className={`archive-session-row ${recordSession?.id === session.id ? 'is-active' : ''}`}
+                        eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
+                        title={session.name}
+                        meta={`${session.region || 'sin zona'} · ${formatDateTime(session.startedAt, "d MMM · HH:mm")}`}
+                        stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                        actionLabel={recordSession?.id === session.id ? 'Abierta' : 'Abrir'}
+                      />
+                    </li>
+                  ))}
+                </StructuredList>
+              ) : (
+                <p className="module-copy text-sm">
+                  No hay salidas visibles todavía.
+                </p>
+              )}
+            </section>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-browser-panel panel-tone panel-tone--mint">
         <div className="archive-browser-shell">
@@ -6046,6 +6110,118 @@ export default function App() {
                 : 'Abre un registro para bajar al detalle.',
       },
     ] as const;
+
+    if (!isCompactArchiveLayout && !isMobileViewport) {
+      return (
+        <div className="archive-detail-stack archive-detail-stack--desktop">
+          <div className="panel surface-level--panel surface-emphasis--panel surface-border--default archive-workspace-panel archive-workspace-panel--desktop panel-tone panel-tone--sky">
+            <div className="archive-workspace-panel__header">
+              <div className="archive-workspace-panel__copy">
+                <p className="eyebrow">Mesa de revisión</p>
+                <h3 className="display-heading text-4xl">{recordSession.name}</h3>
+                <p className="module-copy text-sm">{archiveWorkspaceDescription}</p>
+              </div>
+
+              <div className="archive-workspace-panel__controls">
+                <div className="archive-workspace-panel__primary-actions">
+                  {archiveWorkspace === 'record' ? (
+                    recordSession.status === 'active' ? (
+                      <button
+                        type="button"
+                        onClick={() => setView('point')}
+                        className="ui-button ui-button-primary"
+                      >
+                        <Mic className="h-4 w-4" />
+                        Seguir registrando
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setArchiveWorkspace('session')}
+                        className="ui-button ui-button-primary"
+                      >
+                        <History className="h-4 w-4" />
+                        Volver a salida
+                      </button>
+                    )
+                  ) : recordPoint ? (
+                    <button
+                      type="button"
+                      onClick={() => setArchiveWorkspace('record')}
+                      className="ui-button ui-button-primary"
+                    >
+                      <History className="h-4 w-4" />
+                      Abrir ficha
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setArchiveWorkspace('media')}
+                      className="ui-button ui-button-primary"
+                    >
+                      <Camera className="h-4 w-4" />
+                      Ver biblioteca
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => void exportSession(recordSession)}
+                    disabled={isExportingSessionId === recordSession.id}
+                    aria-busy={isExportingSessionId === recordSession.id}
+                    className="ui-button ui-button-secondary"
+                  >
+                    <Download className="h-4 w-4" />
+                    {isExportingSessionId === recordSession.id ? 'Exportando...' : 'Exportar ZIP'}
+                  </button>
+                </div>
+
+                <div className="archive-workspace-panel__nav">
+                  <span className="archive-workspace-actions__label">Área visible</span>
+                  <SegmentedControl
+                    label="Cambiar área del espacio de trabajo"
+                    value={archiveWorkspace}
+                    items={[
+                      { value: 'session', label: 'Salida' },
+                      { value: 'media', label: 'Biblioteca' },
+                      { value: 'record', label: 'Registro', disabled: !recordPoint },
+                    ]}
+                    onChange={setArchiveWorkspace}
+                    panelIdBase="archive-workspace"
+                    size="sm"
+                    className="archive-workspace-switch"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <SummaryStrip
+              compact
+              className="archive-summary-strip archive-workspace-panel__summary"
+              ariaLabel="Lectura rápida de la salida abierta"
+              items={archiveWorkspaceFactItems}
+            />
+          </div>
+
+          <AnimatePresence initial={false} mode="wait">
+            <motion.div
+              key={`archive-workspace-${archiveWorkspace}`}
+              id={`archive-workspace-panel-${archiveWorkspace}`}
+              role="tabpanel"
+              aria-labelledby={`archive-workspace-tab-${archiveWorkspace}`}
+              className="content-swap-panel content-swap-panel--workspace"
+              {...contentSwapMotion}
+            >
+              {archiveWorkspace === 'session'
+                ? renderArchiveSessionWorkspace()
+                : archiveWorkspace === 'media'
+                  ? renderArchiveMediaWorkspace()
+                  : renderArchiveRecordWorkspace()}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      );
+    }
 
     return (
       <div className="archive-detail-stack">
@@ -7461,172 +7637,247 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <section className="home-workflow-grid" aria-label="Flujo principal de la jornada">
-                      {homeWorkflowCards.map((card) => (
-                        <React.Fragment key={card.title}>
-                          <WorkflowCard
-                            eyebrow={card.eyebrow}
-                            title={card.title}
-                            description={card.description}
-                            status={card.status}
-                            cta={card.cta}
-                            icon={card.icon}
-                            featured={card.featured}
-                            onClick={card.onClick}
-                          />
-                        </React.Fragment>
-                      ))}
-                    </section>
+                    <div className="home-desktop-shell">
+                      <Card
+                        as="section"
+                        variant="panel"
+                        tone="sky"
+                        border="strong"
+                        className="home-session-overview home-desktop-activity"
+                        aria-labelledby="home-session-overview-title"
+                        aria-describedby={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
+                      >
+                        <SectionHeader
+                          eyebrow={activeSession ? 'Salida en curso' : 'Retomar o empezar'}
+                          titleId="home-session-overview-title"
+                          descriptionId={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
+                          title={activeSession ? 'Actividad reciente' : 'Retomar una salida'}
+                          description={
+                            activeSession
+                              ? homeRecentRecordsDescription
+                              : recentSessions.length > 0
+                                ? 'Acceso directo a las últimas salidas sin entrar todavía en archivo.'
+                                : 'Crea una salida nueva y deja la captura lista sin pasar por un dashboard lleno de ruido.'
+                          }
+                          actionLabel={activeSession ? 'Ir a captura' : 'Preparar salida'}
+                          onAction={() => setView(activeSession ? 'point' : 'session')}
+                        />
 
-                    <Card
-                      as="section"
-                      variant="panel"
-                      tone="sky"
-                      border="strong"
-                      className="home-session-overview"
-                      aria-labelledby="home-session-overview-title"
-                      aria-describedby={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
-                    >
-                      <SectionHeader
-                        eyebrow={activeSession ? 'Salida en curso' : 'Siguiente movimiento'}
-                        titleId="home-session-overview-title"
-                        descriptionId={activeSession ? 'home-recent-records-description' : 'home-session-overview-description'}
-                        title={activeSession ? 'Actividad reciente' : 'No hay una salida abierta'}
-                        description={
-                          activeSession
-                            ? homeRecentRecordsDescription
-                            : 'Crea una salida nueva o retoma una reciente. En cuanto abras una, aquí quedarán visibles el contexto y la actividad.'
-                        }
-                        actionLabel={activeSession ? 'Ir a captura' : undefined}
-                        onAction={activeSession ? () => setView('point') : undefined}
-                      />
+                        {activeSession ? (
+                          <>
+                            <div className="home-session-overview__summaryline home-desktop-activity__summaryline" aria-label="Resumen compacto de la salida actual">
+                              {homeSessionSummaryItems.map((item) => (
+                                <div key={item.label} className="home-session-overview__summarystat">
+                                  <span>{item.label}</span>
+                                  <strong>{item.value}</strong>
+                                </div>
+                              ))}
+                            </div>
 
-                      {activeSession ? (
-                        <>
-                          <div className="home-session-overview__summaryline" aria-label="Resumen compacto de la salida actual">
-                            {homeSessionSummaryItems.map((item) => (
-                              <div key={item.label} className="home-session-overview__summarystat">
-                                <span>{item.label}</span>
-                                <strong>{item.value}</strong>
-                              </div>
-                            ))}
-                          </div>
+                            {renderActiveRoutePlanCard('home')}
 
-                          {renderActiveRoutePlanCard('home')}
+                            {latestActivePoints.length > 0 ? (
+                              <section
+                                className="home-session-overview__records"
+                                aria-labelledby="home-recent-records-title"
+                                aria-describedby="home-recent-records-description"
+                              >
+                                <p id="home-recent-records-title" className="sr-only">Últimos registros</p>
+                                <StructuredList>
+                                  {latestActivePoints.map((point) => {
+                                    const hasLinkedAudio =
+                                      activeSession.audioTakes.some((take) => take.associatedPointId === point.id) ?? false;
 
-                          {latestActivePoints.length > 0 ? (
-                            <section
-                              className="home-session-overview__records"
-                              aria-labelledby="home-recent-records-title"
-                              aria-describedby="home-recent-records-description"
-                            >
-                              <p id="home-recent-records-title" className="sr-only">Últimos registros</p>
-                              <StructuredList>
-                                {latestActivePoints.map((point) => {
-                                  const hasLinkedAudio =
-                                    activeSession.audioTakes.some((take) => take.associatedPointId === point.id) ?? false;
+                                    return (
+                                      <li key={point.id}>
+                                        <ListRow
+                                          dense
+                                          onClick={() => openRecordView(activeSession.id, point.id)}
+                                          title={point.placeName}
+                                          meta={
+                                            <>
+                                              {formatDateTime(point.createdAt, "d MMM · HH:mm")} ·{' '}
+                                              {point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}
+                                            </>
+                                          }
+                                          stats={[
+                                            `${point.photos.length} foto${point.photos.length === 1 ? '' : 's'}`,
+                                            hasLinkedAudio ? 'H6 asociado' : 'Sin H6',
+                                          ]}
+                                          actionLabel="Abrir"
+                                        />
+                                      </li>
+                                    );
+                                  })}
+                                </StructuredList>
+                              </section>
+                            ) : (
+                              <EmptyState
+                                eyebrow="Salida"
+                                title="La salida está abierta, pero aún no hay registros"
+                                description="Entra en captura y guarda el primer punto. Después el archivo y la revisión ya tendrán contexto real."
+                                icon={<Mic className="h-5 w-5" />}
+                                action={
+                                  <Button variant="secondary" onClick={() => setView('point')}>
+                                    Ir a captura
+                                  </Button>
+                                }
+                                compact
+                              />
+                            )}
 
-                                  return (
-                                    <li key={point.id}>
-                                      <ListRow
-                                        dense
-                                        onClick={() => openRecordView(activeSession.id, point.id)}
-                                        title={point.placeName}
-                                        meta={
-                                          <>
-                                            {formatDateTime(point.createdAt, "d MMM · HH:mm")} ·{' '}
-                                            {point.soundscapeClassification?.summary || point.observedWeather || 'Sin resumen'}
-                                          </>
-                                        }
-                                        stats={[
-                                          `${point.photos.length} foto${point.photos.length === 1 ? '' : 's'}`,
-                                          hasLinkedAudio ? 'H6 asociado' : 'Sin H6',
-                                        ]}
-                                        actionLabel="Abrir"
-                                      />
-                                    </li>
-                                  );
-                                })}
-                              </StructuredList>
-                            </section>
-                          ) : (
+                            <div className="home-session-overview__footer">
+                              <Button
+                                variant="secondary"
+                                onClick={() => setView('point')}
+                                leadingIcon={<Mic className="h-4 w-4" />}
+                              >
+                                Registrar punto
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                onClick={() => setView('export')}
+                                leadingIcon={<History className="h-4 w-4" />}
+                              >
+                                Abrir archivo
+                              </Button>
+                            </div>
+                          </>
+                        ) : recentSessions.length > 0 ? (
+                          <section
+                            className="home-session-overview__records"
+                            aria-labelledby="home-session-restarts-title"
+                          >
+                            <div className="home-session-overview__recent-restarts-header">
+                              <p id="home-session-restarts-title" className="eyebrow">Salidas recientes</p>
+                              <p className="module-copy text-sm">
+                                Últimas salidas visibles para volver al campo o entrar al archivo sin buscar.
+                              </p>
+                            </div>
+                            <StructuredList>
+                              {recentSessions.slice(0, 4).map((session) => (
+                                <li key={session.id}>
+                                  <ListRow
+                                    dense
+                                    onClick={() => openSessionWorkspace(session.id)}
+                                    eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
+                                    title={session.name}
+                                    meta={`${session.region || 'sin zona definida'} · ${session.points.length} registros`}
+                                    stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
+                                    actionLabel="Abrir"
+                                  />
+                                </li>
+                              ))}
+                            </StructuredList>
+                          </section>
+                        ) : (
+                          <div className="home-session-overview__empty-shell">
                             <EmptyState
                               eyebrow="Salida"
-                              title="La salida está lista, pero aún no hay registros"
-                              description="Entra en captura y guarda el primer punto. Después podrás revisar el material desde archivo."
-                              icon={<Mic className="h-5 w-5" />}
+                              title="Prepara una salida antes de capturar"
+                              description="Cuando abras una salida, esta vista se quedará con el contexto operativo y lo último que hayas registrado."
+                              icon={<MapPinned className="h-5 w-5" />}
                               action={
-                                <Button variant="secondary" onClick={() => setView('point')}>
-                                  Ir a captura
+                                <Button variant="secondary" onClick={() => setView('session')}>
+                                  Preparar salida
                                 </Button>
                               }
                               compact
                             />
-                          )}
-
-                          <div className="home-session-overview__footer">
-                            <Button
-                              variant="secondary"
-                              onClick={() => setView('point')}
-                              leadingIcon={<Mic className="h-4 w-4" />}
-                            >
-                              Registrar punto
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              onClick={() => setView('export')}
-                              leadingIcon={<History className="h-4 w-4" />}
-                            >
-                              Abrir archivo
-                            </Button>
                           </div>
-                        </>
-                      ) : (
-                        <div className="home-session-overview__empty-shell">
-                          <EmptyState
-                            eyebrow="Salida"
-                            title="Prepara una salida antes de capturar"
-                            description="Cuando abras una salida, esta vista se quedará sólo con el contexto operativo y los últimos registros."
-                            icon={<MapPinned className="h-5 w-5" />}
-                            action={
-                              <Button variant="secondary" onClick={() => setView('session')}>
-                                Preparar salida
-                              </Button>
-                            }
-                            compact={recentSessions.length > 0}
-                          />
+                        )}
+                      </Card>
 
-                          {recentSessions.length > 0 ? (
-                            <section
-                              className="home-session-overview__recent-restarts"
-                              aria-labelledby="home-session-restarts-title"
-                            >
-                              <div className="home-session-overview__recent-restarts-header">
-                                <p id="home-session-restarts-title" className="eyebrow">Retomar rápido</p>
-                                <p className="module-copy text-sm">
-                                  Últimas salidas visibles para volver al campo sin pasar por archivo.
-                                </p>
+                      <div className="home-desktop-sidecar">
+                        <Card
+                          as="section"
+                          variant="panel"
+                          tone="amber"
+                          border="strong"
+                          className="home-desktop-actions"
+                          aria-labelledby="home-desktop-actions-title"
+                        >
+                          <div className="panel-heading">
+                            <p className="eyebrow">Flujo principal</p>
+                            <h2 id="home-desktop-actions-title" className="display-heading text-3xl">Qué hacer ahora</h2>
+                            <p className="module-copy text-sm">
+                              Tres accesos claros: abrir salida, registrar y revisar archivo.
+                            </p>
+                          </div>
+
+                          <div className="home-desktop-action-list">
+                            {homeWorkflowCards.map((card) => {
+                              const ActionIcon = card.icon;
+
+                              return (
+                                <button
+                                  key={card.title}
+                                  type="button"
+                                  onClick={card.onClick}
+                                  className={`home-desktop-action-card ${card.featured ? 'is-featured' : ''}`}
+                                >
+                                  <span className="home-desktop-action-card__icon" aria-hidden="true">
+                                    <ActionIcon className="h-4 w-4" />
+                                  </span>
+                                  <span className="home-desktop-action-card__body">
+                                    <span className="home-desktop-action-card__eyebrow">{card.eyebrow}</span>
+                                    <strong className="home-desktop-action-card__title">{card.title}</strong>
+                                    <span className="module-copy text-sm">{card.description}</span>
+                                    <span className="home-desktop-action-card__meta">{card.status}</span>
+                                  </span>
+                                  <span className="home-desktop-action-card__cta">{card.cta}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </Card>
+
+                        <Card
+                          as="section"
+                          variant="panel"
+                          tone="mint"
+                          border="strong"
+                          className="home-desktop-status"
+                          aria-labelledby="home-desktop-status-title"
+                        >
+                          <div className="panel-heading">
+                            <p className="eyebrow">Lectura rápida</p>
+                            <h2 id="home-desktop-status-title" className="display-heading text-3xl">
+                              {activeSession ? 'Contexto de jornada' : 'Antes de salir'}
+                            </h2>
+                            <p className="module-copy text-sm">
+                              {activeSession
+                                ? 'Señal, sincronización y archivo resueltos de un vistazo.'
+                                : 'Sólo lo necesario para arrancar sin abrir cuatro paneles antes de pisar campo.'}
+                            </p>
+                          </div>
+
+                          <dl className="home-desktop-quickread">
+                            {homeQuickReadItems.map((item) => (
+                              <div key={item.id} className="home-desktop-quickread__item">
+                                <dt>{item.label}</dt>
+                                <dd>
+                                  <strong>{item.value}</strong>
+                                  <span>{item.detail}</span>
+                                </dd>
                               </div>
-                              <StructuredList>
-                                {recentSessions.slice(0, 3).map((session) => (
-                                  <li key={session.id}>
-                                    <ListRow
-                                      dense
-                                      onClick={() => openSessionWorkspace(session.id)}
-                                      eyebrow={session.status === 'active' ? 'Activa ahora' : 'Salida cerrada'}
-                                      title={session.name}
-                                      meta={`${session.region || 'sin zona definida'} · ${session.points.length} registros`}
-                                      stats={[`${session.points.length} registros`, `${session.audioTakes.length} H6`]}
-                                      actionLabel="Abrir"
-                                    />
-                                  </li>
-                                ))}
-                              </StructuredList>
-                            </section>
-                          ) : null}
-                        </div>
-                      )}
-                    </Card>
+                            ))}
+                          </dl>
+
+                          <dl className="home-desktop-status-list">
+                            {homeStatusItems.map((item) => (
+                              <div key={item.id} className="home-desktop-status-list__item">
+                                <dt>{item.label}</dt>
+                                <dd>
+                                  <strong>{item.value}</strong>
+                                  <span>{item.detail}</span>
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </Card>
+                      </div>
+                    </div>
                   </>
                 )}
               </motion.section>
@@ -7955,7 +8206,7 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <Card variant="hero" tone="sky" className="dashboard-session-panel">
+                    <Card variant="hero" tone="sky" className="dashboard-session-panel session-desktop-panel">
                       <div className="panel-heading panel-heading--inverse">
                         <p className="eyebrow eyebrow-inverse">{activeSession ? 'Salida activa' : 'Preparar salida'}</p>
                         <h3 className="display-heading text-3xl panel-primary-title">
@@ -7987,116 +8238,120 @@ export default function App() {
                               <div>{activeSessionDateWarning}</div>
                             </div>
                           ) : null}
+                          <div className="session-desktop-panel__body">
+                            <div className="session-desktop-panel__summary">
+                              <SummaryStrip
+                                compact
+                                className="dashboard-session-summary-strip session-desktop-panel__summary-strip"
+                                ariaLabel="Resumen de la salida activa"
+                                items={[
+                                  {
+                                    label: 'Registros',
+                                    value: activeSession.points.length,
+                                  },
+                                  {
+                                    label: 'Fotos',
+                                    value: activeSessionPhotoCount,
+                                  },
+                                  {
+                                    label: 'Tomas H6',
+                                    value: activeSession.audioTakes.length,
+                                  },
+                                  {
+                                    label: 'Pendientes',
+                                    value: totalOperationalPendingCount,
+                                    detail: operationalPendingSummary,
+                                  },
+                                ]}
+                              />
 
-                          <SummaryStrip
-                            compact
-                            className="dashboard-session-summary-strip"
-                            ariaLabel="Resumen de la salida activa"
-                            items={[
-                              {
-                                label: 'Registros',
-                                value: activeSession.points.length,
-                              },
-                              {
-                                label: 'Fotos',
-                                value: activeSessionPhotoCount,
-                              },
-                              {
-                                label: 'Tomas H6',
-                                value: activeSession.audioTakes.length,
-                              },
-                              {
-                                label: 'Pendientes',
-                                value: totalOperationalPendingCount,
-                                detail: operationalPendingSummary,
-                              },
-                            ]}
-                          />
+                              {renderActiveRoutePlanCard('session')}
+                            </div>
 
-                          {renderActiveRoutePlanCard('session')}
+                            <div className="dashboard-session-actions-grid session-desktop-panel__actions-grid">
+                              <section className="dashboard-action-block dashboard-action-block--primary" aria-label="Acciones de captura">
+                                <div className="dashboard-action-block__header">
+                                  <p className="eyebrow">Operar ahora</p>
+                                  <p className="module-copy text-sm">Las acciones clave quedan primero; el resto se aparta del flujo principal.</p>
+                                </div>
+                                <div className="action-row dashboard-session-panel__actions-main">
+                                  <button type="button" onClick={() => setView('point')} className="ui-button ui-button-primary">
+                                    <Mic className="h-4 w-4" />
+                                    Ir a captura
+                                  </button>
+                                  {activeRoutePlan?.navigationUrl ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => openNavigationRoute(activeRoutePlan)}
+                                      className="ui-button ui-button-secondary"
+                                    >
+                                      <CarFront className="h-4 w-4" />
+                                      Abrir ruta
+                                    </button>
+                                  ) : null}
+                                  {recordPoint && recordSession ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => openRecordView(recordSession.id, recordPoint.id)}
+                                      className="ui-button ui-button-secondary"
+                                    >
+                                      <History className="h-4 w-4" />
+                                      Abrir último registro
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </section>
 
-                          <div className="dashboard-session-actions-grid">
-                            <section className="dashboard-action-block dashboard-action-block--primary" aria-label="Acciones de captura">
-                              <div className="dashboard-action-block__header">
-                                <p className="eyebrow">Operar ahora</p>
-                                <p className="module-copy text-sm">Las acciones clave quedan primero; el resto se aparta del flujo principal.</p>
-                              </div>
-                              <div className="action-row dashboard-session-panel__actions-main">
-                                <button type="button" onClick={() => setView('point')} className="ui-button ui-button-primary">
-                                  <Mic className="h-4 w-4" />
-                                  Ir a captura
-                                </button>
-                                {activeRoutePlan?.navigationUrl ? (
+                              <section className="dashboard-action-block" aria-label="Acciones de mantenimiento">
+                                <div className="dashboard-action-block__header">
+                                  <p className="eyebrow">Preparar y ordenar</p>
+                                  <p className="module-copy text-sm">Importación, separación de registros y relevo de salida sin entorpecer la captura.</p>
+                                </div>
+                                <div className="action-row dashboard-session-panel__actions-main">
                                   <button
                                     type="button"
-                                    onClick={() => openNavigationRoute(activeRoutePlan)}
+                                    onClick={() => openZoomImportPicker(activeSession.id)}
                                     className="ui-button ui-button-secondary"
                                   >
-                                    <CarFront className="h-4 w-4" />
-                                    Abrir ruta
+                                    <AudioWaveform className="h-4 w-4" />
+                                    Importar Zoom H6
                                   </button>
-                                ) : null}
-                                {recordPoint && recordSession ? (
+                                  {activeSessionLatestSpilloverPointAt ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void splitSessionRecordsFromLatestSpilloverDay(activeSession.id)}
+                                      disabled={isSplittingSessionId === activeSession.id}
+                                      aria-busy={isSplittingSessionId === activeSession.id}
+                                      className="ui-button ui-button-secondary"
+                                    >
+                                      <RefreshCw className="h-4 w-4" />
+                                      {isSplittingSessionId === activeSession.id
+                                        ? 'Separando...'
+                                        : `Separar ${formatDateTime(activeSessionLatestSpilloverPointAt, "d MMM")}`}
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
-                                    onClick={() => openRecordView(recordSession.id, recordPoint.id)}
-                                    className="ui-button ui-button-secondary"
-                                  >
-                                    <History className="h-4 w-4" />
-                                    Abrir último registro
-                                  </button>
-                                ) : null}
-                              </div>
-                            </section>
-
-                            <section className="dashboard-action-block" aria-label="Acciones de mantenimiento">
-                              <div className="dashboard-action-block__header">
-                                <p className="eyebrow">Preparar y ordenar</p>
-                                <p className="module-copy text-sm">Importación, separación de registros y relevo de salida sin entorpecer la captura.</p>
-                              </div>
-                              <div className="action-row dashboard-session-panel__actions-main">
-                                <button
-                                  type="button"
-                                  onClick={() => openZoomImportPicker(activeSession.id)}
-                                  className="ui-button ui-button-secondary"
-                                >
-                                  <AudioWaveform className="h-4 w-4" />
-                                  Importar Zoom H6
-                                </button>
-                                {activeSessionLatestSpilloverPointAt ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => void splitSessionRecordsFromLatestSpilloverDay(activeSession.id)}
-                                    disabled={isSplittingSessionId === activeSession.id}
-                                    aria-busy={isSplittingSessionId === activeSession.id}
+                                    onClick={() => void closeActiveSessionAndPrepareNext()}
                                     className="ui-button ui-button-secondary"
                                   >
                                     <RefreshCw className="h-4 w-4" />
-                                    {isSplittingSessionId === activeSession.id
-                                      ? 'Separando...'
-                                      : `Separar ${formatDateTime(activeSessionLatestSpilloverPointAt, "d MMM")}`}
+                                    Cerrar y nueva salida
                                   </button>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  onClick={() => void closeActiveSessionAndPrepareNext()}
-                                  className="ui-button ui-button-secondary"
-                                >
-                                  <RefreshCw className="h-4 w-4" />
-                                  Cerrar y nueva salida
+                                </div>
+                              </section>
+
+                              <div className="action-row action-row--compact dashboard-session-panel__actions-danger">
+                                <button type="button" onClick={() => void closeActiveSession()} className="ui-button ui-button-danger">
+                                  Cerrar salida
                                 </button>
                               </div>
-                            </section>
-
-                            <div className="action-row action-row--compact dashboard-session-panel__actions-danger">
-                              <button type="button" onClick={() => void closeActiveSession()} className="ui-button ui-button-danger">
-                                Cerrar salida
-                              </button>
                             </div>
                           </div>
                         </>
                       ) : (
                         <>
+                          <div className="session-desktop-panel__body session-desktop-panel__body--setup">
                           <div className="session-draft-shell">
                             <div className="session-draft-main">
                               <div className="session-setup-intro">
@@ -8316,6 +8571,7 @@ export default function App() {
                             <button type="button" onClick={createSession} className="ui-button ui-button-primary">
                               Iniciar salida
                             </button>
+                          </div>
                           </div>
                         </>
                       )}
